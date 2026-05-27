@@ -8,7 +8,8 @@ import { Sidebar } from "./Sidebar.js";
 function fakeApi(): ApiClient {
   return {
     listWorkspaces: vi.fn(async () => [{ id: "w1", name: "alpha", rootDir: "/a" }]),
-    createWorkspace: vi.fn(async (input) => ({ id: "new", ...input }))
+    createWorkspace: vi.fn(async (input) => ({ id: "new", ...input })),
+    deleteWorkspace: vi.fn(async () => {})
   } as unknown as ApiClient;
 }
 
@@ -23,7 +24,8 @@ describe("Sidebar", () => {
       pendingPrompt: null,
       contextFiles: [],
       leftSidebarCollapsed: false,
-      rightPanelCollapsed: false
+      rightPanelCollapsed: false,
+      pinnedWorkspaceIds: []
     });
     window.marginalia = {
       getPiServerStatus: vi.fn(),
@@ -77,5 +79,25 @@ describe("Sidebar", () => {
     await waitFor(() => screen.getByText("alpha"));
     await userEvent.click(screen.getByRole("button", { name: /new workspace/i }));
     expect(api.createWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("renders pinned workspaces in a separate group above the rest", async () => {
+    useAppStore.setState((s) => ({ ...s, pinnedWorkspaceIds: ["w1"] }));
+    const api = {
+      listWorkspaces: vi.fn(async () => [
+        { id: "w1", name: "alpha", rootDir: "/a" },
+        { id: "w2", name: "beta", rootDir: "/b" }
+      ]),
+      createWorkspace: vi.fn(),
+      deleteWorkspace: vi.fn(async () => {})
+    } as unknown as ApiClient;
+    render(<Sidebar api={api} />);
+    await waitFor(() => screen.getByText("alpha"));
+    const pinnedHeading = screen.getByText(/^Pinned$/i);
+    const beta = screen.getByText("beta");
+    // Pinned group (and its items) should render before any non-pinned workspace
+    expect(
+      pinnedHeading.compareDocumentPosition(beta) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

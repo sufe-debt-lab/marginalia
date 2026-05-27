@@ -24,6 +24,13 @@ export function Sidebar({ api }: { api: ApiClient }) {
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setLocale = useAppStore((s) => s.setLocale);
   const setView = useAppStore((s) => s.setView);
+  const pinnedIds = useAppStore((s) => s.pinnedWorkspaceIds);
+
+  const pinnedSet = new Set(pinnedIds);
+  const pinnedList = workspaces.data
+    .filter((w) => pinnedSet.has(w.id))
+    .sort((a, b) => pinnedIds.indexOf(a.id) - pinnedIds.indexOf(b.id));
+  const otherList = workspaces.data.filter((w) => !pinnedSet.has(w.id));
 
   useEffect(() => {
     if (workspaces.loading) return;
@@ -80,8 +87,19 @@ export function Sidebar({ api }: { api: ApiClient }) {
           {!workspaces.loading && workspaces.data.length === 0 && (
             <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noWorkspaces")}</p>
           )}
-          {workspaces.data.map((w) => (
-            <WorkspaceTree key={w.id} api={api} workspace={w} onDelete={async () => {}} />
+          {pinnedList.length > 0 && (
+            <>
+              <div className="px-1 pt-1 text-xs font-medium uppercase text-muted-foreground">
+                {t("common.pinned")}
+              </div>
+              {pinnedList.map((w) => (
+                <WorkspaceTree key={w.id} api={api} workspace={w} onDelete={workspaces.remove} />
+              ))}
+              {otherList.length > 0 && <div className="my-1 border-t border-border" />}
+            </>
+          )}
+          {otherList.map((w) => (
+            <WorkspaceTree key={w.id} api={api} workspace={w} onDelete={workspaces.remove} />
           ))}
         </div>
       </ScrollArea>
