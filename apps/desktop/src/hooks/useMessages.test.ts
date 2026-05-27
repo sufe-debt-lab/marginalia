@@ -32,6 +32,6 @@ describe("useMessages", () => {
       result.current.appendToLast("hello");
       result.current.appendToLast(" world");
     });
-    expect(result.current.data[1].content).toBe("hello world");
+    expect(result.current.data[1]?.content).toBe("hello world");
   });
 });

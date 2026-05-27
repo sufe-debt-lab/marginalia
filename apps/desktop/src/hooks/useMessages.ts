@@ -32,8 +32,8 @@ export function useMessages(api: ApiClient, sessionId: string | null) {
 
   const appendToLast = useCallback((delta: string) => {
     setData((items) => {
-      if (items.length === 0) return items;
       const last = items[items.length - 1];
+      if (!last) return items;
       const next = items.slice(0, -1);
       next.push({ ...last, content: last.content + delta });
       return next;
