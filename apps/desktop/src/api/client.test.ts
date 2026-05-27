@@ -38,4 +38,22 @@ describe("ApiClient.runChat", () => {
     const api = new ApiClient("http://x");
     await expect(api.getBranch("w")).resolves.toBe("main");
   });
+
+  it("deleteWorkspace returns void on 204", async () => {
+    global.fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const api = new ApiClient("http://x");
+    await expect(api.deleteWorkspace("w")).resolves.toBeUndefined();
+  });
+
+  it("deleteWorkspace throws on non-2xx", async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" }
+        })
+    );
+    const api = new ApiClient("http://x");
+    await expect(api.deleteWorkspace("w")).rejects.toThrow(/not found/);
+  });
 });

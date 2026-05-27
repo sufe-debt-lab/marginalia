@@ -118,6 +118,13 @@ export class ApiClient {
     return streamSse<RunEvent>(response.body);
   }
 
+  async deleteWorkspace(id: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/workspaces/${id}`, { method: "DELETE" });
+    if (response.status === 204) return;
+    const error = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
+    throw new Error(error.error ?? response.statusText);
+  }
+
   async getBranch(workspaceId: string): Promise<string | null> {
     try {
       const response = await fetch(`${this.baseUrl}/workspaces/${workspaceId}/branch`);
