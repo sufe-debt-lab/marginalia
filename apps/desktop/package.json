@@ -1,0 +1,32 @@
+{
+  "name": "@marginalia/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "tsc -p tsconfig.node.json && concurrently -k -n vite,electron \"vite --host 127.0.0.1\" \"sh -c 'until curl -sf http://127.0.0.1:5173 >/dev/null; do sleep 0.2; done; VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron dist-electron/main.js'\"",
+    "build": "tsc -p tsconfig.node.json && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.11"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "jsdom": "^25.0.1",
+    "playwright": "^1.60.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,223 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { afterEach, describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
+import { migrate } from "../src/db/migrations.js";
+import {
+  createSession,
+  createWorkspace,
+  listSessions,
+  setAgentSessionPath
+} from "../src/db/repositories.js";
+import { FakeAgentClient } from "../src/agent/fake-agent-client.js";
+import type { AgentSessionEvent } from "../src/agent/agent-client.js";
+
+const dbs: Database.Database[] = [];
+function memoryDb() {
+  const db = new Database(":memory:");
+  dbs.push(db);
+  return db;
+}
+
+afterEach(() => {
+  for (const db of dbs.splice(0)) db.close();
+});
+
+describe("provider chat migrations", () => {
+  it("creates provider env var and run tables and agent_session_path column", () => {
+    const db = memoryDb();
+    migrate(db);
+
+    const names = db
+      .prepare("select name from sqlite_master where type = 'table' order by name")
+      .all()
+      .map((row: any) => row.name);
+
+    expect(names).toContain("providers");
+    expect(names).toContain("env_vars");
+    expect(names).toContain("runs");
+
+    const sessionColumns = db.prepare("pragma table_info(sessions)").all().map((row: any) => row.name);
+    expect(sessionColumns).toContain("model");
+    expect(sessionColumns).toContain("agent_session_path");
+  });
+
+  it("persists session model selection", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs" });
+    const session = createSession(db, { workspaceId: workspace.id, title: "Chat", origin: "desktop" });
+
+    const app = createApp({ db });
+    const response = await app.request(`/sessions/${session.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ model: "gpt-4.1" }),
+      headers: { "content-type": "application/json" }
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: session.id, model: "gpt-4.1" });
+    expect(listSessions(db, workspace.id)[0]?.model).toBe("gpt-4.1");
+  });
+});
+
+describe("provider API", () => {
+  it("returns provider availability via injected checker", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const availabilityChecker = {
+      check({ piProviderId }: { piProviderId: string }) {
+        return {
+          ok: piProviderId === "minimax-cn",
+          message: piProviderId === "minimax-cn" ? "ok" : "missing"
+        };
+      }
+    } as any;
+    const app = createApp({ db, availabilityChecker });
+
+    const provider = await (
+      await app.request("/providers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
+      })
+    ).json();
+
+    const res = await app.request(`/providers/${provider.id}/test`, { method: "POST" });
+    expect(await res.json()).toEqual({ ok: true, message: "ok" });
+  });
+});
+
+describe("chat runs", () => {
+  it("streams run envelopes via real SSE and emits assistant text", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-run" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop",
+      model: "MiniMax-M2.7"
+    });
+
+    const fake = new FakeAgentClient();
+    fake.enqueueEvents([
+      { type: "agent_start" } as unknown as AgentSessionEvent,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hel" } } as unknown as AgentSessionEvent,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "lo" } } as unknown as AgentSessionEvent,
+      { type: "message_end", message: { stopReason: "end", content: "hello" } } as unknown as AgentSessionEvent
+    ]);
+
+    const app = createApp({ db, agentClient: fake });
+    const provider = await (
+      await app.request("/providers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
+      })
+    ).json();
+
+    const response = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerId: provider.id, message: "hi" })
+    });
+
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const text = await response.text();
+    expect(text).toContain('"type":"run_started"');
+    expect(text).toContain('"type":"assistant_delta"');
+    expect(text).toContain('"text":"hel"');
+    expect(text).toContain('"text":"lo"');
+    expect(text).toContain('"type":"agent_event"');
+    expect(text).toContain('"type":"run_completed"');
+  });
+
+  it("passes pi provider id and model into AgentClient.run", async () => {
+    let seen: any = null;
+    const db = memoryDb();
+    migrate(db);
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-pi" });
+    const session = createSession(db, { workspaceId: workspace.id, title: "Chat", origin: "desktop" });
+
+    const stubClient = {
+      async run(input: any) {
+        seen = input;
+        async function* iterate() {
+          yield { type: "message_end", message: { stopReason: "end", content: "ok" } } as any;
+        }
+        return { sessionFile: "/tmp/x.jsonl", events: iterate(), dispose() {} };
+      }
+    };
+
+    const app = createApp({ db, agentClient: stubClient as any });
+    const provider = await (
+      await app.request("/providers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
+      })
+    ).json();
+
+    const response = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerId: provider.id, message: "ping" })
+    });
+    await response.text(); // drain stream so the streamSSE callback runs to completion
+
+    expect(seen).toMatchObject({
+      sessionId: session.id,
+      workspaceRoot: "/tmp/docs-pi",
+      piProviderId: "minimax-cn",
+      modelId: "MiniMax-M2.7",
+      message: "ping"
+    });
+  });
+
+  it("serves messages from the pi session file when present", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-msg" });
+    const session = createSession(db, { workspaceId: workspace.id, title: "Chat", origin: "desktop" });
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-msg-"));
+    const sessionFile = path.join(tmpDir, "s.jsonl");
+    fs.writeFileSync(
+      sessionFile,
+      [
+        { type: "session", version: 3, id: "abc", cwd: "/tmp", timestamp: "2026-05-26T00:00:00.000Z" },
+        {
+          type: "message",
+          id: "u1",
+          parentId: null,
+          timestamp: "2026-05-26T00:00:01.000Z",
+          message: { role: "user", content: "hi", timestamp: 1748390401000 }
+        },
+        {
+          type: "message",
+          id: "a1",
+          parentId: "u1",
+          timestamp: "2026-05-26T00:00:02.000Z",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "yo" }],
+            api: "anthropic-messages",
+            provider: "minimax-cn",
+            model: "MiniMax-M2.7",
+            stopReason: "stop",
+            timestamp: 1748390402000
+          }
+        }
+      ].map((line) => JSON.stringify(line)).join("\n") + "\n"
+    );
+    setAgentSessionPath(db, session.id, sessionFile);
+
+    const app = createApp({ db });
+    const response = await app.request(`/sessions/${session.id}/messages`);
+    expect(await response.json()).toEqual([
+      { id: "u1", role: "user", content: "hi" },
+      { id: "a1", role: "assistant", content: "yo" }
+    ]);
+  });
+});

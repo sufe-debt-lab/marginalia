@@ -1,0 +1,779 @@
+[
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "run_started",
+    "payload": {
+      "model": "MiniMax-M2.7"
+    },
+    "created_at": "2026-05-26T15:08:31.421Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "agent_start"
+      }
+    },
+    "created_at": "2026-05-26T15:08:31.453Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "turn_start"
+      }
+    },
+    "created_at": "2026-05-26T15:08:31.453Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_start",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "用一句话介绍你自己。"
+            }
+          ],
+          "timestamp": 1779808111451
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:31.453Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_end",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "用一句话介绍你自己。"
+            }
+          ],
+          "timestamp": 1779808111451
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:31.453Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_start",
+        "message": {
+          "role": "assistant",
+          "content": [],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:34.537Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_start",
+          "contentIndex": 0,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "",
+                "index": 0
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3215,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3215,
+              "cost": {
+                "input": 0.0009645,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0009645
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        },
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "",
+              "index": 0
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3215,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3215,
+            "cost": {
+              "input": 0.0009645,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0009645
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:34.862Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "",
+                "index": 0
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3215,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3215,
+              "cost": {
+                "input": 0.0009645,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0009645
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        },
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "",
+              "index": 0
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3215,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3215,
+            "cost": {
+              "input": 0.0009645,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0009645
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:34.862Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+              },
+              {
+                "type": "text",
+                "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+                "index": 1
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3215,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3215,
+              "cost": {
+                "input": 0.0009645,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0009645
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        },
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+            },
+            {
+              "type": "text",
+              "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+              "index": 1
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3215,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3215,
+            "cost": {
+              "input": 0.0009645,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0009645
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.096Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_start",
+          "contentIndex": 1,
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+              },
+              {
+                "type": "text",
+                "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+                "index": 1
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3215,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3215,
+              "cost": {
+                "input": 0.0009645,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0009645
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        },
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+            },
+            {
+              "type": "text",
+              "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+              "index": 1
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3215,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3215,
+            "cost": {
+              "input": 0.0009645,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0009645
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.096Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 1,
+          "delta": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+              },
+              {
+                "type": "text",
+                "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+                "index": 1
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3215,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3215,
+              "cost": {
+                "input": 0.0009645,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0009645
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        },
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+            },
+            {
+              "type": "text",
+              "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+              "index": 1
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3215,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3215,
+            "cost": {
+              "input": 0.0009645,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0009645
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.097Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "assistant_delta",
+    "payload": {
+      "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+    },
+    "created_at": "2026-05-26T15:08:35.097Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_end",
+          "contentIndex": 1,
+          "content": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。",
+          "partial": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+              },
+              {
+                "type": "text",
+                "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3630,
+              "output": 53,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3683,
+              "cost": {
+                "input": 0.001089,
+                "output": 0.0000636,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0011526
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        },
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+            },
+            {
+              "type": "text",
+              "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3630,
+            "output": 53,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3683,
+            "cost": {
+              "input": 0.001089,
+              "output": 0.0000636,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0011526
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.248Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "message_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+            },
+            {
+              "type": "text",
+              "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3630,
+            "output": 53,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3683,
+            "cost": {
+              "input": 0.001089,
+              "output": 0.0000636,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0011526
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        }
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.251Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "turn_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+              "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+            },
+            {
+              "type": "text",
+              "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "minimax-cn",
+          "model": "MiniMax-M2.7",
+          "usage": {
+            "input": 3630,
+            "output": 53,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 3683,
+            "cost": {
+              "input": 0.001089,
+              "output": 0.0000636,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0011526
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1779808111486,
+          "responseId": "0664ea71c86e49559440d16793e959eb"
+        },
+        "toolResults": []
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.251Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "agent_event",
+    "payload": {
+      "event": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "用一句话介绍你自己。"
+              }
+            ],
+            "timestamp": 1779808111451
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户要求我用一句话介绍我自己。这是一个简单的自我介绍请求，不需要使用任何工具或技能。让我用中文回复一个简洁的介绍。",
+                "thinkingSignature": "8013f06092296bd558dd5e6f149d7658e5a37c1a87752190c7ced84e861e71ea"
+              },
+              {
+                "type": "text",
+                "text": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+              }
+            ],
+            "api": "anthropic-messages",
+            "provider": "minimax-cn",
+            "model": "MiniMax-M2.7",
+            "usage": {
+              "input": 3630,
+              "output": 53,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 3683,
+              "cost": {
+                "input": 0.001089,
+                "output": 0.0000636,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0011526
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1779808111486,
+            "responseId": "0664ea71c86e49559440d16793e959eb"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    "created_at": "2026-05-26T15:08:35.251Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "assistant_message",
+    "payload": {
+      "content": "\n\n我是一名 AI 编程助手，擅长读取代码文件、执行命令、编写和修改代码，帮助你完成各种开发任务。"
+    },
+    "created_at": "2026-05-26T15:08:35.251Z"
+  },
+  {
+    "run_id": "bcbb477e-8470-4b01-b4c7-cd8dba310585",
+    "session_id": "b790bdbd-a06d-4de5-bc8c-e2f523e619b8",
+    "type": "run_completed",
+    "payload": {},
+    "created_at": "2026-05-26T15:08:35.251Z"
+  }
+]

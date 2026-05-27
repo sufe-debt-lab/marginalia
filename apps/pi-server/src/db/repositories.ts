@@ -1,0 +1,282 @@
+import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
+
+let clock = Date.now();
+const now = () => ++clock;
+
+export type Workspace = {
+  id: string;
+  name: string;
+  rootDir: string;
+  lastOpenedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Session = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  origin: string;
+  model?: string | null;
+  agentSessionPath?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Message = {
+  id: string;
+  sessionId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: number;
+};
+
+export type Provider = {
+  id: string;
+  name: string;
+  apiKeyRef: string;
+  apiKey?: string;
+  baseUrl: string | null;
+  defaultModel: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+function mapWorkspace(row: any): Workspace {
+  return {
+    id: row.id,
+    name: row.name,
+    rootDir: row.root_dir,
+    lastOpenedAt: row.last_opened_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapSession(row: any): Session {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    title: row.title,
+    origin: row.origin,
+    model: row.model ?? null,
+    agentSessionPath: row.agent_session_path ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapMessage(row: any): Message {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at
+  };
+}
+
+export function createWorkspace(db: Database.Database, input: { name: string; rootDir: string }) {
+  const timestamp = now();
+  const workspace = {
+    id: randomUUID(),
+    name: input.name,
+    rootDir: input.rootDir,
+    lastOpenedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies Workspace;
+  db.prepare(
+    "insert into workspaces (id, name, root_dir, last_opened_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?)"
+  ).run(workspace.id, workspace.name, workspace.rootDir, null, workspace.createdAt, workspace.updatedAt);
+  return workspace;
+}
+
+export function listWorkspaces(db: Database.Database) {
+  return db
+    .prepare("select * from workspaces order by created_at asc")
+    .all()
+    .map((row) => mapWorkspace(row));
+}
+
+export function markWorkspaceOpened(db: Database.Database, id: string) {
+  const timestamp = now();
+  db.prepare("update workspaces set last_opened_at = ?, updated_at = ? where id = ?").run(timestamp, timestamp, id);
+  return getWorkspace(db, id);
+}
+
+export function getWorkspace(db: Database.Database, id: string) {
+  const row = db.prepare("select * from workspaces where id = ?").get(id);
+  return row ? mapWorkspace(row) : null;
+}
+
+export function getRecentWorkspace(db: Database.Database) {
+  const row = db.prepare("select * from workspaces where last_opened_at is not null order by last_opened_at desc limit 1").get();
+  return row ? mapWorkspace(row) : null;
+}
+
+export function createSession(
+  db: Database.Database,
+  input: { workspaceId: string; title: string; origin?: string; model?: string | null }
+) {
+  const timestamp = now();
+  const session = {
+    id: randomUUID(),
+    workspaceId: input.workspaceId,
+    title: input.title,
+    origin: input.origin ?? "desktop",
+    model: input.model ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies Session;
+  const hasModel = hasColumn(db, "sessions", "model");
+  db.prepare(
+    hasModel
+      ? "insert into sessions (id, workspace_id, title, origin, model, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)"
+      : "insert into sessions (id, workspace_id, title, origin, created_at, updated_at) values (?, ?, ?, ?, ?, ?)"
+  ).run(
+    ...(hasModel
+      ? [session.id, session.workspaceId, session.title, session.origin, session.model, session.createdAt, session.updatedAt]
+      : [session.id, session.workspaceId, session.title, session.origin, session.createdAt, session.updatedAt])
+  );
+  return session;
+}
+
+export function listSessions(db: Database.Database, workspaceId: string) {
+  return db
+    .prepare("select * from sessions where workspace_id = ? order by updated_at desc")
+    .all(workspaceId)
+    .map((row) => mapSession(row));
+}
+
+export function getSession(db: Database.Database, id: string) {
+  const row = db.prepare("select * from sessions where id = ?").get(id);
+  return row ? mapSession(row) : null;
+}
+
+export function updateSession(db: Database.Database, id: string, patch: { model?: string | null }) {
+  if (patch.model !== undefined) {
+    db.prepare("update sessions set model = ?, updated_at = ? where id = ?").run(patch.model, now(), id);
+  }
+  return getSession(db, id);
+}
+
+export function setAgentSessionPath(db: Database.Database, id: string, agentSessionPath: string) {
+  db.prepare("update sessions set agent_session_path = ?, updated_at = ? where id = ?").run(
+    agentSessionPath,
+    now(),
+    id
+  );
+  return getSession(db, id);
+}
+
+export function createMessage(
+  db: Database.Database,
+  input: { sessionId: string; role: Message["role"]; content: string }
+) {
+  const timestamp = now();
+  const message = {
+    id: randomUUID(),
+    sessionId: input.sessionId,
+    role: input.role,
+    content: input.content,
+    createdAt: timestamp
+  } satisfies Message;
+  db.prepare("insert into messages (id, session_id, role, content, created_at) values (?, ?, ?, ?, ?)").run(
+    message.id,
+    message.sessionId,
+    message.role,
+    message.content,
+    message.createdAt
+  );
+  db.prepare("update sessions set updated_at = ? where id = ?").run(timestamp, message.sessionId);
+  return message;
+}
+
+export function getMessages(db: Database.Database, sessionId: string) {
+  return db
+    .prepare("select * from messages where session_id = ? order by created_at asc")
+    .all(sessionId)
+    .map((row) => mapMessage(row));
+}
+
+export function createProvider(
+  db: Database.Database,
+  input: { name: string; apiKey: string; baseUrl?: string | null; defaultModel: string }
+) {
+  const timestamp = now();
+  const envId = randomUUID();
+  const provider = {
+    id: randomUUID(),
+    name: input.name,
+    apiKeyRef: envId,
+    baseUrl: input.baseUrl ?? null,
+    defaultModel: input.defaultModel,
+    enabled: true,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies Provider;
+  db.prepare("insert into env_vars (id, key, value, scope, created_at) values (?, ?, ?, ?, ?)").run(
+    envId,
+    `${input.name.toUpperCase()}_API_KEY`,
+    input.apiKey,
+    "global",
+    timestamp
+  );
+  db.prepare(
+    "insert into providers (id, name, api_key_ref, base_url, default_model, enabled, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(provider.id, provider.name, provider.apiKeyRef, provider.baseUrl, provider.defaultModel, 1, timestamp, timestamp);
+  return provider;
+}
+
+export function listProviders(db: Database.Database) {
+  return db
+    .prepare("select * from providers order by created_at asc")
+    .all()
+    .map((row: any) => mapProvider(row));
+}
+
+export function getProvider(db: Database.Database, id: string) {
+  const row = db
+    .prepare(
+      "select providers.*, env_vars.value as api_key from providers join env_vars on env_vars.id = providers.api_key_ref where providers.id = ?"
+    )
+    .get(id);
+  return row ? mapProvider(row) : null;
+}
+
+export function createRun(db: Database.Database, input: { sessionId: string; providerId: string; model: string }) {
+  const timestamp = now();
+  const id = randomUUID();
+  db.prepare(
+    "insert into runs (id, session_id, provider_id, model, status, created_at) values (?, ?, ?, ?, ?, ?)"
+  ).run(id, input.sessionId, input.providerId, input.model, "running", timestamp);
+  return { id, sessionId: input.sessionId, providerId: input.providerId, model: input.model, status: "running", createdAt: timestamp };
+}
+
+export function completeRun(db: Database.Database, id: string, status: "completed" | "failed", error?: string) {
+  db.prepare("update runs set status = ?, error = ?, completed_at = ? where id = ?").run(status, error ?? null, now(), id);
+}
+
+function mapProvider(row: any): Provider {
+  return {
+    id: row.id,
+    name: row.name,
+    apiKeyRef: row.api_key_ref,
+    apiKey: row.api_key,
+    baseUrl: row.base_url,
+    defaultModel: row.default_model,
+    enabled: Boolean(row.enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function hasColumn(db: Database.Database, table: string, column: string) {
+  return db
+    .prepare(`pragma table_info(${table})`)
+    .all()
+    .some((row: any) => row.name === column);
+}
