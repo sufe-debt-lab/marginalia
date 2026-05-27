@@ -37,5 +37,13 @@ export function useWorkspaces(api: ApiClient) {
     [api]
   );
 
-  return { data, loading, error, create };
+  const remove = useCallback(
+    async (id: string) => {
+      await api.deleteWorkspace(id);
+      setData((items) => items.filter((w) => w.id !== id));
+    },
+    [api]
+  );
+
+  return { data, loading, error, create, remove };
 }

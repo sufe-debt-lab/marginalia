@@ -30,4 +30,22 @@ describe("useWorkspaces", () => {
     });
     expect(result.current.data.map((w) => w.name)).toEqual(["B", "A"]);
   });
+
+  it("remove deletes via api and prunes local list", async () => {
+    const api = {
+      listWorkspaces: vi.fn(async () => [
+        { id: "a", name: "A", rootDir: "/a" },
+        { id: "b", name: "B", rootDir: "/b" }
+      ]),
+      createWorkspace: vi.fn(),
+      deleteWorkspace: vi.fn(async () => {})
+    } as unknown as ApiClient;
+    const { result } = renderHook(() => useWorkspaces(api));
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    await act(async () => {
+      await result.current.remove("a");
+    });
+    expect(api.deleteWorkspace).toHaveBeenCalledWith("a");
+    expect(result.current.data.map((w) => w.id)).toEqual(["b"]);
+  });
 });
