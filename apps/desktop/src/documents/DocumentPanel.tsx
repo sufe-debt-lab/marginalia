@@ -64,7 +64,7 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
             {!tree.loading && (
               <>
                 <DocumentTree paths={tree.paths} onSelect={openTab} />
-                <div data-testid="doc-tree-fallback" className="border-t border-border px-1 py-1">
+                <div data-testid="doc-tree-fallback" className="sr-only">
                   {tree.paths.map((p) => (
                     <button
                       key={p}
