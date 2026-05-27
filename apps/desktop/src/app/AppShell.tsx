@@ -2,12 +2,15 @@ import { useApi } from "@/hooks/useApi.js";
 import { cn } from "@/lib/cn.js";
 import { Sidebar } from "@/sidebar/Sidebar.js";
 import { useAppStore } from "@/store/app-store.js";
-import { MainPlaceholder, DocumentPanelPlaceholder } from "./placeholders.js";
+import { ChatView } from "@/chat/ChatView.js";
+import { NewThreadView } from "@/chat/NewThreadView.js";
+import { DocumentPanelPlaceholder } from "./placeholders.js";
 import { Topbar } from "./Topbar.js";
 
 export function AppShell({ serverUrl }: { serverUrl: string }) {
   const api = useApi(serverUrl);
   const view = useAppStore((s) => s.view);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
   const rightCollapsed = useAppStore((s) => s.rightPanelCollapsed);
   const showRight = view === "chat" && !rightCollapsed;
@@ -30,7 +33,11 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
           </aside>
         )}
         <main className="min-h-0 overflow-hidden bg-background">
-          <MainPlaceholder view={view} />
+          {view === "chat" && activeSessionId ? (
+            <ChatView api={api} sessionId={activeSessionId} />
+          ) : (
+            <NewThreadView api={api} />
+          )}
         </main>
         {showRight && (
           <aside aria-label="Document panel" className="min-h-0 overflow-hidden border-l border-border">
