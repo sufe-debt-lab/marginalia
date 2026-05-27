@@ -153,4 +153,49 @@ describe("workspace API", () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "workspace required" });
   });
+
+  it("DELETE /workspaces/:id removes workspace and cascades sessions", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const app = createApp({ db });
+
+    const created = await app.request("/workspaces", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "to-delete", rootDir: "/tmp/to-delete-pr6" })
+    });
+    const ws = (await created.json()) as { id: string };
+
+    const sessionResponse = await app.request("/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspaceId: ws.id, title: "doomed" })
+    });
+    const session = (await sessionResponse.json()) as { id: string };
+
+    await app.request(`/sessions/${session.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "user", content: "hi" })
+    });
+
+    const del = await app.request(`/workspaces/${ws.id}`, { method: "DELETE" });
+    expect(del.status).toBe(204);
+
+    const list = await app.request("/workspaces");
+    const items = (await list.json()) as { id: string }[];
+    expect(items.find((w) => w.id === ws.id)).toBeUndefined();
+
+    expect(db.prepare("select count(*) as c from sessions where workspace_id = ?").get(ws.id)).toEqual({ c: 0 });
+    expect(db.prepare("select count(*) as c from messages where session_id = ?").get(session.id)).toEqual({ c: 0 });
+  });
+
+  it("DELETE /workspaces/:id returns 404 for unknown id", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const app = createApp({ db });
+
+    const del = await app.request("/workspaces/no-such-id-pr6", { method: "DELETE" });
+    expect(del.status).toBe(404);
+  });
 });

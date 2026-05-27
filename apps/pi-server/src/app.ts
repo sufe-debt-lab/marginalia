@@ -24,6 +24,7 @@ import {
   createRun,
   createSession,
   createWorkspace,
+  deleteWorkspace,
   getMessages,
   getSession,
   getWorkspace,
@@ -89,6 +90,11 @@ export function createApp(options: AppOptions = {}) {
   app.patch("/workspaces/:id/open", (c) => {
     const workspace = markWorkspaceOpened(db, c.req.param("id"));
     return workspace ? c.json(workspace) : c.json({ error: "workspace not found" }, 404);
+  });
+  app.delete("/workspaces/:id", (c) => {
+    const ok = deleteWorkspace(db, c.req.param("id"));
+    if (!ok) return c.json({ error: "workspace not found" }, 404);
+    return c.body(null, 204);
   });
   app.get("/workspaces/:id/sessions", (c) => c.json(listSessions(db, c.req.param("id"))));
   app.get("/workspaces/:id/files", (c) => {

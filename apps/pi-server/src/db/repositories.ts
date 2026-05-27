@@ -260,6 +260,25 @@ export function completeRun(db: Database.Database, id: string, status: "complete
   db.prepare("update runs set status = ?, error = ?, completed_at = ? where id = ?").run(status, error ?? null, now(), id);
 }
 
+export function deleteWorkspace(db: Database.Database, id: string): boolean {
+  const tx = db.transaction(() => {
+    const existing = db.prepare("select id from workspaces where id = ?").get(id);
+    if (!existing) return false;
+    const sessions = db.prepare("select id from sessions where workspace_id = ?").all(id) as { id: string }[];
+    const delMessages = db.prepare("delete from messages where session_id = ?");
+    const delRuns = db.prepare("delete from runs where session_id = ?");
+    const delSession = db.prepare("delete from sessions where id = ?");
+    for (const s of sessions) {
+      delMessages.run(s.id);
+      delRuns.run(s.id);
+      delSession.run(s.id);
+    }
+    db.prepare("delete from workspaces where id = ?").run(id);
+    return true;
+  });
+  return tx();
+}
+
 function mapProvider(row: any): Provider {
   return {
     id: row.id,
