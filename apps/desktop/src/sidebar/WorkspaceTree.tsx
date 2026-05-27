@@ -63,7 +63,10 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
           className="flex min-w-0 w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-foreground/80 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent"
         >
           <ChevronRight
-            className={cn("h-3.5 w-3.5 shrink-0 transition-transform", expanded && "rotate-90")}
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 transition-transform duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1)]",
+              expanded && "rotate-90"
+            )}
           />
           <Folder className="h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left" title={workspace.name}>
@@ -74,30 +77,35 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
           )}
         </button>
       </WorkspaceActions>
-      {expanded && (
-        <ul className="ml-6 mt-0.5 space-y-0.5">
-          {sessions.loading && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</li>
-          )}
-          {!sessions.loading && sessions.data.length === 0 && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">{t("common.noChats")}</li>
-          )}
-          {sessions.data.map((s) => (
-            <li key={s.id}>
-              <button
-                type="button"
-                onClick={() => selectSession(s.id)}
-                className={cn(
-                  "w-full truncate rounded-md px-2 py-1 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
-                  activeSessionId === s.id && "bg-accent text-foreground"
-                )}
-              >
-                {s.title || t("common.untitled")}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul
+        className="ml-6 mt-0.5 space-y-0.5 overflow-hidden transition-[max-height,opacity] duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1)]"
+        style={{
+          maxHeight: expanded ? `${Math.min(sessions.data.length * 32 + 8, 480)}px` : "0px",
+          opacity: expanded ? 1 : 0
+        }}
+        aria-hidden={!expanded}
+      >
+        {sessions.loading && (
+          <li className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</li>
+        )}
+        {!sessions.loading && sessions.data.length === 0 && (
+          <li className="px-2 py-1 text-xs text-muted-foreground">{t("common.noChats")}</li>
+        )}
+        {sessions.data.map((s) => (
+          <li key={s.id}>
+            <button
+              type="button"
+              onClick={() => selectSession(s.id)}
+              className={cn(
+                "w-full truncate rounded-md px-2 py-1 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
+                activeSessionId === s.id && "bg-accent text-foreground"
+              )}
+            >
+              {s.title || t("common.untitled")}
+            </button>
+          </li>
+        ))}
+      </ul>
       <ConfirmDeleteDialog
         open={deleteOpen}
         workspaceName={workspace.name}
