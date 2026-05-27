@@ -6,7 +6,7 @@ import { Sidebar } from "@/sidebar/Sidebar.js";
 import { useAppStore } from "@/store/app-store.js";
 import { ChatView } from "@/chat/ChatView.js";
 import { NewThreadView } from "@/chat/NewThreadView.js";
-import { DocumentPanelPlaceholder } from "./placeholders.js";
+import { DocumentPanel } from "@/documents/DocumentPanel.js";
 import { Topbar } from "./Topbar.js";
 
 export function AppShell({ serverUrl }: { serverUrl: string }) {
@@ -15,8 +15,8 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
   const rightCollapsed = useAppStore((s) => s.rightPanelCollapsed);
-  const showRight = view === "chat" && !rightCollapsed;
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
+  const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
 
@@ -85,9 +85,9 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
             <NewThreadView api={api} />
           )}
         </main>
-        {showRight && (
+        {showRight && activeWorkspaceId && (
           <aside aria-label="Document panel" className="min-h-0 overflow-hidden border-l border-border">
-            <DocumentPanelPlaceholder />
+            <DocumentPanel api={api} workspaceId={activeWorkspaceId} />
           </aside>
         )}
       </div>

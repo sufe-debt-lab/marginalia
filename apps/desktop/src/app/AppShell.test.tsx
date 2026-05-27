@@ -17,7 +17,15 @@ describe("AppShell", () => {
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false
     });
-    global.fetch = vi.fn(async () => new Response("[]", { headers: { "content-type": "application/json" } }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/health")) {
+        return new Response(JSON.stringify({ status: "ok" }), {
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    });
     window.marginalia = {
       getPiServerStatus: vi.fn(),
       restartPiServer: vi.fn()
@@ -32,7 +40,7 @@ describe("AppShell", () => {
   });
 
   it("shows right panel when view is chat", () => {
-    useAppStore.setState({ view: "chat" });
+    useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1" });
     render(<AppShell serverUrl="http://x" />);
     expect(screen.getByRole("complementary", { name: /document panel/i })).toBeInTheDocument();
   });
