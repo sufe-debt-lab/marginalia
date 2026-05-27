@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import type { Session, Workspace } from "@/api/client.js";
 import { useApi } from "@/hooks/useApi.js";
 import { cn } from "@/lib/cn.js";
 import { Sidebar } from "@/sidebar/Sidebar.js";
@@ -14,10 +16,54 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
   const rightCollapsed = useAppStore((s) => s.rightPanelCollapsed);
   const showRight = view === "chat" && !rightCollapsed;
+  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+
+  useEffect(() => {
+    if (!activeSessionId || !activeWorkspaceId) {
+      setActiveSession(null);
+      return;
+    }
+    let alive = true;
+    api
+      .listSessions(activeWorkspaceId)
+      .then((list) => {
+        if (alive) setActiveSession(list.find((s) => s.id === activeSessionId) ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [api, activeSessionId, activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setActiveWorkspace(null);
+      return;
+    }
+    let alive = true;
+    api
+      .listWorkspaces()
+      .then((list) => {
+        if (alive) setActiveWorkspace(list.find((w) => w.id === activeWorkspaceId) ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [api, activeWorkspaceId]);
+
+  const title =
+    view === "chat" && activeSession
+      ? activeSession.title || "(untitled)"
+      : activeWorkspace
+        ? activeWorkspace.name
+        : "";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <Topbar title="" />
+      <Topbar title={title} />
       <div
         className={cn(
           "grid min-h-0 flex-1 overflow-hidden",
