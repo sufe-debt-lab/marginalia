@@ -38,6 +38,20 @@ describe("WorkspaceTree", () => {
     expect(screen.getByText("second")).toBeInTheDocument();
   });
 
+  it("constrains long workspace names to a single truncated row", () => {
+    const longWorkspace = {
+      ...workspace,
+      name: "Electron Acceptance Workspace With A Very Long Name That Should Not Overflow"
+    };
+
+    render(<WorkspaceTree api={fakeApi()} workspace={longWorkspace} />);
+
+    const label = screen.getByText(longWorkspace.name);
+    expect(label).toHaveAttribute("title", longWorkspace.name);
+    expect(label).toHaveClass("min-w-0", "flex-1", "truncate");
+    expect(label.closest("button")).toHaveClass("min-w-0");
+  });
+
   it("selecting a session updates store", async () => {
     render(<WorkspaceTree api={fakeApi()} workspace={workspace} />);
     await userEvent.click(screen.getByRole("button", { name: /demo/i }));

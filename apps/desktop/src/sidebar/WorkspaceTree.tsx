@@ -26,11 +26,13 @@ export function WorkspaceTree({ api, workspace }: { api: ApiClient; workspace: W
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-foreground/80 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent"
+        className="flex min-w-0 w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-foreground/80 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent"
       >
-        <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")} />
-        <Folder className="h-3.5 w-3.5" />
-        <span className="truncate">{workspace.name}</span>
+        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 transition-transform", expanded && "rotate-90")} />
+        <Folder className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left" title={workspace.name}>
+          {workspace.name}
+        </span>
       </button>
       {expanded && (
         <ul className="ml-6 mt-0.5 space-y-0.5">
