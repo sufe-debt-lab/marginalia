@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiClient } from "./client.js";
 
 describe("ApiClient.runChat", () => {
@@ -20,5 +20,22 @@ describe("ApiClient.runChat", () => {
       { type: "assistant_delta", payload: { text: "hi" } },
       { type: "run_completed", payload: {} }
     ]);
+  });
+
+  it("getBranch returns null on non-200", async () => {
+    global.fetch = vi.fn(async () => new Response("not found", { status: 404 }));
+    const api = new ApiClient("http://x");
+    await expect(api.getBranch("w")).resolves.toBeNull();
+  });
+
+  it("getBranch returns branch name on success", async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ branch: "main" }), {
+          headers: { "content-type": "application/json" }
+        })
+    );
+    const api = new ApiClient("http://x");
+    await expect(api.getBranch("w")).resolves.toBe("main");
   });
 });

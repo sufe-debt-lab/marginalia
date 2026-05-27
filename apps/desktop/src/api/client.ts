@@ -118,6 +118,17 @@ export class ApiClient {
     return streamSse<RunEvent>(response.body);
   }
 
+  async getBranch(workspaceId: string): Promise<string | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/workspaces/${workspaceId}/branch`);
+      if (!response.ok) return null;
+      const body = (await response.json()) as { branch?: string };
+      return body.branch ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
