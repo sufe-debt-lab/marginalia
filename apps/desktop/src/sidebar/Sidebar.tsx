@@ -81,7 +81,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
             <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noWorkspaces")}</p>
           )}
           {workspaces.data.map((w) => (
-            <WorkspaceTree key={w.id} api={api} workspace={w} />
+            <WorkspaceTree key={w.id} api={api} workspace={w} onDelete={async () => {}} />
           ))}
         </div>
       </ScrollArea>
