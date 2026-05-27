@@ -11,7 +11,9 @@ describe("useAppStore", () => {
       pendingPrompt: null,
       contextFiles: [],
       leftSidebarCollapsed: false,
-      rightPanelCollapsed: false
+      rightPanelCollapsed: false,
+      pinnedWorkspaceIds: [],
+      leftSidebarWidth: 240
     });
     localStorage.clear();
   });
@@ -83,5 +85,36 @@ describe("useAppStore", () => {
     expect(state.activeSessionId).toBeUndefined();
     expect(state.pendingPrompt).toBeUndefined();
     expect(state.view).toBeUndefined();
+  });
+
+  it("togglePin adds and removes workspace ids", () => {
+    const { togglePin } = useAppStore.getState();
+    togglePin("w1");
+    togglePin("w2");
+    expect(useAppStore.getState().pinnedWorkspaceIds).toEqual(["w1", "w2"]);
+    togglePin("w1");
+    expect(useAppStore.getState().pinnedWorkspaceIds).toEqual(["w2"]);
+  });
+
+  it("removePin removes the id silently (no-op when not present)", () => {
+    const { togglePin, removePin } = useAppStore.getState();
+    togglePin("w1");
+    removePin("w1");
+    expect(useAppStore.getState().pinnedWorkspaceIds).toEqual([]);
+    removePin("never");
+    expect(useAppStore.getState().pinnedWorkspaceIds).toEqual([]);
+  });
+
+  it("setLeftSidebarWidth clamps between 180 and 480 and persists", () => {
+    const { setLeftSidebarWidth } = useAppStore.getState();
+    setLeftSidebarWidth(50);
+    expect(useAppStore.getState().leftSidebarWidth).toBe(180);
+    setLeftSidebarWidth(9999);
+    expect(useAppStore.getState().leftSidebarWidth).toBe(480);
+    setLeftSidebarWidth(300);
+    expect(useAppStore.getState().leftSidebarWidth).toBe(300);
+    const stored = JSON.parse(localStorage.getItem("my-cowork-app") || "{}");
+    expect(stored.state?.leftSidebarWidth).toBe(300);
+    expect(stored.state?.pinnedWorkspaceIds).toBeDefined();
   });
 });
