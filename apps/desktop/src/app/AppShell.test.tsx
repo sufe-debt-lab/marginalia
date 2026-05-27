@@ -15,7 +15,9 @@ describe("AppShell", () => {
       pendingPrompt: null,
       contextFiles: [],
       leftSidebarCollapsed: false,
-      rightPanelCollapsed: false
+      rightPanelCollapsed: false,
+      pinnedWorkspaceIds: [],
+      leftSidebarWidth: 240
     });
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -56,5 +58,12 @@ describe("AppShell", () => {
     await userEvent.click(screen.getByRole("button", { name: /toggle left sidebar/i }));
     const stored = JSON.parse(localStorage.getItem("my-cowork-app") || "{}");
     expect(stored.state?.leftSidebarCollapsed).toBe(true);
+  });
+
+  it("uses leftSidebarWidth from store", () => {
+    useAppStore.setState({ leftSidebarWidth: 320 });
+    render(<AppShell serverUrl="http://x" />);
+    const aside = screen.getByRole("complementary", { name: /sidebar/i });
+    expect(aside).toHaveStyle({ width: "320px" });
   });
 });
