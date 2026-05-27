@@ -7,19 +7,12 @@ describe("App", () => {
   beforeEach(() => {
     cleanup();
     global.fetch = vi.fn(async (input) => {
-      const body = String(input).endsWith("/workspaces")
-        ? []
-        : {
-            status: "ok",
-            service: "pi-server",
-            version: "0.1.0",
-            startedAt: "2026-05-25T00:00:00.000Z"
-          };
+      const body = String(input).endsWith("/workspaces") ? [] : { status: "ok" };
       return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
     });
   });
 
-  it("fetches health and displays ready state when pi-server is ready", async () => {
+  it("renders AppShell when pi-server is ready", async () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({ status: "ready" as const, url: "http://127.0.0.1:4312" })),
       restartPiServer: vi.fn()
@@ -27,7 +20,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("health ok")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument());
     expect(global.fetch).toHaveBeenCalledWith("http://127.0.0.1:4312/health");
   });
 
@@ -43,6 +36,19 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(window.marginalia?.restartPiServer).toHaveBeenCalled());
-    expect(await screen.findByText("health ok")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument());
+  });
+
+  it("shows retry UI when health check fails", async () => {
+    window.marginalia = {
+      getPiServerStatus: vi.fn(async () => ({ status: "ready" as const, url: "http://127.0.0.1:4312" })),
+      restartPiServer: vi.fn()
+    };
+    global.fetch = vi.fn(async () => new Response("boom", { status: 500 }));
+
+    render(<App />);
+
+    await screen.findByText(/health check failed/i);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });

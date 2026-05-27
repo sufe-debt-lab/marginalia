@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { WorkspaceShell } from "./workspaces/WorkspaceShell.js";
+import { AppShell } from "@/app/AppShell.js";
+import { Button } from "@/components/ui/button.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 
 type Health = {
   status: "ok";
@@ -20,6 +22,7 @@ function getBridge() {
 }
 
 export function App() {
+  const { t } = useTranslation();
   const [server, setServer] = useState<UiStatus>({ status: "starting" });
 
   async function loadHealth(status: PiServerStatus) {
@@ -27,9 +30,14 @@ export function App() {
       setServer(status);
       return;
     }
-    const response = await fetch(`${status.url}/health`);
-    const health = (await response.json()) as Health;
-    setServer({ ...status, health });
+    try {
+      const response = await fetch(`${status.url}/health`);
+      if (!response.ok) throw new Error(`health check failed: ${response.status}`);
+      const health = (await response.json()) as Health;
+      setServer({ ...status, health });
+    } catch (err) {
+      setServer({ status: "failed", error: (err as Error).message, logs: [] });
+    }
   }
 
   useEffect(() => {
@@ -48,20 +56,21 @@ export function App() {
     await loadHealth(await bridge.restartPiServer());
   }
 
-  if (server.status === "starting") return <main>starting</main>;
+  if (server.status === "starting") {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+        {t("status.startingServer")}
+      </div>
+    );
+  }
   if (server.status === "failed") {
     return (
-      <main>
-        <p>{server.error}</p>
-        <button onClick={retry}>Retry</button>
-      </main>
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm">
+        <p className="text-destructive">{server.error}</p>
+        <Button onClick={retry}>{t("common.retry")}</Button>
+      </div>
     );
   }
 
-  return (
-    <main>
-      <p>{server.health?.status === "ok" ? "health ok" : "checking health"}</p>
-      <WorkspaceShell serverUrl={server.url} />
-    </main>
-  );
+  return <AppShell serverUrl={server.url} />;
 }

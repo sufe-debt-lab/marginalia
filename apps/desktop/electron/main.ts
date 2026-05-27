@@ -19,9 +19,15 @@ function serializeStatus(status: PiServerStatus) {
 
 async function createWindow() {
   await bootServer();
+  const isMac = process.platform === "darwin";
   windowRef = new BrowserWindow({
-    width: 1200,
-    height: 760,
+    width: 1280,
+    height: 800,
+    minWidth: 960,
+    minHeight: 600,
+    backgroundColor: "#fafaf9",
+    titleBarStyle: isMac ? "hiddenInset" : "default",
+    trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
       contextIsolation: true,

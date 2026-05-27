@@ -30,6 +30,7 @@
 - 三栏可折叠布局，主区域支持 `new-thread` / `chat` / `settings` 三种视图
 - 视觉风格对齐 Codex：浅色、低对比、强排版层级、Inter 字体、圆角 6-8px、中性灰阶
 - Workspace / Session / Provider / Model 的创建与切换都通过可见、可达的 UI（非散落表单）
+- UI 文案支持英文 / 中文切换，默认英文，用户选择持久化
 - Composer 集成 `@` 文件提及、`/` 斜杠命令、内联 Model 选择器
 - 右栏文件面板支持多 tab、可折叠文件树（@pierre/trees）、Markdown / 代码预览、Attach to chat
 - 全程键盘可达（textbox 用 aria-label，菜单/弹层用 Radix 自带 a11y）
@@ -217,6 +218,7 @@ type AppView = 'new-thread' | 'chat' | 'settings';
 
 interface AppState {
   view: AppView;
+  locale: 'en' | 'zh';
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
   pendingPrompt: string | null;        // NewThreadView 提交后留给 ChatView 自动发送
@@ -225,6 +227,7 @@ interface AppState {
   rightPanelCollapsed: boolean;
 
   setView(v: AppView): void;
+  setLocale(v: 'en' | 'zh'): void;
   setActiveWorkspace(id: string | null): void;
   setActiveSession(id: string | null): void;
   setPendingPrompt(p: string | null): void;
@@ -243,6 +246,7 @@ export const useAppStore = create<AppState>()(
       version: 1,
       partialize: (s) => ({
         activeWorkspaceId: s.activeWorkspaceId,
+        locale: s.locale,
         leftSidebarCollapsed: s.leftSidebarCollapsed,
         rightPanelCollapsed: s.rightPanelCollapsed,
       }),
@@ -254,6 +258,7 @@ export const useAppStore = create<AppState>()(
 **重启时的状态**（明确决策）：
 
 - `view` 不持久化 → 启动一律落到 `new-thread`，让用户清楚选择继续哪个 session
+- `locale` 持久化 → 上次选择的英文 / 中文继续生效
 - `activeSessionId` 不持久化 → 不会自动恢复正在进行的对话
 - `activeWorkspaceId` 持久化 → 上次的 workspace 仍是默认选中（不存在了就回退到列表第一个或 null）
 - `pendingPrompt` 不持久化 → 仅用于会话内 NewThread → Chat 的瞬时交接
@@ -273,6 +278,26 @@ export const useAppStore = create<AppState>()(
 - `openDocumentTabs[]` / `activeTabPath` —— `<DocumentPanel>` 内
 - `composerDraft` / `slashMenuOpen` / `mentionMenuOpen` —— `<Composer>` 内
 - `providers[]` / `model` —— Composer 内 + Settings 内（各 useEffect 拉）
+
+### i18n
+
+首版使用轻量本地字典，不引入 i18next。所有用户可见文案、按钮 `aria-label`、toast、placeholder、错误占位都通过 `t(key)` 获取；开发调试文案可以保留英文，但不得出现在 production UI。
+
+目录：
+
+```
+i18n/
+  messages.ts          // en / zh 字典，使用 satisfies 校验 key 完整性
+  useTranslation.ts    // 读取 store.locale，返回 t(key)
+```
+
+约束：
+
+- 默认语言 `en`
+- `locale` 存入 Zustand persist
+- Sidebar 或 Settings 提供英文 / 中文切换入口；PR 2 先放在 Sidebar 底部，Settings 落地后可迁移
+- 新增 UI 文案时必须同步更新 `en` 和 `zh` 字典
+- 测试至少覆盖默认英文、切换中文、缺 key 时 typecheck 失败的静态约束
 
 **ApiClient**（`apps/desktop/src/api/client.ts`）：签名保留。本期新增：
 
@@ -329,6 +354,7 @@ components/ui/         (shadcn vendored: button, dialog, input, popover,
                        sonner, ...)
 hooks/                 useWorkspaces, useSessions, useMessages,
                        useStreamingChat, useFileTree
+i18n/                  messages.ts, useTranslation.ts
 lib/                   cn.ts, markdown.ts, highlight.ts
 api/client.ts          基本不动（新增 listFiles / getBranch）
 ```
@@ -378,6 +404,15 @@ Linux / Windows 下保留系统原生标题栏；Topbar 仍渲染，但红绿灯
 
 继续 Vitest + jsdom + Testing Library，不引入 Playwright。
 
+**Commit gate**
+
+每个 commit 前必须完成：
+
+- TDD 闭环：对应任务的测试先失败，再实现到通过；纯配置任务至少要有可验证命令
+- 运行该任务相关测试 + `pnpm --filter @marginalia/desktop typecheck`
+- 对照本 spec 和当前 plan，确认测试覆盖了新增行为和边缘场景；如果 spec 改了，测试也要同 commit 更新
+- UI 相关 commit 需要通过 Electron 窗口截图验证关键状态，截图路径写进 commit 前记录或 PR 描述；浏览器打开 Vite 页面不能替代 Electron 截图。无法截图时说明原因
+
 **ModelPicker 复用**：NewThreadView 底栏和 ChatView Composer 底栏使用同一个 `<ModelPicker>` 组件（`src/chat/Composer/ModelPicker.tsx`），通过 `value/onChange` 控制；不写两份。
 
 | 文件 | 命运 |
@@ -391,6 +426,7 @@ Linux / Windows 下保留系统原生标题栏；Topbar 仍渲染，但红绿灯
 | 新增 `sidebar/Sidebar.test.tsx` | workspace 列表、Settings 切 view、+ 新建 workspace（mock `window.marginalia.pickWorkspaceDirectory` 返回固定路径，断言 `api.createWorkspace` 被调） |
 | 新增 `app/AppShell.test.tsx` | 左右栏折叠持久化（localStorage 写入）、view='settings' 主区域换 SettingsView、view='chat' 右栏显示 |
 | 新增 `store/app-store.test.ts` | persist 字段 partialize、actions 行为 |
+| 新增 `i18n/useTranslation.test.tsx` | 默认英文、切换中文、组件文案响应 locale |
 | `api/client.test.ts` | 不动 |
 
 ## 实施排期
@@ -401,8 +437,8 @@ Linux / Windows 下保留系统原生标题栏；Topbar 仍渲染，但红绿灯
 
 | # | 内容 | 过渡占位 |
 | - | --- | --- |
-| 1 | Tailwind + shadcn init + lucide + sonner + Zustand store + 主进程 titleBarStyle。**不改任何视觉**，旧 `App.tsx` + 旧 `WorkspaceShell` 继续渲染。Zustand store 在本 PR 仅创建文件并 export，无组件消费它 | 无 |
-| 2 | 新 `AppShell` 替换 `App.tsx` 的根渲染（保留 health 检测和 server 启动逻辑）+ 新 Sidebar + 新 Topbar。**主区域和右栏先放占位空态**：主区域写 `<MainPlaceholder/>` 一个"Chat coming next PR"卡片；右栏直接隐藏。**旧 WorkspaceShell / 旧 ChatView / 旧 DocumentPanel 在本 PR 内整体删除**（不再 import） | 主区域 / 右栏 = 占位组件 |
+| 1 | Tailwind + shadcn init + lucide + sonner + Zustand store + i18n 基础。Tailwind 在 PR 1 关闭 preflight，**不改任何视觉**，旧 `App.tsx` + 旧 `WorkspaceShell` 继续渲染。Zustand store 和 i18n 在本 PR 仅创建文件并 export，无组件消费它 | 无 |
+| 2 | 新 `AppShell` 替换 `App.tsx` 的根渲染（保留 health 检测和 server 启动逻辑）+ 新 Sidebar + 新 Topbar + macOS `hiddenInset`。**主区域先放占位空态**：主区域写 `<MainPlaceholder/>` 一个"Chat coming next PR"卡片；右栏在 `chat` view 显示 `<DocumentPanelPlaceholder/>`，其他 view 隐藏。**旧 WorkspaceShell / 旧 ChatView / 旧 DocumentPanel 在本 PR 内整体删除**（不再 import） | 主区域 / 右栏 = 占位组件 |
 | 3 | 新 NewThreadView + ChatView + Composer（含 SlashMenu / MentionMenu / ModelPicker），替换 PR 2 的 `<MainPlaceholder/>`。右栏仍是占位 `<DocumentPanelPlaceholder/>`（"Document panel coming next PR"） | 右栏 = 占位组件 |
 | 4 | 新 DocumentPanel（tabs + pierre tree + viewer + attach），替换右栏占位。删除 `<DocumentPanelPlaceholder/>` | 无 |
 | 5 | 新 SettingsView（Providers / Models / About）+ 补全测试。删除 `<MainPlaceholder/>` 如果还在 | 无 |
@@ -415,6 +451,7 @@ Linux / Windows 下保留系统原生标题栏；Topbar 仍渲染，但红绿灯
 - 每个 PR 必须保证：
   - `pnpm typecheck` 通过
   - `pnpm test` 通过（被删的测试同 PR 删除，新测试同 PR 加）
+  - 每个 commit 前完成 TDD 测试、spec/测试对照检查、关键 UI 截图验证（UI commit 必须使用 Electron 截图）
   - `pnpm dev` 可启动且不报错；至少能创建 workspace、切换 view（即使主区域是占位）
   - 该 PR 视觉变化部分在浏览器里手动验证
 
