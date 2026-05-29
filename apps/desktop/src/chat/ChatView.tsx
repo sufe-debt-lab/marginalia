@@ -77,7 +77,13 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-auto">
-        <MessageStream messages={messages.data} error={error} onRetry={retry} />
+        <MessageStream
+          messages={messages.data}
+          error={error}
+          onRetry={retry}
+          model={actualModel || undefined}
+          streaming={stream.sending}
+        />
       </div>
       <div className="border-t border-border bg-background px-4 py-3">
         <div className="mx-auto max-w-3xl">

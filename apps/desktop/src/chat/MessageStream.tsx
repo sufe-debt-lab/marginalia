@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { AlertTriangle, RotateCw } from "lucide-react";
 import type { Message } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -8,9 +9,11 @@ interface Props {
   messages: readonly Message[];
   error: string | null;
   onRetry: () => void;
+  model?: string;
+  streaming?: boolean;
 }
 
-export function MessageStream({ messages, error, onRetry }: Props) {
+export function MessageStream({ messages, error, onRetry, model, streaming }: Props) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -28,15 +31,31 @@ export function MessageStream({ messages, error, onRetry }: Props) {
     );
   }
 
+  const lastIndex = messages.length - 1;
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-      {messages.map((m) => (
-        <MessageItem key={m.id} message={m} />
+      {messages.map((m, i) => (
+        <MessageItem
+          key={m.id}
+          message={m}
+          model={m.role === "assistant" ? model : undefined}
+          streaming={Boolean(streaming) && i === lastIndex && m.role === "assistant"}
+        />
       ))}
       {error && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <span className="flex-1">{error}</span>
-          <Button variant="outline" size="sm" onClick={onRetry}>
+        <div className="flex items-center gap-2.5 rounded-lg border border-danger bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            <strong>run_failed</strong> · {error}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRetry}
+            className="border-danger bg-surface text-danger hover:bg-danger-soft"
+          >
+            <RotateCw className="mr-1 h-3 w-3" />
             {t("common.retry")}
           </Button>
         </div>

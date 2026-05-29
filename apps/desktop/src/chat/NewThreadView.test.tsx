@@ -9,6 +9,7 @@ function fakeApi(): ApiClient {
   return {
     listProviders: vi.fn(async () => [{ id: "p1", name: "Minimax", defaultModel: "M2.7" }]),
     listWorkspaces: vi.fn(async () => [{ id: "w1", name: "alpha", rootDir: "/a" }]),
+    listSessions: vi.fn(async () => []),
     createSession: vi.fn(async (input: { workspaceId: string; title: string }) => ({
       id: "newSession",
       workspaceId: input.workspaceId,

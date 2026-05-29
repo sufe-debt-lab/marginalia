@@ -33,7 +33,8 @@ describe("MessageStream", () => {
         onRetry={onRetry}
       />
     );
-    expect(screen.getByText("boom")).toBeInTheDocument();
+    expect(screen.getByText(/boom/)).toBeInTheDocument();
+    expect(screen.getByText("run_failed")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(onRetry).toHaveBeenCalled();
   });

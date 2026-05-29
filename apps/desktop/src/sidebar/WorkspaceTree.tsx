@@ -5,6 +5,7 @@ import type { ApiClient, Workspace } from "@/api/client.js";
 import { useSessions } from "@/hooks/useSessions.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
+import { relativeTime } from "@/lib/relative-time.js";
 import { useAppStore } from "@/store/app-store.js";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog.js";
 import { WorkspaceActions } from "./WorkspaceActions.js";
@@ -16,7 +17,7 @@ interface Props {
 }
 
 export function WorkspaceTree({ api, workspace, onDelete }: Props) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const sessions = useSessions(api, expanded ? workspace.id : null);
@@ -78,7 +79,7 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
         </button>
       </WorkspaceActions>
       <ul
-        className="ml-6 mt-0.5 space-y-0.5 overflow-hidden transition-[max-height,opacity] duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1)]"
+        className="ml-[18px] mt-0.5 space-y-0.5 overflow-hidden border-l border-border-soft pl-1.5 transition-[max-height,opacity] duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1)]"
         style={{
           maxHeight: expanded ? `${Math.min(sessions.data.length * 32 + 8, 480)}px` : "0px",
           opacity: expanded ? 1 : 0
@@ -97,11 +98,16 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
               type="button"
               onClick={() => selectSession(s.id)}
               className={cn(
-                "w-full truncate rounded-md px-2 py-1 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
+                "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
                 activeSessionId === s.id && "bg-accent text-foreground"
               )}
             >
-              {s.title || t("common.untitled")}
+              <span className="min-w-0 flex-1 truncate">{s.title || t("common.untitled")}</span>
+              {s.updatedAt && (
+                <span className="mono shrink-0 text-[10.5px] text-text-faint">
+                  {relativeTime(s.updatedAt, locale)}
+                </span>
+              )}
             </button>
           </li>
         ))}

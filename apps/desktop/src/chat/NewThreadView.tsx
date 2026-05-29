@@ -6,6 +6,7 @@ import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
 import { Composer } from "./Composer/Composer.js";
 import { WorkspaceChip } from "./Composer/WorkspaceChip.js";
+import { RecentThreads } from "./RecentThreads.js";
 
 function basename(p: string): string {
   const trimmed = p.replace(/\/+$/, "");
@@ -98,6 +99,7 @@ export function NewThreadView({ api }: { api: ApiClient }) {
             onNew={pickNewWorkspace}
           />
         </div>
+        <RecentThreads api={api} />
       </div>
     </div>
   );

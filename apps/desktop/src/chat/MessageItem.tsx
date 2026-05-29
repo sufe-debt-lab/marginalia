@@ -5,7 +5,15 @@ import type { Message } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { markdownComponents } from "@/lib/markdown.js";
 
-function MessageItemImpl({ message }: { message: Message }) {
+function MessageItemImpl({
+  message,
+  model,
+  streaming
+}: {
+  message: Message;
+  model?: string;
+  streaming?: boolean;
+}) {
   const { t } = useTranslation();
   if (message.role === "user") {
     return (
@@ -20,11 +28,13 @@ function MessageItemImpl({ message }: { message: Message }) {
     <div className="flex flex-col gap-1.5">
       <span className="text-[11px] font-semibold uppercase tracking-wide text-text-faint">
         {t("chat.assistant")}
+        {model && <span className="lowercase"> · {model}</span>}
       </span>
       <div className="text-sm leading-relaxed">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {message.content}
         </ReactMarkdown>
+        {streaming && <span className="caret" aria-hidden />}
       </div>
     </div>
   );

@@ -12,6 +12,8 @@ export type Session = {
   title: string;
   origin: string;
   model?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
 };
 
 export type Message = {
@@ -36,7 +38,13 @@ export type RunEvent = {
 };
 
 export type FileEntry = { path: string; name: string; kind: "file" };
-export type DocumentContent = { path: string; mime: string; text: string; pages?: number; truncated: boolean };
+export type DocumentContent = {
+  path: string;
+  mime: string;
+  text: string;
+  pages?: number;
+  truncated: boolean;
+};
 
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
@@ -76,12 +84,19 @@ export class ApiClient {
     return this.request<Provider[]>("/providers");
   }
 
-  createProvider(input: { name: string; apiKey: string; baseUrl?: string | null; defaultModel: string }) {
+  createProvider(input: {
+    name: string;
+    apiKey: string;
+    baseUrl?: string | null;
+    defaultModel: string;
+  }) {
     return this.request<Provider>("/providers", { method: "POST", body: JSON.stringify(input) });
   }
 
   testProvider(providerId: string) {
-    return this.request<{ ok: boolean; message: string }>(`/providers/${providerId}/test`, { method: "POST" });
+    return this.request<{ ok: boolean; message: string }>(`/providers/${providerId}/test`, {
+      method: "POST"
+    });
   }
 
   listFiles(workspaceId: string) {
@@ -89,7 +104,9 @@ export class ApiClient {
   }
 
   readDocument(workspaceId: string, path: string) {
-    return this.request<DocumentContent>(`/workspaces/${workspaceId}/files/content?path=${encodeURIComponent(path)}`);
+    return this.request<DocumentContent>(
+      `/workspaces/${workspaceId}/files/content?path=${encodeURIComponent(path)}`
+    );
   }
 
   searchFiles(workspaceId: string, q: string) {
@@ -99,7 +116,10 @@ export class ApiClient {
   }
 
   updateSession(sessionId: string, input: { model: string | null }) {
-    return this.request<Session>(`/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(input) });
+    return this.request<Session>(`/sessions/${sessionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
   }
 
   async runChat(
@@ -119,7 +139,9 @@ export class ApiClient {
       body: JSON.stringify(input)
     });
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
+      const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
+        error?: string;
+      };
       throw new Error(error.error ?? response.statusText);
     }
     return streamSse<RunEvent>(response.body);
@@ -128,7 +150,9 @@ export class ApiClient {
   async deleteWorkspace(id: string): Promise<void> {
     const response = await fetch(`${this.baseUrl}/workspaces/${id}`, { method: "DELETE" });
     if (response.status === 204) return;
-    const error = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
+    const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
+      error?: string;
+    };
     throw new Error(error.error ?? response.statusText);
   }
 
@@ -149,7 +173,9 @@ export class ApiClient {
       headers: { "content-type": "application/json", ...init.headers }
     });
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({ error: response.statusText }))) as { error?: string };
+      const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
+        error?: string;
+      };
       throw new Error(error.error ?? response.statusText);
     }
     return (await response.json()) as T;

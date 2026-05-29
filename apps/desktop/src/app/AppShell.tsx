@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Session, Workspace } from "@/api/client.js";
+import type { Session } from "@/api/client.js";
 import { ResizeHandle } from "@/components/ResizeHandle.js";
 import { useApi } from "@/hooks/useApi.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 import { Sidebar } from "@/sidebar/Sidebar.js";
 import { useAppStore } from "@/store/app-store.js";
 import { ChatView } from "@/chat/ChatView.js";
@@ -12,6 +13,7 @@ import { Topbar } from "./Topbar.js";
 
 export function AppShell({ serverUrl }: { serverUrl: string }) {
   const api = useApi(serverUrl);
+  const { t } = useTranslation();
   const view = useAppStore((s) => s.view);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
@@ -21,7 +23,6 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const setLeftWidth = useAppStore((s) => s.setLeftSidebarWidth);
   const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
-  const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
 
   useEffect(() => {
     if (!activeSessionId || !activeWorkspaceId) {
@@ -40,29 +41,12 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
     };
   }, [api, activeSessionId, activeWorkspaceId]);
 
-  useEffect(() => {
-    if (!activeWorkspaceId) {
-      setActiveWorkspace(null);
-      return;
-    }
-    let alive = true;
-    api
-      .listWorkspaces()
-      .then((list) => {
-        if (alive) setActiveWorkspace(list.find((w) => w.id === activeWorkspaceId) ?? null);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [api, activeWorkspaceId]);
-
   const title =
-    view === "chat" && activeSession
-      ? activeSession.title || "(untitled)"
-      : activeWorkspace
-        ? activeWorkspace.name
-        : "";
+    view === "settings"
+      ? t("settings.title")
+      : view === "chat"
+        ? activeSession?.title || t("common.untitled")
+        : t("newThread.tabTitle");
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -75,11 +59,7 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
             className="pane-width-transition relative min-h-0 shrink-0 overflow-hidden"
           >
             <Sidebar api={api} />
-            <ResizeHandle
-              side="right"
-              getWidth={() => leftWidth}
-              onWidth={setLeftWidth}
-            />
+            <ResizeHandle side="right" getWidth={() => leftWidth} onWidth={setLeftWidth} />
           </aside>
         )}
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
