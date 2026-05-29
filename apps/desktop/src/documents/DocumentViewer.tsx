@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { DocumentContent } from "@/api/client.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 import { highlightCode } from "@/lib/highlight.js";
 import { markdownComponents } from "@/lib/markdown.js";
 
@@ -17,18 +18,19 @@ interface Props {
 }
 
 export function DocumentViewer({ path, content, loading, error }: Props) {
+  const { t } = useTranslation();
   if (!path) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground">Open file</p>
-        <p>Select a file from the workspace tree</p>
+        <p className="font-medium text-foreground">{t("docPanel.openFile")}</p>
+        <p>{t("docPanel.selectFile")}</p>
       </div>
     );
   }
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        {t("docPanel.loading")}
       </div>
     );
   }
@@ -48,7 +50,7 @@ export function DocumentViewer({ path, content, loading, error }: Props) {
     <div className="flex h-full flex-col overflow-auto">
       {content.truncated && (
         <p className="border-b border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
-          File truncated for preview.
+          {t("docPanel.truncated")}
         </p>
       )}
       <div className="flex-1 p-3 text-sm">

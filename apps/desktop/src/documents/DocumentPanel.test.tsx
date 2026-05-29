@@ -36,16 +36,16 @@ describe("DocumentPanel", () => {
     }));
   });
 
-  it("shows empty state when no tabs are open", () => {
+  it("shows the file tree by default when no tabs are open", async () => {
     render(<DocumentPanel api={fakeApi()} workspaceId="w1" />);
-    expect(screen.getByText(/open file/i)).toBeInTheDocument();
-  });
-
-  it("opening tree drawer reveals fallback list and clicking a file opens a tab", async () => {
-    render(<DocumentPanel api={fakeApi()} workspaceId="w1" />);
-    await userEvent.click(screen.getByRole("button", { name: /toggle file tree/i }));
     const fallback = await screen.findByTestId("doc-tree-fallback");
     expect(fallback).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open README.md/i })).toBeInTheDocument();
+  });
+
+  it("clicking a file in the tree opens a tab", async () => {
+    render(<DocumentPanel api={fakeApi()} workspaceId="w1" />);
+    await screen.findByTestId("doc-tree-fallback");
     await userEvent.click(screen.getByRole("button", { name: /open README.md/i }));
     // tab 出现（用 basename "README.md"）
     await waitFor(() => expect(screen.getAllByText("README.md").length).toBeGreaterThan(0));
@@ -53,7 +53,6 @@ describe("DocumentPanel", () => {
 
   it("attach to chat adds active tab path to context", async () => {
     render(<DocumentPanel api={fakeApi()} workspaceId="w1" />);
-    await userEvent.click(screen.getByRole("button", { name: /toggle file tree/i }));
     await screen.findByTestId("doc-tree-fallback");
     await userEvent.click(screen.getByRole("button", { name: /open README.md/i }));
     await waitFor(() => screen.getByRole("button", { name: /attach to chat/i }));

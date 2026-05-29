@@ -77,6 +77,20 @@ export const en = {
     providerAdded: "Provider added",
     providerAddFailed: "Failed to add provider"
   },
+  docPanel: {
+    files: "Files",
+    filterFiles: "Filter files…",
+    filesSuffix: "files · local index only",
+    toggleTree: "Toggle file tree",
+    addTab: "Add tab",
+    close: "Close",
+    openFile: "Open file",
+    selectFile: "Select a file from the workspace tree",
+    loading: "Loading…",
+    truncated: "File truncated for preview.",
+    attachToChat: "Attach to chat",
+    edit: "Edit"
+  },
   placeholders: {
     comingNextPr: "Coming next PR",
     documentPanelComing: "Document panel coming in PR 4",
@@ -173,6 +187,20 @@ export const zh = {
     defaultBadge: "默认",
     providerAdded: "服务商已添加",
     providerAddFailed: "添加服务商失败"
+  },
+  docPanel: {
+    files: "文件",
+    filterFiles: "过滤文件…",
+    filesSuffix: "个文件 · 仅本地索引",
+    toggleTree: "切换文件树",
+    addTab: "添加标签",
+    close: "关闭",
+    openFile: "打开文件",
+    selectFile: "从工作区文件树选择文件",
+    loading: "加载中…",
+    truncated: "文件已截断预览。",
+    attachToChat: "附加到对话",
+    edit: "编辑"
   },
   placeholders: {
     comingNextPr: "下一 PR 实现",

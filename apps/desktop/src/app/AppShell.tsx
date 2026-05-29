@@ -94,7 +94,7 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
         {showRight && activeWorkspaceId && (
           <aside
             aria-label="Document panel"
-            className="min-h-0 w-[320px] shrink-0 overflow-hidden border-l border-border"
+            className="min-h-0 w-[388px] shrink-0 overflow-hidden border-l border-border-soft"
           >
             <DocumentPanel api={api} workspaceId={activeWorkspaceId} />
           </aside>
