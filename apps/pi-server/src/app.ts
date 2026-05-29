@@ -4,11 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { homedir } from "node:os";
 import path from "node:path";
 import type Database from "better-sqlite3";
-import {
-  AuthStorage,
-  ModelRegistry,
-  createAgentSession
-} from "@earendil-works/pi-coding-agent";
+import { AuthStorage, ModelRegistry, createAgentSession } from "@earendil-works/pi-coding-agent";
 import { getModel } from "@earendil-works/pi-ai";
 import type { AgentClient } from "./agent/agent-client.js";
 import { AgentSessionRegistry } from "./agent/agent-session-registry.js";
@@ -63,7 +59,8 @@ export function createApp(options: AppOptions = {}) {
   const registry = new AgentSessionRegistry({
     authStorage,
     modelRegistry,
-    createSession: (config) => createAgentSession(config as Parameters<typeof createAgentSession>[0])
+    createSession: (config) =>
+      createAgentSession(config as Parameters<typeof createAgentSession>[0])
   });
   const agentClient =
     options.agentClient ??
@@ -74,7 +71,8 @@ export function createApp(options: AppOptions = {}) {
         return null;
       }
     });
-  const availabilityChecker = options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
+  const availabilityChecker =
+    options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
 
   migrate(db);
   syncProviderKeys(db, authStorage);
@@ -108,7 +106,8 @@ export function createApp(options: AppOptions = {}) {
     try {
       return c.json(await documentReader(workspace.rootDir, c.req.query("path") ?? ""));
     } catch (error) {
-      if ((error as Error).message === "Path escapes workspace") return c.json({ error: "Path escapes workspace" }, 403);
+      if ((error as Error).message === "Path escapes workspace")
+        return c.json({ error: "Path escapes workspace" }, 403);
       return c.json({ error: "file not found" }, 404);
     }
   });
@@ -141,11 +140,19 @@ export function createApp(options: AppOptions = {}) {
   app.post("/quick-chat", (c) => {
     const workspace = getRecentWorkspace(db);
     if (!workspace) return c.json({ error: "workspace required" }, 409);
-    return c.json(createSession(db, { workspaceId: workspace.id, title: "Quick chat", origin: "quick_chat" }), 201);
+    return c.json(
+      createSession(db, { workspaceId: workspace.id, title: "Quick chat", origin: "quick_chat" }),
+      201
+    );
   });
   app.get("/providers", (c) => c.json(listProviders(db)));
   app.post("/providers", async (c) => {
-    const body = await c.req.json<{ name: string; apiKey: string; baseUrl?: string | null; defaultModel: string }>();
+    const body = await c.req.json<{
+      name: string;
+      apiKey: string;
+      baseUrl?: string | null;
+      defaultModel: string;
+    }>();
     const provider = createProvider(db, body);
     const piId = piProviderId(provider.name);
     if (piId && body.apiKey) authStorage.setRuntimeApiKey(piId, body.apiKey);
@@ -221,6 +228,20 @@ export function createApp(options: AppOptions = {}) {
               assistantText += delta;
               await emit("assistant_delta", { text: delta });
             }
+          }
+          if (e?.type === "tool_execution_start") {
+            await emit("tool_started", {
+              toolCallId: e.toolCallId,
+              toolName: e.toolName,
+              args: e.args ?? null
+            });
+          }
+          if (e?.type === "tool_execution_end") {
+            await emit(e.isError ? "tool_failed" : "tool_completed", {
+              toolCallId: e.toolCallId,
+              toolName: e.toolName,
+              isError: Boolean(e.isError)
+            });
           }
           if (e?.type === "message_end") {
             const stop = e.message?.stopReason;

@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 import type { Message } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
+import type { ToolCall } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { MessageItem } from "./MessageItem.js";
+import { ToolCard } from "./ToolCard.js";
 
 interface Props {
   messages: readonly Message[];
@@ -11,9 +13,10 @@ interface Props {
   onRetry: () => void;
   model?: string;
   streaming?: boolean;
+  toolCalls?: readonly ToolCall[];
 }
 
-export function MessageStream({ messages, error, onRetry, model, streaming }: Props) {
+export function MessageStream({ messages, error, onRetry, model, streaming, toolCalls }: Props) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -43,6 +46,13 @@ export function MessageStream({ messages, error, onRetry, model, streaming }: Pr
           streaming={Boolean(streaming) && i === lastIndex && m.role === "assistant"}
         />
       ))}
+      {toolCalls && toolCalls.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {toolCalls.map((tc) => (
+            <ToolCard key={tc.id} tool={tc} />
+          ))}
+        </div>
+      )}
       {error && (
         <div className="flex items-center gap-2.5 rounded-lg border border-danger bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
           <AlertTriangle className="h-4 w-4 shrink-0" />

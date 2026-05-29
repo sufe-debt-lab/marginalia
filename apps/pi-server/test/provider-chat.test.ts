@@ -39,7 +39,10 @@ describe("provider chat migrations", () => {
     expect(names).toContain("env_vars");
     expect(names).toContain("runs");
 
-    const sessionColumns = db.prepare("pragma table_info(sessions)").all().map((row: any) => row.name);
+    const sessionColumns = db
+      .prepare("pragma table_info(sessions)")
+      .all()
+      .map((row: any) => row.name);
     expect(sessionColumns).toContain("model");
     expect(sessionColumns).toContain("agent_session_path");
   });
@@ -48,7 +51,11 @@ describe("provider chat migrations", () => {
     const db = memoryDb();
     migrate(db);
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs" });
-    const session = createSession(db, { workspaceId: workspace.id, title: "Chat", origin: "desktop" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop"
+    });
 
     const app = createApp({ db });
     const response = await app.request(`/sessions/${session.id}`, {
@@ -104,9 +111,18 @@ describe("chat runs", () => {
     const fake = new FakeAgentClient();
     fake.enqueueEvents([
       { type: "agent_start" } as unknown as AgentSessionEvent,
-      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hel" } } as unknown as AgentSessionEvent,
-      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "lo" } } as unknown as AgentSessionEvent,
-      { type: "message_end", message: { stopReason: "end", content: "hello" } } as unknown as AgentSessionEvent
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "hel" }
+      } as unknown as AgentSessionEvent,
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "lo" }
+      } as unknown as AgentSessionEvent,
+      {
+        type: "message_end",
+        message: { stopReason: "end", content: "hello" }
+      } as unknown as AgentSessionEvent
     ]);
 
     const app = createApp({ db, agentClient: fake });
@@ -134,12 +150,69 @@ describe("chat runs", () => {
     expect(text).toContain('"type":"run_completed"');
   });
 
+  it("forwards pi tool-execution events as tool_started / tool_completed SSE", async () => {
+    const db = memoryDb();
+    migrate(db);
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-tool" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop",
+      model: "MiniMax-M2.7"
+    });
+
+    const fake = new FakeAgentClient();
+    fake.enqueueEvents([
+      {
+        type: "tool_execution_start",
+        toolCallId: "t1",
+        toolName: "read",
+        args: { path: "docs/spec.md" }
+      } as unknown as AgentSessionEvent,
+      {
+        type: "tool_execution_end",
+        toolCallId: "t1",
+        toolName: "read",
+        result: {},
+        isError: false
+      } as unknown as AgentSessionEvent,
+      {
+        type: "message_end",
+        message: { stopReason: "end", content: "done" }
+      } as unknown as AgentSessionEvent
+    ]);
+
+    const app = createApp({ db, agentClient: fake });
+    const provider = await (
+      await app.request("/providers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
+      })
+    ).json();
+
+    const response = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerId: provider.id, message: "read it" })
+    });
+    const text = await response.text();
+    expect(text).toContain('"type":"tool_started"');
+    expect(text).toContain('"toolName":"read"');
+    expect(text).toContain('"path":"docs/spec.md"');
+    expect(text).toContain('"type":"tool_completed"');
+  });
+
   it("passes pi provider id and model into AgentClient.run", async () => {
     let seen: any = null;
     const db = memoryDb();
     migrate(db);
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-pi" });
-    const session = createSession(db, { workspaceId: workspace.id, title: "Chat", origin: "desktop" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop"
+    });
 
     const stubClient = {
       async run(input: any) {
@@ -180,13 +253,23 @@ describe("chat runs", () => {
     const db = memoryDb();
     migrate(db);
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-msg" });
-    const session = createSession(db, { workspaceId: workspace.id, title: "Chat", origin: "desktop" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop"
+    });
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-msg-"));
     const sessionFile = path.join(tmpDir, "s.jsonl");
     fs.writeFileSync(
       sessionFile,
       [
-        { type: "session", version: 3, id: "abc", cwd: "/tmp", timestamp: "2026-05-26T00:00:00.000Z" },
+        {
+          type: "session",
+          version: 3,
+          id: "abc",
+          cwd: "/tmp",
+          timestamp: "2026-05-26T00:00:00.000Z"
+        },
         {
           type: "message",
           id: "u1",
@@ -209,7 +292,9 @@ describe("chat runs", () => {
             timestamp: 1748390402000
           }
         }
-      ].map((line) => JSON.stringify(line)).join("\n") + "\n"
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n") + "\n"
     );
     setAgentSessionPath(db, session.id, sessionFile);
 

@@ -1,6 +1,21 @@
 import { useCallback, useRef, useState } from "react";
 import type { ApiClient, Message } from "@/api/client.js";
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  subtitle: string;
+  status: "running" | "done" | "failed";
+}
+
+/** Pull a compact, human-readable argument out of a pi tool call's args. */
+function toolSubtitle(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const a = args as Record<string, unknown>;
+  const candidate = a.path ?? a.file_path ?? a.filePath ?? a.command ?? a.pattern ?? a.query;
+  return typeof candidate === "string" ? candidate : "";
+}
+
 interface Options {
   api: ApiClient;
   sessionId: string | null;
@@ -17,6 +32,7 @@ interface Options {
 
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const bufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
 
@@ -38,6 +54,7 @@ export function useStreamingChat(opts: Options) {
     async (text: string, contextFiles: string[]) => {
       if (!opts.sessionId || !text.trim()) return;
       setSending(true);
+      setToolCalls([]);
       const savedUser = await opts.api.createMessage(opts.sessionId, {
         role: "user",
         content: text
@@ -65,6 +82,21 @@ export function useStreamingChat(opts: Options) {
               schedule();
             }
           }
+          if (event.type === "tool_started") {
+            const p = event.payload as { toolCallId?: string; toolName?: string; args?: unknown };
+            const id = p.toolCallId ?? `tool-${Date.now()}`;
+            setToolCalls((prev) => [
+              ...prev,
+              { id, name: p.toolName ?? "tool", subtitle: toolSubtitle(p.args), status: "running" }
+            ]);
+          }
+          if (event.type === "tool_completed" || event.type === "tool_failed") {
+            const p = event.payload as { toolCallId?: string };
+            const status = event.type === "tool_failed" ? "failed" : "done";
+            setToolCalls((prev) =>
+              prev.map((tc) => (tc.id === p.toolCallId ? { ...tc, status } : tc))
+            );
+          }
           if (event.type === "run_failed") {
             const errMsg = (event.payload as { error?: string } | undefined)?.error ?? "run failed";
             throw new Error(errMsg);
@@ -82,5 +114,5 @@ export function useStreamingChat(opts: Options) {
     [opts]
   );
 
-  return { send, sending };
+  return { send, sending, toolCalls };
 }
