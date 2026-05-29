@@ -3,11 +3,13 @@ import type { ApiClient } from "@/api/client.js";
 import { useMessages } from "@/hooks/useMessages.js";
 import { useProviders } from "@/hooks/useProviders.js";
 import { useStreamingChat } from "@/hooks/useStreamingChat.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
 import { Composer } from "./Composer/Composer.js";
 import { MessageStream } from "./MessageStream.js";
 
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
+  const { t } = useTranslation();
   const messages = useMessages(api, sessionId);
   const providers = useProviders(api);
   const pendingPrompt = useAppStore((s) => s.pendingPrompt);
@@ -39,7 +41,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
 
   function submit(text: string) {
     if (!actualProviderId) {
-      setError("No provider configured");
+      setError(t("chat.noProvider"));
       return;
     }
     setError(null);
@@ -87,7 +89,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
             onRemoveContextFile={removeContext}
             sending={stream.sending}
             onSubmit={submit}
-            placeholder="Type / for commands, @ for files…"
+            placeholder={t("composer.chatPlaceholder")}
           />
         </div>
       </div>

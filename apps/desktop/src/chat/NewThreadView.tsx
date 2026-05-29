@@ -3,8 +3,8 @@ import { toast } from "sonner";
 import type { ApiClient } from "@/api/client.js";
 import { useProviders } from "@/hooks/useProviders.js";
 import { useWorkspaces } from "@/hooks/useWorkspaces.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
-import { BranchChip } from "./Composer/BranchChip.js";
 import { Composer } from "./Composer/Composer.js";
 import { WorkspaceChip } from "./Composer/WorkspaceChip.js";
 
@@ -14,6 +14,7 @@ function basename(p: string): string {
 }
 
 export function NewThreadView({ api }: { api: ApiClient }) {
+  const { t } = useTranslation();
   const workspaces = useWorkspaces(api);
   const providers = useProviders(api);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
@@ -37,9 +38,9 @@ export function NewThreadView({ api }: { api: ApiClient }) {
     try {
       const created = await workspaces.create({ name: basename(picked), rootDir: picked });
       setActiveWorkspace(created.id);
-      toast.success(`Workspace "${created.name}" created`);
+      toast.success(`${t("toast.workspaceCreated")}: ${created.name}`);
     } catch (err) {
-      toast.error(`Failed: ${(err as Error).message}`);
+      toast.error(`${t("toast.createWorkspaceFailed")}: ${(err as Error).message}`);
     }
   }
 
@@ -62,9 +63,9 @@ export function NewThreadView({ api }: { api: ApiClient }) {
 
   return (
     <div className="flex h-full flex-col overflow-auto">
-      <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col justify-center px-4 py-12">
-        <h1 className="mb-6 text-center text-2xl font-medium text-foreground">
-          What should we build?
+      <div className="mx-auto flex w-full max-w-[660px] flex-1 flex-col justify-center px-4 py-12">
+        <h1 className="h-display mb-8 text-center text-[30px] font-normal tracking-tight">
+          {t("newThread.title")}
         </h1>
         <Composer
           api={api}
@@ -81,17 +82,16 @@ export function NewThreadView({ api }: { api: ApiClient }) {
           onRemoveContextFile={removeContext}
           sending={!canSend}
           onSubmit={submit}
-          placeholder="Do anything…"
+          placeholder={t("newThread.placeholder")}
           autoFocus
         />
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-3.5 flex flex-wrap items-center justify-start gap-2">
           <WorkspaceChip
             workspaces={workspaces.data}
             activeId={activeWorkspaceId}
             onSelect={setActiveWorkspace}
             onNew={pickNewWorkspace}
           />
-          {activeWorkspaceId && <BranchChip api={api} workspaceId={activeWorkspaceId} />}
         </div>
       </div>
     </div>

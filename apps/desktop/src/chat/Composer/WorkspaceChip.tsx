@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 
 interface Props {
   workspaces: readonly Workspace[];
@@ -17,14 +18,15 @@ interface Props {
 }
 
 export function WorkspaceChip({ workspaces, activeId, onSelect, onNew }: Props) {
+  const { t } = useTranslation();
   const active = workspaces.find((w) => w.id === activeId);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5 text-xs font-normal">
+        <Button variant="outline" size="sm" className="gap-1.5 rounded-full text-xs font-normal">
           <Folder className="h-3 w-3" />
-          {active ? active.name : "Select workspace…"}
-          <ChevronDown className="h-3 w-3" />
+          {active ? active.name : t("common.selectWorkspace")}
+          <ChevronDown className="h-3 w-3 text-text-faint" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[200px]">
@@ -37,7 +39,7 @@ export function WorkspaceChip({ workspaces, activeId, onSelect, onNew }: Props) 
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onNew}>
           <Plus className="mr-2 h-3 w-3" />
-          New workspace…
+          {t("common.newWorkspaceEllipsis")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,10 +1,11 @@
 import { useEffect } from "react";
+import { useTranslation } from "@/i18n/useTranslation.js";
 
-const COMMANDS: { name: string; help: string }[] = [
-  { name: "clear", help: "Clear current messages from view" },
-  { name: "help", help: "Show keyboard shortcuts" },
-  { name: "model", help: "Open the model picker" }
-];
+const COMMANDS = [
+  { name: "clear", helpKey: "composer.slashClear" },
+  { name: "help", helpKey: "composer.slashHelp" },
+  { name: "model", helpKey: "composer.slashModel" }
+] as const;
 
 interface Props {
   query: string;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function SlashMenu({ query, onSelect, onClose }: Props) {
+  const { t } = useTranslation();
   const filtered = COMMANDS.filter((c) => c.name.startsWith(query.toLowerCase()));
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export function SlashMenu({ query, onSelect, onClose }: Props) {
           onClick={() => onSelect(c.name)}
         >
           <span className="font-mono font-medium">/{c.name}</span>
-          <span className="text-muted-foreground">{c.help}</span>
+          <span className="text-muted-foreground">{t(c.helpKey)}</span>
         </button>
       ))}
     </div>

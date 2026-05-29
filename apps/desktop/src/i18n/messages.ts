@@ -16,7 +16,28 @@ export const en = {
     language: "Language",
     english: "English",
     chinese: "中文",
-    retry: "Retry"
+    retry: "Retry",
+    selectWorkspace: "Select workspace…",
+    newWorkspaceEllipsis: "New workspace…"
+  },
+  newThread: {
+    title: "What should we build?",
+    placeholder: "Describe a task, ask, or drop a file…"
+  },
+  composer: {
+    chatPlaceholder: "Type / for commands, @ for files…",
+    message: "Message",
+    send: "Send",
+    addAttachment: "Add attachment",
+    remove: "Remove",
+    slashClear: "Clear current messages from view",
+    slashHelp: "Show keyboard shortcuts",
+    slashModel: "Open the model picker"
+  },
+  chat: {
+    noMessages: "No messages yet",
+    assistant: "assistant",
+    noProvider: "No provider configured"
   },
   placeholders: {
     comingNextPr: "Coming next PR",
@@ -54,7 +75,28 @@ export const zh = {
     language: "语言",
     english: "English",
     chinese: "中文",
-    retry: "重试"
+    retry: "重试",
+    selectWorkspace: "选择工作区…",
+    newWorkspaceEllipsis: "新建工作区…"
+  },
+  newThread: {
+    title: "我们要做点什么？",
+    placeholder: "描述任务、提问，或拖入文件…"
+  },
+  composer: {
+    chatPlaceholder: "输入 / 调用技能、@ 引用文件…",
+    message: "消息",
+    send: "发送",
+    addAttachment: "添加附件",
+    remove: "移除",
+    slashClear: "清空当前消息视图",
+    slashHelp: "显示键盘快捷键",
+    slashModel: "打开模型选择器"
+  },
+  chat: {
+    noMessages: "还没有消息",
+    assistant: "assistant",
+    noProvider: "未配置服务商"
   },
   placeholders: {
     comingNextPr: "下一 PR 实现",
