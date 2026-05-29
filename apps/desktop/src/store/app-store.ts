@@ -3,6 +3,8 @@ import { createJSONStorage, persist, type StateStorage } from "zustand/middlewar
 
 export type AppView = "new-thread" | "chat" | "settings";
 export type Locale = "en" | "zh";
+export type AgentPermission = "full" | "ask" | "readonly";
+export type AgentReasoning = "low" | "medium" | "high" | "xhigh";
 
 interface AppState {
   view: AppView;
@@ -15,6 +17,11 @@ interface AppState {
   rightPanelCollapsed: boolean;
   pinnedWorkspaceIds: string[];
   leftSidebarWidth: number;
+  // Composer model + agent controls — shared across NewThread and Chat.
+  composerProviderId: string | null;
+  composerModel: string | null;
+  permission: AgentPermission;
+  reasoning: AgentReasoning;
 
   setView: (v: AppView) => void;
   setLocale: (v: Locale) => void;
@@ -29,6 +36,9 @@ interface AppState {
   togglePin: (id: string) => void;
   removePin: (id: string) => void;
   setLeftSidebarWidth: (px: number) => void;
+  setComposerModel: (providerId: string, model: string) => void;
+  setPermission: (p: AgentPermission) => void;
+  setReasoning: (r: AgentReasoning) => void;
 }
 
 const MIN_WIDTH = 180;
@@ -62,6 +72,10 @@ export const useAppStore = create<AppState>()(
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
       leftSidebarWidth: 240,
+      composerProviderId: null,
+      composerModel: null,
+      permission: "full",
+      reasoning: "medium",
 
       setView: (v) => set({ view: v }),
       setLocale: (v) => set({ locale: v }),
@@ -88,7 +102,11 @@ export const useAppStore = create<AppState>()(
           pinnedWorkspaceIds: s.pinnedWorkspaceIds.filter((x) => x !== id)
         })),
       setLeftSidebarWidth: (px) =>
-        set({ leftSidebarWidth: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(px))) })
+        set({ leftSidebarWidth: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(px))) }),
+      setComposerModel: (providerId, model) =>
+        set({ composerProviderId: providerId, composerModel: model }),
+      setPermission: (p) => set({ permission: p }),
+      setReasoning: (r) => set({ reasoning: r })
     }),
     {
       name: "my-cowork-app",
@@ -100,7 +118,11 @@ export const useAppStore = create<AppState>()(
         leftSidebarCollapsed: s.leftSidebarCollapsed,
         rightPanelCollapsed: s.rightPanelCollapsed,
         pinnedWorkspaceIds: s.pinnedWorkspaceIds,
-        leftSidebarWidth: s.leftSidebarWidth
+        leftSidebarWidth: s.leftSidebarWidth,
+        permission: s.permission,
+        reasoning: s.reasoning,
+        composerProviderId: s.composerProviderId,
+        composerModel: s.composerModel
       })
     }
   )

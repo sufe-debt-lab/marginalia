@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
 import { MentionMenu } from "./MentionMenu.js";
-import { ModelPicker } from "./ModelPicker.js";
+import { ModelPicker, type Reasoning } from "./ModelPicker.js";
+import { PermissionChip, type Permission } from "./PermissionChip.js";
 import { SlashMenu } from "./SlashMenu.js";
 
 interface Props {
@@ -22,6 +23,10 @@ interface Props {
   onSubmit: (text: string) => void;
   placeholder: string;
   autoFocus?: boolean;
+  permission?: Permission;
+  reasoning?: Reasoning;
+  onPermissionChange?: (p: Permission) => void;
+  onReasoningChange?: (r: Reasoning) => void;
 }
 
 /** ext → glyph + colour swatch (mirrors the design's AttachmentCard kindMap). */
@@ -172,11 +177,17 @@ export function Composer(props: Props) {
             >
               <Plus className="h-4 w-4" />
             </Button>
+            <PermissionChip
+              value={props.permission ?? "full"}
+              onChange={props.onPermissionChange ?? (() => {})}
+            />
             <ModelPicker
               providers={props.providers}
               providerId={props.providerId}
               model={props.model}
               onChange={props.onModelChange}
+              reasoning={props.reasoning ?? "medium"}
+              onReasoningChange={props.onReasoningChange ?? (() => {})}
             />
           </div>
           <Button

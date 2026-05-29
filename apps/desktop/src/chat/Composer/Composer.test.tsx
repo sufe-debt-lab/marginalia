@@ -85,6 +85,33 @@ describe("Composer", () => {
     expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
   });
 
+  it("changing permission calls onPermissionChange", async () => {
+    const onPermissionChange = vi.fn();
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        permission="full"
+        reasoning="medium"
+        onPermissionChange={onPermissionChange}
+        onReasoningChange={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    await userEvent.click(screen.getByRole("button", { name: /tool permission/i }));
+    await userEvent.click(await screen.findByText("Read-only"));
+    expect(onPermissionChange).toHaveBeenCalledWith("readonly");
+  });
+
   it("disables send while sending", () => {
     render(
       <Composer

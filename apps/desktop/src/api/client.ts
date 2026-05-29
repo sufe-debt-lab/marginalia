@@ -104,7 +104,14 @@ export class ApiClient {
 
   async runChat(
     sessionId: string,
-    input: { providerId: string; model?: string; message: string; contextFiles?: string[] }
+    input: {
+      providerId: string;
+      model?: string;
+      message: string;
+      contextFiles?: string[];
+      permission?: "full" | "ask" | "readonly";
+      reasoning?: "low" | "medium" | "high" | "xhigh";
+    }
   ): Promise<AsyncIterable<RunEvent>> {
     const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/runs`, {
       method: "POST",

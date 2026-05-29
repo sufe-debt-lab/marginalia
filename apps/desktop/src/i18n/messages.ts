@@ -32,7 +32,11 @@ export const en = {
     remove: "Remove",
     slashClear: "Clear current messages from view",
     slashHelp: "Show keyboard shortcuts",
-    slashModel: "Open the model picker"
+    slashModel: "Open the model picker",
+    permission: "Tool permission",
+    permFull: "Full access",
+    permAsk: "Ask each time",
+    permReadonly: "Read-only"
   },
   chat: {
     noMessages: "No messages yet",
@@ -143,7 +147,11 @@ export const zh = {
     remove: "移除",
     slashClear: "清空当前消息视图",
     slashHelp: "显示键盘快捷键",
-    slashModel: "打开模型选择器"
+    slashModel: "打开模型选择器",
+    permission: "工具权限",
+    permFull: "完全访问",
+    permAsk: "每次询问",
+    permReadonly: "只读"
   },
   chat: {
     noMessages: "还没有消息",

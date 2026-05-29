@@ -30,6 +30,24 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().locale).toBe("zh");
   });
 
+  it("defaults permission=full and reasoning=medium", () => {
+    const s = useAppStore.getState();
+    expect(s.permission).toBe("full");
+    expect(s.reasoning).toBe("medium");
+  });
+
+  it("sets composer model, permission and reasoning", () => {
+    const s = useAppStore.getState();
+    s.setComposerModel("p1", "gpt-5.1");
+    s.setPermission("readonly");
+    s.setReasoning("high");
+    const next = useAppStore.getState();
+    expect(next.composerProviderId).toBe("p1");
+    expect(next.composerModel).toBe("gpt-5.1");
+    expect(next.permission).toBe("readonly");
+    expect(next.reasoning).toBe("high");
+  });
+
   it("switches view", () => {
     useAppStore.getState().setView("chat");
     expect(useAppStore.getState().view).toBe("chat");

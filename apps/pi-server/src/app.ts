@@ -169,7 +169,14 @@ export function createApp(options: AppOptions = {}) {
     const workspace = getWorkspace(db, session.workspaceId);
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
 
-    const body = await c.req.json<{ providerId: string; message: string; model?: string; contextFiles?: string[] }>();
+    const body = await c.req.json<{
+      providerId: string;
+      message: string;
+      model?: string;
+      contextFiles?: string[];
+      permission?: "full" | "ask" | "readonly";
+      reasoning?: "low" | "medium" | "high" | "xhigh" | null;
+    }>();
     const provider = getProvider(db, body.providerId);
     if (!provider) return c.json({ error: "provider not found" }, 404);
 
@@ -199,7 +206,9 @@ export function createApp(options: AppOptions = {}) {
           piProviderId: piProviderId(provider.name),
           modelId,
           message: body.message,
-          agentSessionPath: session.agentSessionPath ?? null
+          agentSessionPath: session.agentSessionPath ?? null,
+          permission: body.permission,
+          reasoning: body.reasoning ?? null
         });
         if (result.sessionFile) setAgentSessionPath(db, sessionId, result.sessionFile);
 

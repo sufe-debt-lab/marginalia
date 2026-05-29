@@ -19,6 +19,11 @@ export type {
   SessionManager
 };
 
+/** Tool permission level chosen in the composer. */
+export type AgentPermission = "full" | "ask" | "readonly";
+/** Reasoning / thinking budget chosen in the composer (subset of pi ThinkingLevel). */
+export type AgentReasoning = "low" | "medium" | "high" | "xhigh";
+
 /** Input for one chat turn from the UI. */
 export type AgentRunInput = {
   /** pi-server's own session id (UUID, distinct from pi sessionFile). */
@@ -33,6 +38,10 @@ export type AgentRunInput = {
   message: string;
   /** If we already have a pi session file for this UI session, open it; otherwise create. */
   agentSessionPath?: string | null;
+  /** Tool permission. "readonly" restricts to read-only tools; "full"/"ask" keep defaults. */
+  permission?: AgentPermission;
+  /** Reasoning budget; applied via session.setThinkingLevel and session config. */
+  reasoning?: AgentReasoning | null;
   /** Optional passthrough for pi's prompt options (e.g. images). */
   promptOptions?: PromptOptions;
 };

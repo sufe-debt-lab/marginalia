@@ -18,12 +18,17 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const contextFiles = useAppStore((s) => s.contextFiles);
   const addContext = useAppStore((s) => s.addContextFile);
   const removeContext = useAppStore((s) => s.removeContextFile);
+  const composerProviderId = useAppStore((s) => s.composerProviderId);
+  const composerModel = useAppStore((s) => s.composerModel);
+  const setComposerModel = useAppStore((s) => s.setComposerModel);
+  const permission = useAppStore((s) => s.permission);
+  const reasoning = useAppStore((s) => s.reasoning);
+  const setPermission = useAppStore((s) => s.setPermission);
+  const setReasoning = useAppStore((s) => s.setReasoning);
 
   const firstProvider = providers.data[0];
-  const [providerId, setProviderId] = useState<string>("");
-  const [model, setModel] = useState<string>("");
-  const actualProviderId = providerId || firstProvider?.id || "";
-  const actualModel = model || firstProvider?.defaultModel || "";
+  const actualProviderId = composerProviderId || firstProvider?.id || "";
+  const actualModel = composerModel || firstProvider?.defaultModel || "";
   const [error, setError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<string | null>(null);
 
@@ -32,6 +37,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     sessionId,
     providerId: actualProviderId,
     model: actualModel,
+    permission,
+    reasoning,
     onUserAppend: messages.append,
     onAssistantStart: messages.append,
     onAssistantDelta: messages.appendToLast,
@@ -80,13 +87,14 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
             providers={providers.data}
             providerId={actualProviderId}
             model={actualModel}
-            onModelChange={({ providerId: p, model: m }) => {
-              setProviderId(p);
-              setModel(m);
-            }}
+            onModelChange={({ providerId: p, model: m }) => setComposerModel(p, m)}
             contextFiles={contextFiles}
             onAddContextFile={addContext}
             onRemoveContextFile={removeContext}
+            permission={permission}
+            reasoning={reasoning}
+            onPermissionChange={setPermission}
+            onReasoningChange={setReasoning}
             sending={stream.sending}
             onSubmit={submit}
             placeholder={t("composer.chatPlaceholder")}

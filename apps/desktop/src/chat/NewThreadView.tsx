@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { toast } from "sonner";
 import type { ApiClient } from "@/api/client.js";
 import { useProviders } from "@/hooks/useProviders.js";
@@ -25,12 +24,17 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const contextFiles = useAppStore((s) => s.contextFiles);
   const addContext = useAppStore((s) => s.addContextFile);
   const removeContext = useAppStore((s) => s.removeContextFile);
+  const composerProviderId = useAppStore((s) => s.composerProviderId);
+  const composerModel = useAppStore((s) => s.composerModel);
+  const setComposerModel = useAppStore((s) => s.setComposerModel);
+  const permission = useAppStore((s) => s.permission);
+  const reasoning = useAppStore((s) => s.reasoning);
+  const setPermission = useAppStore((s) => s.setPermission);
+  const setReasoning = useAppStore((s) => s.setReasoning);
 
   const firstProvider = providers.data[0];
-  const [providerId, setProviderId] = useState<string>("");
-  const [model, setModel] = useState<string>("");
-  const actualProviderId = providerId || firstProvider?.id || "";
-  const actualModel = model || firstProvider?.defaultModel || "";
+  const actualProviderId = composerProviderId || firstProvider?.id || "";
+  const actualModel = composerModel || firstProvider?.defaultModel || "";
 
   async function pickNewWorkspace() {
     const picked = await window.marginalia?.pickWorkspaceDirectory?.();
@@ -73,13 +77,14 @@ export function NewThreadView({ api }: { api: ApiClient }) {
           providers={providers.data}
           providerId={actualProviderId}
           model={actualModel}
-          onModelChange={({ providerId: p, model: m }) => {
-            setProviderId(p);
-            setModel(m);
-          }}
+          onModelChange={({ providerId: p, model: m }) => setComposerModel(p, m)}
           contextFiles={contextFiles}
           onAddContextFile={addContext}
           onRemoveContextFile={removeContext}
+          permission={permission}
+          reasoning={reasoning}
+          onPermissionChange={setPermission}
+          onReasoningChange={setReasoning}
           sending={!canSend}
           onSubmit={submit}
           placeholder={t("newThread.placeholder")}

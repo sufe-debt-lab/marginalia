@@ -19,6 +19,7 @@ function fakeSession(events: AgentSessionEvent[]) {
         for (const fn of listeners) fn(event);
       }
     },
+    setThinkingLevel: vi.fn(),
     dispose: vi.fn()
   };
 }
@@ -55,6 +56,62 @@ describe("PiCodingAgentClient", () => {
     const collected: AgentSessionEvent[] = [];
     for await (const e of result.events) collected.push(e);
     expect(collected).toEqual(events);
+  });
+
+  it("maps readonly permission to a tool allowlist and applies reasoning", async () => {
+    const session = fakeSession([
+      { type: "message_end", message: { stopReason: "end" } } as unknown as AgentSessionEvent
+    ]);
+    const handle: SessionHandle = {
+      sessionId: "s1",
+      session: session as any,
+      sessionFile: "/tmp/fake.jsonl",
+      dispose: () => session.dispose()
+    };
+    const acquire = vi.fn(async () => handle);
+    const registry = { acquire } as unknown as AgentSessionRegistry;
+
+    const client = new PiCodingAgentClient(registry, () => ({ id: "MiniMax-M2.7" }));
+    const result = await client.run({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      piProviderId: "minimax-cn",
+      modelId: "MiniMax-M2.7",
+      message: "hello",
+      permission: "readonly",
+      reasoning: "high"
+    });
+    for await (const _e of result.events) void _e;
+
+    const config = acquire.mock.calls[0][0].config as Record<string, unknown>;
+    expect(config.tools).toEqual(["read", "grep", "find", "ls"]);
+    expect(config.thinkingLevel).toBe("high");
+    expect(session.setThinkingLevel).toHaveBeenCalledWith("high");
+  });
+
+  it("leaves tools unset for full permission", async () => {
+    const session = fakeSession([
+      { type: "message_end", message: { stopReason: "end" } } as unknown as AgentSessionEvent
+    ]);
+    const handle: SessionHandle = {
+      sessionId: "s1",
+      session: session as any,
+      sessionFile: "/tmp/fake.jsonl",
+      dispose: () => session.dispose()
+    };
+    const acquire = vi.fn(async () => handle);
+    const registry = { acquire } as unknown as AgentSessionRegistry;
+    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }));
+    await client.run({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      piProviderId: "minimax-cn",
+      modelId: "m",
+      message: "hello",
+      permission: "full"
+    });
+    const config = acquire.mock.calls[0][0].config as Record<string, unknown>;
+    expect(config.tools).toBeUndefined();
   });
 
   it("throws when the resolver cannot find the model", async () => {

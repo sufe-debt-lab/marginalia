@@ -6,6 +6,8 @@ interface Options {
   sessionId: string | null;
   providerId: string;
   model: string;
+  permission?: "full" | "ask" | "readonly";
+  reasoning?: "low" | "medium" | "high" | "xhigh";
   onUserAppend: (m: Message) => void;
   onAssistantStart: (m: Message) => void;
   onAssistantDelta: (delta: string) => void;
@@ -51,7 +53,9 @@ export function useStreamingChat(opts: Options) {
           providerId: opts.providerId,
           model: opts.model,
           message: text,
-          contextFiles
+          contextFiles,
+          permission: opts.permission,
+          reasoning: opts.reasoning
         });
         for await (const event of events) {
           if (event.type === "assistant_delta") {

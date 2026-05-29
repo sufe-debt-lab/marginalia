@@ -9,6 +9,9 @@ import type { AgentSessionRegistry } from "./agent-session-registry.js";
 /** Resolves a pi `Model` for the given provider/model id; returns null when unavailable. */
 export type ResolveModelFn = (piProviderId: string, modelId: string) => unknown | null;
 
+/** Read-only tool allowlist used when permission === "readonly". */
+const READONLY_TOOLS = ["read", "grep", "find", "ls"];
+
 export class PiCodingAgentClient implements AgentClient {
   constructor(
     private readonly registry: AgentSessionRegistry,
@@ -21,12 +24,25 @@ export class PiCodingAgentClient implements AgentClient {
       throw new Error(`unknown model ${input.piProviderId}/${input.modelId}`);
     }
 
+    // Map composer permission/reasoning onto createAgentSession options.
+    const config: Record<string, unknown> = { model };
+    if (input.permission === "readonly") config.tools = READONLY_TOOLS;
+    if (input.reasoning) config.thinkingLevel = input.reasoning;
+
     const handle = await this.registry.acquire({
       sessionId: input.sessionId,
       workspaceRoot: input.workspaceRoot,
       agentSessionPath: input.agentSessionPath ?? null,
-      config: { model }
+      config
     });
+
+    // Reasoning is dynamic: apply per run so cached sessions also honour it.
+    const session = handle.session as unknown as {
+      setThinkingLevel?: (level: string) => void;
+    };
+    if (input.reasoning && typeof session.setThinkingLevel === "function") {
+      session.setThinkingLevel(input.reasoning);
+    }
 
     const queue: AgentSessionEvent[] = [];
     const waiters: Array<(value: IteratorResult<AgentSessionEvent>) => void> = [];
