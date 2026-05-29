@@ -7,11 +7,19 @@
     "dev": "pnpm --filter @marginalia/pi-server build && concurrently -k -n server,desktop \"pnpm --filter @marginalia/pi-server build --watch\" \"pnpm --filter @marginalia/desktop dev\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint apps",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json}\""
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "concurrently": "^9.1.0",
-    "playwright": "^1.60.0"
+    "eslint": "^10.4.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "playwright": "^1.60.0",
+    "prettier": "^3.8.3",
+    "typescript-eslint": "^8.60.0"
   },
   "packageManager": "pnpm@9.15.4",
   "engines": {
