@@ -42,11 +42,40 @@ const KIND: Record<string, { glyph: string; bg: string; fg: string }> = {
 
 function kindFor(path: string) {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return { ext, ...(KIND[ext] ?? { glyph: (ext || "TXT").toUpperCase().slice(0, 3), bg: "var(--surface-3)", fg: "var(--text-muted)" }) };
+  return {
+    ext,
+    ...(KIND[ext] ?? {
+      glyph: (ext || "TXT").toUpperCase().slice(0, 3),
+      bg: "var(--surface-3)",
+      fg: "var(--text-muted)"
+    })
+  };
 }
 
 function basename(path: string): string {
   return path.split("/").pop() || path;
+}
+
+/** The `/` or `@` token immediately before the caret, anywhere in the text. */
+interface Trigger {
+  kind: "slash" | "mention";
+  query: string;
+  start: number; // index of the trigger symbol
+  end: number; // caret position
+}
+
+function detectTrigger(value: string, caret: number): Trigger | null {
+  const before = value.slice(0, caret);
+  const m = /(^|\s)([/@])(\S*)$/.exec(before);
+  if (!m) return null;
+  const symbol = m[2];
+  const query = m[3] ?? "";
+  return {
+    kind: symbol === "/" ? "slash" : "mention",
+    query,
+    start: caret - query.length - 1,
+    end: caret
+  };
 }
 
 export function Composer(props: Props) {
@@ -54,6 +83,7 @@ export function Composer(props: Props) {
   const [draft, setDraft] = useState("");
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [mentionSuggestions, setMentionSuggestions] = useState<{ path: string }[]>([]);
+  const [trigger, setTrigger] = useState<Trigger | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   function autoSize() {
@@ -63,16 +93,31 @@ export function Composer(props: Props) {
     el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
   }
 
-  async function handleChange(value: string) {
+  function closeMenus() {
+    setTrigger(null);
+    setSlashQuery(null);
+    setMentionSuggestions([]);
+  }
+
+  async function handleChange(value: string, caret: number) {
     setDraft(value);
     requestAnimationFrame(autoSize);
-    const slashMatch = /^\/(\w*)$/.exec(value);
-    setSlashQuery(slashMatch ? slashMatch[1] ?? "" : null);
-    if (value.endsWith("@") && props.workspaceId) {
-      const items = await props.api.searchFiles(props.workspaceId, "");
-      setMentionSuggestions(Array.isArray(items) ? items : []);
-    } else if (!value.includes("@")) {
+    const next = detectTrigger(value, caret);
+    setTrigger(next);
+    if (!next) {
+      setSlashQuery(null);
       setMentionSuggestions([]);
+      return;
+    }
+    if (next.kind === "slash") {
+      setSlashQuery(next.query);
+      setMentionSuggestions([]);
+    } else {
+      setSlashQuery(null);
+      if (props.workspaceId) {
+        const items = await props.api.searchFiles(props.workspaceId, next.query);
+        setMentionSuggestions(Array.isArray(items) ? items : []);
+      }
     }
   }
 
@@ -81,8 +126,7 @@ export function Composer(props: Props) {
     if (!text) return;
     props.onSubmit(text);
     setDraft("");
-    setSlashQuery(null);
-    setMentionSuggestions([]);
+    closeMenus();
     requestAnimationFrame(autoSize);
   }
 
@@ -93,17 +137,37 @@ export function Composer(props: Props) {
     }
   }
 
-  function pickSlash(_name: string) {
-    setDraft("");
-    setSlashQuery(null);
+  /** Replace the active trigger token (e.g. `@que`) with `replacement`. */
+  function replaceTriggerToken(replacement: string) {
+    if (!trigger) return;
+    setDraft((d) => d.slice(0, trigger.start) + replacement + d.slice(trigger.end));
+    requestAnimationFrame(autoSize);
+    textareaRef.current?.focus();
+  }
+
+  function pickSlash(name: string) {
+    // App slash-commands have no inline text payload yet → just dismiss the token.
+    replaceTriggerToken("");
+    void name;
+    closeMenus();
   }
 
   function pickMention(path: string) {
     props.onAddContextFile(path);
-    setDraft(draft.replace(/@$/, ""));
+    // Remove the "@query" token when the menu was opened by typing; the "+"
+    // picker has no trigger, so nothing to strip.
+    if (trigger) replaceTriggerToken("");
+    else textareaRef.current?.focus();
+    setTrigger(null);
     setMentionSuggestions([]);
-    requestAnimationFrame(autoSize);
-    textareaRef.current?.focus();
+  }
+
+  async function openAttachPicker() {
+    if (!props.workspaceId) return;
+    const items = await props.api.searchFiles(props.workspaceId, "");
+    setTrigger(null);
+    setSlashQuery(null);
+    setMentionSuggestions(Array.isArray(items) ? items : []);
   }
 
   return (
@@ -137,7 +201,9 @@ export function Composer(props: Props) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium">{basename(p)}</div>
-                    <div className="mt-0.5 text-[11px] text-text-muted">{(k.ext || "txt").toUpperCase()}</div>
+                    <div className="mt-0.5 text-[11px] text-text-muted">
+                      {(k.ext || "txt").toUpperCase()}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -158,7 +224,9 @@ export function Composer(props: Props) {
           autoFocus={props.autoFocus}
           aria-label={t("composer.message")}
           value={draft}
-          onChange={(e) => void handleChange(e.target.value)}
+          onChange={(e) =>
+            void handleChange(e.target.value, e.target.selectionStart ?? e.target.value.length)
+          }
           onKeyDown={onKey}
           placeholder={props.placeholder}
           rows={1}
@@ -174,6 +242,8 @@ export function Composer(props: Props) {
               size="icon"
               className="h-7 w-7 text-text-muted"
               aria-label={t("composer.addAttachment")}
+              disabled={!props.workspaceId}
+              onClick={() => void openAttachPicker()}
             >
               <Plus className="h-4 w-4" />
             </Button>

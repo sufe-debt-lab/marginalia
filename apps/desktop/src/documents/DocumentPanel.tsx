@@ -56,19 +56,23 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
         ) : (
           <>
             <DocumentTree paths={tree.paths} onSelect={openTab} />
-            <div data-testid="doc-tree-fallback" className="sr-only">
-              {tree.paths.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  aria-label={`Open ${p}`}
-                  onClick={() => openTab(p)}
-                  className="flex w-full truncate rounded px-2 py-1 text-left hover:bg-accent"
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
+            {/* Test-only seam: @pierre/trees renders to a canvas-like tree that
+                jsdom can't click. Gated to Vitest so it never ships in prod/dev DOM. */}
+            {import.meta.env.MODE === "test" && (
+              <div data-testid="doc-tree-fallback" className="sr-only">
+                {tree.paths.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    aria-label={`Open ${p}`}
+                    onClick={() => openTab(p)}
+                    className="flex w-full truncate rounded px-2 py-1 text-left hover:bg-accent"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

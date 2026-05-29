@@ -85,6 +85,71 @@ describe("Composer", () => {
     expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
   });
 
+  it("opens the slash menu when '/' is typed mid-sentence", async () => {
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "hello /mod");
+    expect(await screen.findByText("/model")).toBeInTheDocument();
+  });
+
+  it("@ mid-sentence adds a context file", async () => {
+    const onAdd = vi.fn();
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={onAdd}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "see @App");
+    await userEvent.click(await screen.findByText("src/App.tsx"));
+    expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
+  });
+
+  it("the + button opens an attachment picker", async () => {
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
+    expect(await screen.findByText("src/App.tsx")).toBeInTheDocument();
+  });
+
   it("changing permission calls onPermissionChange", async () => {
     const onPermissionChange = vi.fn();
     render(
