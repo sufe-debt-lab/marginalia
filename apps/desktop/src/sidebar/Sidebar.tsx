@@ -58,7 +58,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
   }
 
   return (
-    <aside className="flex h-full flex-col border-r border-border bg-muted/40">
+    <aside className="flex h-full flex-col border-r border-border-soft bg-background">
       <div className="space-y-1 p-2">
         <Button
           variant="ghost"
@@ -70,7 +70,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
           {t("common.newChat")}
         </Button>
       </div>
-      <div className="flex items-center justify-between px-3 pt-2 text-xs font-medium uppercase text-muted-foreground">
+      <div className="flex items-center justify-between px-3 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-text-faint">
         <span>{t("common.workspaces")}</span>
         <button
           type="button"
@@ -89,7 +89,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
           )}
           {pinnedList.length > 0 && (
             <>
-              <div className="px-1 pt-1 text-xs font-medium uppercase text-muted-foreground">
+              <div className="px-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-text-faint">
                 {t("common.pinned")}
               </div>
               {pinnedList.map((w) => (
@@ -103,7 +103,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
           ))}
         </div>
       </ScrollArea>
-      <div className="border-t border-border p-2">
+      <div className="border-t border-border-soft p-2">
         <Button
           variant="ghost"
           className="mb-1 w-full justify-start gap-2 rounded-md active:scale-[0.99]"
