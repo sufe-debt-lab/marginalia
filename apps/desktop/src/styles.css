@@ -2,28 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   pi-cowork desktop · design tokens
+   Locked aesthetic from the approved design: mono + serif + emerald.
+   - Neutral grey surfaces (mono theme), Source Serif 4 headings, Geist body,
+     Geist Mono accents, emerald brand colour.
+   - shadcn vendored components read the `H S L` triplet vars (--background …);
+     they are retuned here to the mono palette.
+   - Layout / hierarchy tokens (--surface-2, --text-muted, --brand, …) are full
+     colour values consumed directly by our own components.
+   ============================================================================ */
+
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 220 13% 13%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
+    /* ── shadcn HSL triplets (mono-tuned) ─────────────────────────────── */
+    --background: 0 0% 98%; /* #fafafa */
+    --foreground: 240 3% 10%; /* #19191a */
+    --muted: 0 0% 96%; /* #f6f6f6 */
+    --muted-foreground: 240 1% 44%; /* #6f6f70 */
     --popover: 0 0% 100%;
-    --popover-foreground: 220 13% 13%;
+    --popover-foreground: 240 3% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 220 13% 13%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --primary: 220 13% 13%;
+    --card-foreground: 240 3% 10%;
+    --border: 0 0% 91%; /* #e7e7e7 */
+    --input: 0 0% 91%;
+    --primary: 240 3% 10%; /* #19191a */
     --primary-foreground: 0 0% 98%;
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 13% 13%;
-    --accent: 220 14% 96%;
-    --accent-foreground: 220 13% 13%;
-    --destructive: 0 84% 60%;
+    --secondary: 0 0% 94%; /* #efefef */
+    --secondary-foreground: 240 3% 10%;
+    --accent: 0 0% 94%; /* hover surface (#efefef), NOT the brand colour */
+    --accent-foreground: 240 3% 10%;
+    --destructive: 8 64% 45%;
     --destructive-foreground: 0 0% 98%;
-    --ring: 220 13% 13%;
+    --ring: 240 3% 10%;
     --radius: 0.5rem;
+
+    /* ── design hierarchy tokens (raw values) ─────────────────────────── */
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --surface-2: #f6f6f6;
+    --surface-3: #efefef;
+    --border-color: #e7e7e7;
+    --border-soft: #f0f0f0;
+    --border-strong: #d6d6d6;
+
+    --text: #19191a;
+    --text-muted: #6f6f70;
+    --text-subtle: #9b9b9c;
+    --text-faint: #c2c2c3;
+
+    /* emerald brand (mono-theme emerald from the design's ACCENT_OPTIONS) */
+    --brand: oklch(0.5 0.13 158);
+    --brand-strong: oklch(0.45 0.14 158);
+    --brand-soft: color-mix(in oklab, oklch(0.5 0.13 158) 14%, #fafafa);
+    --brand-fg: #ffffff;
+
+    --code-bg: #f4f4f4;
+    --pill-bg: #efefef;
+    --hover: rgba(0, 0, 0, 0.04);
+    --select: #e6e6e6;
+
+    --ok: #2f7f4d;
+    --ok-soft: #e6f1ea;
+    --warn: oklch(0.65 0.12 75);
+    --warn-soft: oklch(0.95 0.05 75);
+    --danger: oklch(0.5 0.16 28);
+    --danger-soft: oklch(0.95 0.03 28);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.05);
+
+    --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+    --font-serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+    --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   }
 
   *,
@@ -35,9 +88,11 @@
   body {
     margin: 0;
     color: hsl(var(--foreground));
-    font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
     background: hsl(var(--background));
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   button,
@@ -66,9 +121,97 @@
   .pane-width-transition {
     transition: width 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
   }
+
+  /* Serif display headings */
+  .h-display {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    letter-spacing: -0.018em;
+    color: var(--text);
+  }
+
+  /* Inline mono accent (paths, times, numbers) */
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Status dots */
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+  }
+  .dot.ok {
+    background: var(--ok);
+  }
+  .dot.warn {
+    background: var(--warn);
+  }
+  .dot.err {
+    background: var(--danger);
+  }
+  .dot.idle {
+    background: var(--text-faint);
+  }
+  .dot.pulse {
+    position: relative;
+  }
+  .dot.pulse::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: var(--ok);
+    opacity: 0.25;
+    animation: dot-pulse 2s infinite ease-out;
+  }
+  @keyframes dot-pulse {
+    0% {
+      transform: scale(0.6);
+      opacity: 0.35;
+    }
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+
+  /* Streaming caret */
+  .caret {
+    display: inline-block;
+    width: 7px;
+    height: 1em;
+    background: var(--brand);
+    margin-left: 2px;
+    vertical-align: -2px;
+    animation: caret-blink 1s steps(2) infinite;
+  }
+  @keyframes caret-blink {
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 html[data-resizing-panels] * {
   transition: none !important;
   animation-duration: 0ms !important;
+}
+
+/* Scrollbar polish */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+  border: 2px solid var(--bg);
+  background-clip: padding-box;
 }

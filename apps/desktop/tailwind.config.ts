@@ -10,6 +10,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // shadcn HSL-backed tokens
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -42,23 +43,55 @@ const config: Config = {
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))"
-        }
+        },
+        // design hierarchy tokens (raw values)
+        surface: {
+          DEFAULT: "var(--surface)",
+          2: "var(--surface-2)",
+          3: "var(--surface-3)"
+        },
+        "border-soft": "var(--border-soft)",
+        "border-strong": "var(--border-strong)",
+        text: {
+          DEFAULT: "var(--text)",
+          muted: "var(--text-muted)",
+          subtle: "var(--text-subtle)",
+          faint: "var(--text-faint)"
+        },
+        brand: {
+          DEFAULT: "var(--brand)",
+          strong: "var(--brand-strong)",
+          soft: "var(--brand-soft)",
+          fg: "var(--brand-fg)"
+        },
+        ok: {
+          DEFAULT: "var(--ok)",
+          soft: "var(--ok-soft)"
+        },
+        warn: {
+          DEFAULT: "var(--warn)",
+          soft: "var(--warn-soft)"
+        },
+        danger: {
+          DEFAULT: "var(--danger)",
+          soft: "var(--danger-soft)"
+        },
+        "code-bg": "var(--code-bg)"
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)"
       },
+      boxShadow: {
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)"
+      },
       fontFamily: {
-        sans: [
-          "Inter",
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "sans-serif"
-        ]
+        sans: ["Geist", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        serif: ["Source Serif 4", "Iowan Old Style", "Georgia", "serif"],
+        mono: ["Geist Mono", "ui-monospace", "SF Mono", "Menlo", "monospace"]
       }
     }
   },

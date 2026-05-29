@@ -25,7 +25,7 @@ async function createWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: "#fafaf9",
+    backgroundColor: "#fafafa",
     titleBarStyle: isMac ? "hiddenInset" : "default",
     trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
     webPreferences: {
