@@ -1,23 +1,23 @@
-import { useEffect, useState } from "react";
 import type { ApiClient, Provider } from "@/api/client.js";
+import { useResource } from "./resource-cache.js";
+
+const EMPTY: Provider[] = [];
 
 export function useProviders(api: ApiClient) {
-  const [data, setData] = useState<Provider[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { snapshot, resource } = useResource<Provider[]>(
+    api,
+    "providers",
+    async () => {
+      const items = await api.listProviders();
+      return Array.isArray(items) ? items : [];
+    },
+    EMPTY
+  );
 
-  useEffect(() => {
-    let active = true;
-    api
-      .listProviders()
-      .then((items) => {
-        if (active) setData(Array.isArray(items) ? items : []);
-      })
-      .catch(() => {})
-      .finally(() => active && setLoading(false));
-    return () => {
-      active = false;
-    };
-  }, [api]);
-
-  return { data, loading };
+  return {
+    data: snapshot.data,
+    loading: snapshot.loading,
+    error: snapshot.error,
+    refresh: () => resource.refresh()
+  };
 }

@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import type { Session } from "@/api/client.js";
 import { ResizeHandle } from "@/components/ResizeHandle.js";
 import { useApi } from "@/hooks/useApi.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -16,36 +14,19 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const { t } = useTranslation();
   const view = useAppStore((s) => s.view);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const activeSessionTitle = useAppStore((s) => s.activeSessionTitle);
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
   const rightCollapsed = useAppStore((s) => s.rightPanelCollapsed);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const leftWidth = useAppStore((s) => s.leftSidebarWidth);
   const setLeftWidth = useAppStore((s) => s.setLeftSidebarWidth);
   const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
-  const [activeSession, setActiveSession] = useState<Session | null>(null);
-
-  useEffect(() => {
-    if (!activeSessionId || !activeWorkspaceId) {
-      setActiveSession(null);
-      return;
-    }
-    let alive = true;
-    api
-      .listSessions(activeWorkspaceId)
-      .then((list) => {
-        if (alive) setActiveSession(list.find((s) => s.id === activeSessionId) ?? null);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [api, activeSessionId, activeWorkspaceId]);
 
   const title =
     view === "settings"
       ? t("settings.title")
       : view === "chat"
-        ? activeSession?.title || t("common.untitled")
+        ? activeSessionTitle || t("common.untitled")
         : t("newThread.tabTitle");
 
   return (

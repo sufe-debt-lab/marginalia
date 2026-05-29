@@ -20,6 +20,7 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
+  const setActiveSessionTitle = useAppStore((s) => s.setActiveSessionTitle);
   const setPendingPrompt = useAppStore((s) => s.setPendingPrompt);
   const setView = useAppStore((s) => s.setView);
   const contextFiles = useAppStore((s) => s.contextFiles);
@@ -57,6 +58,7 @@ export function NewThreadView({ api }: { api: ApiClient }) {
         title: text.slice(0, 32)
       });
       setActiveSession(session.id);
+      setActiveSessionTitle(session.title);
       setPendingPrompt(text);
       setView("chat");
     } catch (err) {

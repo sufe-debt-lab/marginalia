@@ -89,8 +89,16 @@ const config: Config = {
         lg: "var(--shadow-lg)"
       },
       fontFamily: {
-        sans: ["Geist", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        serif: ["Source Serif 4", "Iowan Old Style", "Georgia", "serif"],
+        sans: [
+          "Geist Sans",
+          "Geist",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif"
+        ],
+        serif: ["Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", "Georgia", "serif"],
         mono: ["Geist Mono", "ui-monospace", "SF Mono", "Menlo", "monospace"]
       }
     }

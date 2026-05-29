@@ -1,49 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import type { ApiClient, Workspace } from "@/api/client.js";
+import { useResource } from "./resource-cache.js";
+
+const EMPTY: Workspace[] = [];
 
 export function useWorkspaces(api: ApiClient) {
-  const [data, setData] = useState<Workspace[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    api
-      .listWorkspaces()
-      .then((items) => {
-        if (active) {
-          setData(items);
-          setError(null);
-        }
-      })
-      .catch((err: Error) => {
-        if (active) setError(err);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [api]);
+  const { snapshot, resource } = useResource<Workspace[]>(
+    api,
+    "workspaces",
+    () => api.listWorkspaces(),
+    EMPTY
+  );
 
   const create = useCallback(
     async (input: { name: string; rootDir: string }) => {
       const created = await api.createWorkspace(input);
-      setData((items) => [created, ...items]);
+      resource.setData((items) => [created, ...items]);
       return created;
     },
-    [api]
+    [api, resource]
   );
 
   const remove = useCallback(
     async (id: string) => {
       await api.deleteWorkspace(id);
-      setData((items) => items.filter((w) => w.id !== id));
+      resource.setData((items) => items.filter((w) => w.id !== id));
     },
-    [api]
+    [api, resource]
   );
 
-  return { data, loading, error, create, remove };
+  return { data: snapshot.data, loading: snapshot.loading, error: snapshot.error, create, remove };
 }

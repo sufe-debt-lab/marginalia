@@ -11,6 +11,7 @@ interface AppState {
   locale: Locale;
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
+  activeSessionTitle: string | null;
   pendingPrompt: string | null;
   contextFiles: string[];
   leftSidebarCollapsed: boolean;
@@ -27,6 +28,7 @@ interface AppState {
   setLocale: (v: Locale) => void;
   setActiveWorkspace: (id: string | null) => void;
   setActiveSession: (id: string | null) => void;
+  setActiveSessionTitle: (title: string | null) => void;
   setPendingPrompt: (p: string | null) => void;
   addContextFile: (p: string) => void;
   removeContextFile: (p: string) => void;
@@ -66,6 +68,7 @@ export const useAppStore = create<AppState>()(
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
+      activeSessionTitle: null,
       pendingPrompt: null,
       contextFiles: [],
       leftSidebarCollapsed: false,
@@ -80,11 +83,18 @@ export const useAppStore = create<AppState>()(
       setView: (v) => set({ view: v }),
       setLocale: (v) => set({ locale: v }),
       setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
-      setActiveSession: (id) => set({ activeSessionId: id }),
+      setActiveSession: (id) =>
+        set(
+          id === null
+            ? { activeSessionId: null, activeSessionTitle: null }
+            : { activeSessionId: id }
+        ),
+      setActiveSessionTitle: (title) => set({ activeSessionTitle: title }),
       setPendingPrompt: (p) => set({ pendingPrompt: p }),
       addContextFile: (p) =>
         set((s) => (s.contextFiles.includes(p) ? s : { contextFiles: [...s.contextFiles, p] })),
-      removeContextFile: (p) => set((s) => ({ contextFiles: s.contextFiles.filter((x) => x !== p) })),
+      removeContextFile: (p) =>
+        set((s) => ({ contextFiles: s.contextFiles.filter((x) => x !== p) })),
       clearContextFiles: () => set({ contextFiles: [] }),
       toggleLeftSidebar: () => set((s) => ({ leftSidebarCollapsed: !s.leftSidebarCollapsed })),
       toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed })),

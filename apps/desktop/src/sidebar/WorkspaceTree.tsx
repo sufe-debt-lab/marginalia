@@ -24,15 +24,17 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
+  const setActiveSessionTitle = useAppStore((s) => s.setActiveSessionTitle);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
   const setView = useAppStore((s) => s.setView);
   const togglePin = useAppStore((s) => s.togglePin);
   const removePin = useAppStore((s) => s.removePin);
   const isPinned = useAppStore((s) => s.pinnedWorkspaceIds.includes(workspace.id));
 
-  function selectSession(sessionId: string) {
+  function selectSession(sessionId: string, sessionTitle: string) {
     setActiveWorkspace(workspace.id);
     setActiveSession(sessionId);
+    setActiveSessionTitle(sessionTitle || t("common.untitled"));
     setView("chat");
   }
 
@@ -96,7 +98,7 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
           <li key={s.id}>
             <button
               type="button"
-              onClick={() => selectSession(s.id)}
+              onClick={() => selectSession(s.id, s.title)}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
                 activeSessionId === s.id && "bg-accent text-foreground"

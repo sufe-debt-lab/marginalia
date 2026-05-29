@@ -16,6 +16,7 @@ export function RecentThreads({ api }: { api: ApiClient }) {
   const { t, locale } = useTranslation();
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
+  const setActiveSessionTitle = useAppStore((s) => s.setActiveSessionTitle);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
   const setView = useAppStore((s) => s.setView);
   const sessions = useSessions(api, activeWorkspaceId);
@@ -23,9 +24,10 @@ export function RecentThreads({ api }: { api: ApiClient }) {
   const recent = sessions.data.slice(0, MAX_RECENT);
   if (sessions.loading || recent.length === 0) return null;
 
-  function open(workspaceId: string, sessionId: string) {
+  function open(workspaceId: string, sessionId: string, title: string) {
     setActiveWorkspace(workspaceId);
     setActiveSession(sessionId);
+    setActiveSessionTitle(title || t("common.untitled"));
     setView("chat");
   }
 
@@ -44,7 +46,7 @@ export function RecentThreads({ api }: { api: ApiClient }) {
             <button
               key={s.id}
               type="button"
-              onClick={() => open(s.workspaceId, s.id)}
+              onClick={() => open(s.workspaceId, s.id, s.title)}
               className={`flex items-center gap-3 px-1 py-2.5 text-left active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent/50 ${
                 i < recent.length - 1 ? "border-b border-border-soft" : ""
               }`}
