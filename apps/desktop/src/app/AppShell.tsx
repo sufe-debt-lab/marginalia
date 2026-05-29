@@ -7,6 +7,7 @@ import { useAppStore } from "@/store/app-store.js";
 import { ChatView } from "@/chat/ChatView.js";
 import { NewThreadView } from "@/chat/NewThreadView.js";
 import { DocumentPanel } from "@/documents/DocumentPanel.js";
+import { SettingsView } from "@/settings/SettingsView.js";
 import { Topbar } from "./Topbar.js";
 
 export function AppShell({ serverUrl }: { serverUrl: string }) {
@@ -82,7 +83,9 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
           </aside>
         )}
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
-          {view === "chat" && activeSessionId ? (
+          {view === "settings" ? (
+            <SettingsView api={api} />
+          ) : view === "chat" && activeSessionId ? (
             <ChatView api={api} sessionId={activeSessionId} />
           ) : (
             <NewThreadView api={api} />

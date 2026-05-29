@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Languages, PenSquare, Plus, Settings } from "lucide-react";
+import { PenSquare, Plus, Settings } from "lucide-react";
 import { toast } from "sonner";
 import type { ApiClient } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
@@ -16,13 +16,12 @@ function basename(p: string): string {
 }
 
 export function Sidebar({ api }: { api: ApiClient }) {
-  const { locale, t } = useTranslation();
+  const { t } = useTranslation();
   const workspaces = useWorkspaces(api);
   const view = useAppStore((s) => s.view);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
-  const setLocale = useAppStore((s) => s.setLocale);
   const setView = useAppStore((s) => s.setView);
   const pinnedIds = useAppStore((s) => s.pinnedWorkspaceIds);
 
@@ -104,15 +103,6 @@ export function Sidebar({ api }: { api: ApiClient }) {
         </div>
       </ScrollArea>
       <div className="border-t border-border-soft p-2">
-        <Button
-          variant="ghost"
-          className="mb-1 w-full justify-start gap-2 rounded-md active:scale-[0.99]"
-          onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-          aria-label={locale === "en" ? t("common.chinese") : t("common.english")}
-        >
-          <Languages className="h-4 w-4" />
-          {locale === "en" ? t("common.chinese") : t("common.english")}
-        </Button>
         <Button
           variant="ghost"
           className={cn("w-full justify-start gap-2 rounded-md active:scale-[0.99]", view === "settings" && "bg-accent")}

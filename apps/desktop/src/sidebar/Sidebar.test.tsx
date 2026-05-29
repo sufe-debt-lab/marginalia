@@ -58,12 +58,6 @@ describe("Sidebar", () => {
     await waitFor(() => expect(useAppStore.getState().activeWorkspaceId).toBe("w1"));
   });
 
-  it("switches language to Chinese", async () => {
-    render(<Sidebar api={fakeApi()} />);
-    await userEvent.click(screen.getByRole("button", { name: /中文/i }));
-    expect(screen.getByRole("button", { name: "新建聊天" })).toBeInTheDocument();
-  });
-
   it("plus button picks a directory and creates a workspace", async () => {
     const api = fakeApi();
     render(<Sidebar api={api} />);
