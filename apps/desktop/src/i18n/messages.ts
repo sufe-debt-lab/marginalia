@@ -81,7 +81,28 @@ export const en = {
     save: "Save",
     defaultBadge: "default",
     providerAdded: "Provider added",
-    providerAddFailed: "Failed to add provider"
+    providerAddFailed: "Failed to add provider",
+    globalDefaultModel: "Global default model",
+    thisWorkspace: "This workspace",
+    reasoningBudget: "Reasoning budget",
+    runDiagnostics: "Run diagnostics",
+    chooseProvider: "Choose a provider",
+    custom: "Custom",
+    none: "—",
+    diagnosticsOk: "All connected providers reachable",
+    diagnosticsRunning: "Running diagnostics…"
+  },
+  firstRun: {
+    title: "Welcome to pi-cowork",
+    subtitle:
+      "A local-first AI document workspace. Pick a working directory and add a model provider to begin.",
+    step1Title: "Pick a workspace folder",
+    step1Desc: "pi-cowork only reads / writes inside this folder.",
+    step1Action: "Choose folder",
+    step2Title: "Add a model provider",
+    step2Desc: "OpenAI, GLM, MiniMax or Xiaomi MiMo — any one is enough.",
+    step2Action: "Open settings →",
+    done: "Done"
   },
   docPanel: {
     files: "Files",
@@ -198,7 +219,27 @@ export const zh = {
     save: "保存",
     defaultBadge: "默认",
     providerAdded: "服务商已添加",
-    providerAddFailed: "添加服务商失败"
+    providerAddFailed: "添加服务商失败",
+    globalDefaultModel: "全局默认模型",
+    thisWorkspace: "当前工作区",
+    reasoningBudget: "推理预算",
+    runDiagnostics: "连接诊断",
+    chooseProvider: "选择服务商",
+    custom: "自定义",
+    none: "—",
+    diagnosticsOk: "已连接的服务商均可达",
+    diagnosticsRunning: "正在诊断…"
+  },
+  firstRun: {
+    title: "欢迎使用 pi-cowork",
+    subtitle: "本地优先的 AI 文档协作器。先选一个工作目录，再添加一个模型服务商即可开始。",
+    step1Title: "选择工作目录",
+    step1Desc: "pi-cowork 仅在该目录内读写文件。",
+    step1Action: "选择目录",
+    step2Title: "添加模型服务商",
+    step2Desc: "OpenAI、GLM、MiniMax 或小米 MiMo — 任一即可。",
+    step2Action: "打开设置 →",
+    done: "已完成"
   },
   docPanel: {
     files: "文件",

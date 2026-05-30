@@ -23,6 +23,7 @@ interface AppState {
   composerModel: string | null;
   permission: AgentPermission;
   reasoning: AgentReasoning;
+  resumeLastSession: boolean;
 
   setView: (v: AppView) => void;
   setLocale: (v: Locale) => void;
@@ -41,6 +42,7 @@ interface AppState {
   setComposerModel: (providerId: string, model: string) => void;
   setPermission: (p: AgentPermission) => void;
   setReasoning: (r: AgentReasoning) => void;
+  setResumeLastSession: (v: boolean) => void;
 }
 
 const MIN_WIDTH = 180;
@@ -79,6 +81,7 @@ export const useAppStore = create<AppState>()(
       composerModel: null,
       permission: "full",
       reasoning: "medium",
+      resumeLastSession: false,
 
       setView: (v) => set({ view: v }),
       setLocale: (v) => set({ locale: v }),
@@ -116,7 +119,8 @@ export const useAppStore = create<AppState>()(
       setComposerModel: (providerId, model) =>
         set({ composerProviderId: providerId, composerModel: model }),
       setPermission: (p) => set({ permission: p }),
-      setReasoning: (r) => set({ reasoning: r })
+      setReasoning: (r) => set({ reasoning: r }),
+      setResumeLastSession: (v) => set({ resumeLastSession: v })
     }),
     {
       name: "my-cowork-app",
@@ -132,7 +136,8 @@ export const useAppStore = create<AppState>()(
         permission: s.permission,
         reasoning: s.reasoning,
         composerProviderId: s.composerProviderId,
-        composerModel: s.composerModel
+        composerModel: s.composerModel,
+        resumeLastSession: s.resumeLastSession
       })
     }
   )

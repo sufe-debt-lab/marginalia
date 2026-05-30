@@ -21,8 +21,14 @@ describe("SettingsView", () => {
     localStorage.clear();
     useAppStore.setState({ view: "settings", locale: "en" });
     window.marginalia = {
-      getPiServerStatus: vi.fn(async () => ({ status: "ready" as const, url: "http://127.0.0.1:4312" })),
-      restartPiServer: vi.fn(async () => ({ status: "ready" as const, url: "http://127.0.0.1:4312" }))
+      getPiServerStatus: vi.fn(async () => ({
+        status: "ready" as const,
+        url: "http://127.0.0.1:4312"
+      })),
+      restartPiServer: vi.fn(async () => ({
+        status: "ready" as const,
+        url: "http://127.0.0.1:4312"
+      }))
     };
   });
 
@@ -38,10 +44,22 @@ describe("SettingsView", () => {
     await waitFor(() => expect(screen.getByText("Anthropic")).toBeInTheDocument());
   });
 
-  it("opens the add-provider dialog", async () => {
+  it("add-provider opens a preset picker, then a quick-add form", async () => {
     render(<SettingsView api={fakeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: /providers/i }));
     await userEvent.click(screen.getByRole("button", { name: /add provider/i }));
+    // preset cards first
+    const openai = await screen.findByText("OpenAI");
+    await userEvent.click(openai);
+    // choosing a preset reveals the API key field (name prefilled)
     await waitFor(() => expect(screen.getByLabelText(/api key/i)).toBeInTheDocument());
+    expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe("OpenAI");
+  });
+
+  it("shows the defaults summary bar with reasoning budget", async () => {
+    render(<SettingsView api={fakeApi()} />);
+    await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+    await waitFor(() => expect(screen.getByText(/global default model/i)).toBeInTheDocument());
+    expect(screen.getByText(/reasoning budget/i)).toBeInTheDocument();
   });
 });

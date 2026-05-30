@@ -4,7 +4,9 @@ import { useTranslation } from "@/i18n/useTranslation.js";
 import { Sidebar } from "@/sidebar/Sidebar.js";
 import { useAppStore } from "@/store/app-store.js";
 import { ChatView } from "@/chat/ChatView.js";
+import { FirstRunView } from "@/chat/FirstRunView.js";
 import { NewThreadView } from "@/chat/NewThreadView.js";
+import { useWorkspaces } from "@/hooks/useWorkspaces.js";
 import { DocumentPanel } from "@/documents/DocumentPanel.js";
 import { SettingsView } from "@/settings/SettingsView.js";
 import { Topbar } from "./Topbar.js";
@@ -20,6 +22,8 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const leftWidth = useAppStore((s) => s.leftSidebarWidth);
   const setLeftWidth = useAppStore((s) => s.setLeftSidebarWidth);
+  const workspaces = useWorkspaces(api);
+  const noWorkspaces = !workspaces.loading && workspaces.data.length === 0;
   const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
 
   const title =
@@ -46,6 +50,8 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
           {view === "settings" ? (
             <SettingsView api={api} />
+          ) : noWorkspaces ? (
+            <FirstRunView api={api} />
           ) : view === "chat" && activeSessionId ? (
             <ChatView api={api} sessionId={activeSessionId} />
           ) : (
