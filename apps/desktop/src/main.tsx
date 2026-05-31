@@ -19,3 +19,12 @@ createRoot(document.getElementById("root")!).render(
     <Toaster position="bottom-right" />
   </>
 );
+
+// Drop the static splash once React has painted. Its "starting" state renders an
+// identical <LoadingSplash />, so the handoff is invisible; double rAF guarantees
+// React's first frame is on screen before we remove the overlay.
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    document.getElementById("splash")?.remove();
+  });
+});

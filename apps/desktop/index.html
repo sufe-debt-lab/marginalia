@@ -5,8 +5,108 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Marginalia</title>
     <!-- Fonts are bundled locally via @fontsource (imported in src/main.tsx) for offline use. -->
+    <!-- Static splash: pure HTML/CSS so the window paints branded content instantly,
+         before the JS bundle loads. Mirrors .splash in src/styles.css (keep in sync);
+         removed by src/main.tsx once React has painted.
+         Colors are hardcoded here because the design tokens live in styles.css,
+         which isn't loaded yet. If you change a token, update its copy below:
+           #fafafa            = --bg
+           #c2c2c3            = --text-faint
+           oklch(0.5 0.13 158)= --brand
+           #6f6f70            = --text-muted
+           font-family        = --font-serif -->
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #fafafa;
+        -webkit-app-region: drag;
+      }
+      #splash .mark {
+        font-family: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", Georgia, serif;
+        font-weight: 500;
+        font-size: 34px;
+        letter-spacing: 0.04em;
+        background: linear-gradient(
+          100deg,
+          #c2c2c3 0%,
+          #c2c2c3 36%,
+          oklch(0.5 0.13 158) 50%,
+          #c2c2c3 64%,
+          #c2c2c3 100%
+        );
+        background-size: 220% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        animation: splash-shimmer 2.4s ease-in-out infinite;
+      }
+      #splash .dots {
+        display: flex;
+        gap: 7px;
+      }
+      #splash .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: oklch(0.5 0.13 158);
+        opacity: 0.25;
+        animation: splash-dot-fade 1.4s ease-in-out infinite;
+      }
+      #splash .dot:nth-child(2) {
+        animation-delay: 0.18s;
+      }
+      #splash .dot:nth-child(3) {
+        animation-delay: 0.36s;
+      }
+      @keyframes splash-shimmer {
+        0% {
+          background-position: 140% 0;
+        }
+        100% {
+          background-position: -40% 0;
+        }
+      }
+      @keyframes splash-dot-fade {
+        0%,
+        100% {
+          opacity: 0.2;
+          transform: translateY(0);
+        }
+        50% {
+          opacity: 0.9;
+          transform: translateY(-2px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash .mark {
+          animation: none;
+          color: #6f6f70;
+          -webkit-text-fill-color: currentColor;
+        }
+        #splash .dot {
+          animation: none;
+          opacity: 0.5;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash" role="status" aria-label="Starting pi-server...">
+      <div class="mark">Marginalia</div>
+      <div class="dots" aria-hidden="true">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

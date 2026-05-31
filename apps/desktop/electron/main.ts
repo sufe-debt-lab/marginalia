@@ -12,13 +12,22 @@ async function bootServer() {
   return serializeStatus(serverStatus);
 }
 
+function bootServerInBackground() {
+  void bootServer().catch((error: unknown) => {
+    serverStatus = {
+      status: "failed",
+      error: error instanceof Error ? error.message : "pi-server startup failed",
+      logs: []
+    };
+  });
+}
+
 function serializeStatus(status: PiServerStatus) {
   if (status.status === "ready") return { status: "ready", url: status.url };
   return status;
 }
 
 async function createWindow() {
-  await bootServer();
   const isMac = process.platform === "darwin";
   windowRef = new BrowserWindow({
     width: 1280,
@@ -36,10 +45,17 @@ async function createWindow() {
     }
   });
 
+  // Boot pi-server only after the renderer has loaded. startPiServer() runs a
+  // synchronous spawnSync preflight before returning its promise, so calling
+  // bootServerInBackground() inline would block the Electron main process — and
+  // the splash paint — on a slow cold start, defeating the static splash. By
+  // did-finish-load the splash is already on screen, so the blocking is unseen.
+  windowRef.webContents.once("did-finish-load", () => bootServerInBackground());
+
   if (process.env.VITE_DEV_SERVER_URL) {
     await windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    await windowRef.loadFile(path.resolve(import.meta.dirname, "../index.html"));
+    await windowRef.loadFile(path.resolve(import.meta.dirname, "../dist/index.html"));
   }
 }
 
@@ -52,8 +68,10 @@ ipcMain.handle("workspace:pick-directory", async () => {
   const options: OpenDialogOptions = {
     properties: ["openDirectory"]
   };
-  const result = windowRef ? await dialog.showOpenDialog(windowRef, options) : await dialog.showOpenDialog(options);
-  return result.canceled ? null : result.filePaths[0] ?? null;
+  const result = windowRef
+    ? await dialog.showOpenDialog(windowRef, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
 ipcMain.handle("marginalia:capture-screenshot", async (_event, label: string) => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/AppShell.js";
+import { LoadingSplash } from "@/app/LoadingSplash.js";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 
@@ -23,7 +24,12 @@ function getBridge() {
 
 export function App() {
   const { t } = useTranslation();
-  const [server, setServer] = useState<UiStatus>({ status: "starting" });
+  const [bridge] = useState(() => getBridge());
+  const [server, setServer] = useState<UiStatus>(() =>
+    bridge
+      ? { status: "starting" }
+      : { status: "failed", error: "desktop bridge unavailable", logs: [] }
+  );
 
   async function loadHealth(status: PiServerStatus) {
     if (status.status !== "ready") {
@@ -41,27 +47,41 @@ export function App() {
   }
 
   useEffect(() => {
-    const bridge = getBridge();
-    if (!bridge) {
-      setServer({ status: "failed", error: "desktop bridge unavailable", logs: [] });
-      return;
+    if (!bridge) return;
+    const desktopBridge = bridge;
+    let canceled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function refreshStatus() {
+      try {
+        const status = await desktopBridge.getPiServerStatus();
+        if (canceled) return;
+        await loadHealth(status);
+        if (!canceled && status.status === "starting") {
+          pollTimer = setTimeout(refreshStatus, 250);
+        }
+      } catch (err) {
+        if (!canceled) {
+          setServer({ status: "failed", error: (err as Error).message, logs: [] });
+        }
+      }
     }
-    void bridge.getPiServerStatus().then(loadHealth);
-  }, []);
+
+    void refreshStatus();
+    return () => {
+      canceled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [bridge]);
 
   async function retry() {
-    const bridge = getBridge();
     if (!bridge) return;
     setServer({ status: "starting" });
     await loadHealth(await bridge.restartPiServer());
   }
 
   if (server.status === "starting") {
-    return (
-      <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
-        {t("status.startingServer")}
-      </div>
-    );
+    return <LoadingSplash />;
   }
   if (server.status === "failed") {
     return (
