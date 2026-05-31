@@ -114,16 +114,16 @@ export function DocumentPanel({
       )}
       style={hasTab ? { width: treeWidth } : undefined}
     >
-      <div className="p-2.5">
-        <div className="flex items-center gap-1.5 rounded border border-border-soft bg-surface px-2 py-1">
-          <Search className="h-3 w-3 shrink-0 text-text-faint" />
+      <div className="px-3 pb-2 pt-3">
+        <div className="flex h-9 items-center gap-2 rounded-[14px] border border-border bg-surface px-3 text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow,background-color] focus-within:border-border-strong focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.035)]">
+          <Search className="h-4 w-4 shrink-0 text-text-subtle" strokeWidth={1.8} />
           <input
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={t("docPanel.filterFiles")}
             aria-label={t("docPanel.filterFiles")}
-            className="min-w-0 flex-1 bg-transparent text-[11.5px] text-foreground outline-none placeholder:text-text-faint"
+            className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-[13px] text-foreground shadow-none outline-none ring-0 placeholder:text-text-subtle focus:border-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0"
           />
         </div>
       </div>
