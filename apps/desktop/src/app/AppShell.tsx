@@ -60,7 +60,7 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
           ) : noWorkspaces ? (
             <FirstRunView api={api} />
           ) : view === "chat" && activeSessionId ? (
-            <ChatView api={api} sessionId={activeSessionId} />
+            <ChatView key={activeSessionId} api={api} sessionId={activeSessionId} />
           ) : (
             <NewThreadView api={api} />
           )}

@@ -24,6 +24,29 @@ describe("MessageStream", () => {
     expect(screen.getByText("yo")).toBeInTheDocument();
   });
 
+  it("scrolls to the bottom as the last message streams in", () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const { rerender } = render(
+      <MessageStream
+        messages={[{ id: "1", role: "assistant", content: "a" }]}
+        error={null}
+        onRetry={() => {}}
+        streaming
+      />
+    );
+    const before = scrollSpy.mock.calls.length;
+    rerender(
+      <MessageStream
+        messages={[{ id: "1", role: "assistant", content: "ab cd" }]}
+        error={null}
+        onRetry={() => {}}
+        streaming
+      />
+    );
+    expect(scrollSpy.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it("renders error row + retry button", async () => {
     const onRetry = vi.fn();
     render(

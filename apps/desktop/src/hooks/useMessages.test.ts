@@ -70,6 +70,34 @@ describe("useMessages", () => {
     expect(result.current.data.map((m) => m.id)).toEqual(["local-u", "local-a"]);
   });
 
+  it("merges loaded history with optimistic messages appended while loading", async () => {
+    let resolveMessages: (messages: Message[]) => void = () => {};
+    const api = {
+      listMessages: vi.fn(
+        () =>
+          new Promise<Message[]>((resolve) => {
+            resolveMessages = resolve;
+          })
+      )
+    } as unknown as ApiClient;
+    const { result } = renderHook(() => useMessages(api, "s1"));
+
+    act(() => {
+      result.current.append({ id: "local-user-1", role: "user", content: "hi" });
+      result.current.append({ id: "local-assistant-1", role: "assistant", content: "" });
+    });
+    act(() => {
+      resolveMessages([{ id: "hist", role: "user", content: "old" }]);
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data.map((m) => m.id)).toEqual([
+      "hist",
+      "local-user-1",
+      "local-assistant-1"
+    ]);
+  });
+
   it("loads the next session after a session switch", async () => {
     const api = {
       listMessages: vi.fn(async (sessionId: string) =>

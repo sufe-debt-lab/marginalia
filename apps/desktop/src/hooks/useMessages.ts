@@ -16,10 +16,16 @@ export function useMessages(api: ApiClient, sessionId: string | null) {
     api
       .listMessages(sessionId)
       .then((items) => {
-        if (active) {
-          const loaded = Array.isArray(items) ? items : [];
-          setData((current) => (current.length > 0 ? current : loaded));
-        }
+        if (!active) return;
+        const loaded = Array.isArray(items) ? items : [];
+        setData((current) => {
+          // Keep optimistic (local-*) messages appended while the history was loading,
+          // but show the loaded history beneath them. Server-backed ids replace dupes.
+          const optimistic = current.filter((m) => m.id.startsWith("local-"));
+          if (optimistic.length === 0) return loaded;
+          const loadedIds = new Set(loaded.map((m) => m.id));
+          return [...loaded, ...optimistic.filter((m) => !loadedIds.has(m.id))];
+        });
       })
       .catch(() => {})
       .finally(() => {

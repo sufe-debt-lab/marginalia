@@ -26,11 +26,15 @@ export function MessageStream({ messages, error, onRetry, model, streaming, tool
   );
   const looseToolCalls = toolCalls?.filter((tc) => !renderedToolIds.has(tc.id)) ?? [];
 
+  // Follow the conversation as it grows AND as the last message streams in
+  // (delta updates don't change messages.length, so depend on the content too).
+  const last = messages[lastIndex];
+  const tail = `${messages.length}:${last?.content.length ?? 0}:${last?.toolCalls?.length ?? 0}:${toolCalls?.length ?? 0}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [messages.length]);
+  }, [tail]);
 
   if (messages.length === 0 && !error) {
     return (
