@@ -13,8 +13,6 @@ interface Options {
   onAssistantStart: (m: Message) => void;
   onAssistantDelta: (delta: string) => void;
   onToolCallUpdate?: (tool: ToolCall) => void;
-  /** Drop the optimistic assistant bubble when a run fails before streaming any text. */
-  onAssistantRemove?: (id: string) => void;
   onComplete: () => void;
   onError?: (msg: string) => void;
 }
@@ -23,7 +21,7 @@ interface Options {
 type PiEvent = {
   type?: string;
   assistantMessageEvent?: { type?: string; delta?: string };
-  message?: { stopReason?: string; errorMessage?: string };
+  message?: { role?: string; stopReason?: string; errorMessage?: string };
   toolCallId?: string;
   toolName?: string;
   args?: unknown;
@@ -72,13 +70,14 @@ export function useStreamingChat(opts: Options) {
       setSending(true);
       setReasoning("");
       const stamp = Date.now();
-      // pi emits one assistant message per turn (separated by message_end). We pre-open
-      // the first bubble and open a fresh one whenever a new turn starts streaming, so
-      // the live view splits bubbles the same way a reopened session does.
-      const firstAssistantId = `local-assistant-${stamp}`;
+      // pi emits one assistant message per turn, bounded by message_start. We open a
+      // bubble lazily on the first content of each message (text or tool), so the live
+      // view splits bubbles exactly like a reopened session — and a run that fails
+      // before any content leaves no empty bubble behind. Tool execution events fire
+      // after their message's message_end but before the next message_start, so they
+      // still attach to the message that declared them.
       let turn = 0;
-      let needNewBubble = false;
-      let sawDelta = false;
+      let needNewBubble = true;
 
       function ensureBubble() {
         if (!needNewBubble) return;
@@ -93,6 +92,10 @@ export function useStreamingChat(opts: Options) {
 
       function handlePiEvent(pi: PiEvent) {
         switch (pi.type) {
+          case "message_start":
+            // A new assistant message → the next content opens a fresh bubble.
+            if (pi.message?.role === "assistant") needNewBubble = true;
+            break;
           case "message_update": {
             const ev = pi.assistantMessageEvent;
             if (ev?.type === "thinking_delta" && ev.delta) {
@@ -100,7 +103,6 @@ export function useStreamingChat(opts: Options) {
             }
             if (ev?.type === "text_delta" && ev.delta) {
               ensureBubble();
-              sawDelta = true;
               setReasoning((r) => (r ? "" : r));
               bufferRef.current += ev.delta;
               schedule();
@@ -113,11 +115,11 @@ export function useStreamingChat(opts: Options) {
             if (pi.message?.stopReason === "error") {
               throw new Error(pi.message.errorMessage ?? "agent failed");
             }
-            needNewBubble = true;
             break;
           }
           case "tool_execution_start":
             if (pi.toolCallId) {
+              ensureBubble();
               opts.onToolCallUpdate?.({
                 id: pi.toolCallId,
                 name: pi.toolName ?? "tool",
@@ -152,7 +154,6 @@ export function useStreamingChat(opts: Options) {
 
       try {
         opts.onUserAppend({ id: `local-user-${stamp}`, role: "user", content: text });
-        opts.onAssistantStart({ id: firstAssistantId, role: "assistant", content: "" });
         const events = await opts.api.runChat(
           opts.sessionId,
           {
@@ -180,11 +181,7 @@ export function useStreamingChat(opts: Options) {
         opts.onComplete();
       } catch (err) {
         flush();
-        if (!isAbortError(err)) {
-          opts.onError?.((err as Error).message);
-          // Nothing streamed → drop the empty assistant bubble so it doesn't linger.
-          if (!sawDelta) opts.onAssistantRemove?.(firstAssistantId);
-        }
+        if (!isAbortError(err)) opts.onError?.((err as Error).message);
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         sendingRef.current = false;

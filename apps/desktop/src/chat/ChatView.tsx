@@ -45,7 +45,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     permission,
     reasoning,
     onUserAppend: (m) => {
+      // New send: reset the assistant id (bubbles are now created lazily as content arrives).
       lastUserIdRef.current = m.id;
+      lastAssistantIdRef.current = null;
       messages.append(m);
     },
     onAssistantStart: (m) => {
@@ -54,7 +56,6 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     },
     onAssistantDelta: messages.appendToLast,
     onToolCallUpdate: messages.upsertToolCall,
-    onAssistantRemove: messages.removeMessage,
     onComplete: () => setError(null),
     onError: setError
   });

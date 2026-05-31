@@ -13,6 +13,7 @@ async function* makeEvents(events: RunEvent[]) {
 const agentEvent = (event: unknown): RunEvent => ({ type: "agent_event", payload: { event } });
 const textDelta = (delta: string) =>
   agentEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
+const messageStart = () => agentEvent({ type: "message_start", message: { role: "assistant" } });
 const messageEnd = (stopReason = "stop") =>
   agentEvent({ type: "message_end", message: { stopReason } });
 const thinkingDelta = (delta: string) =>
@@ -63,12 +64,19 @@ describe("useStreamingChat", () => {
     expect(onAssistantStart).toHaveBeenCalled();
   });
 
-  it("opens a fresh assistant bubble after each turn boundary", async () => {
+  it("opens a fresh assistant bubble per pi message (split on message_start)", async () => {
     const onAssistantStart = vi.fn();
     const onAssistantDelta = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
-        makeEvents([textDelta("a"), messageEnd("toolUse"), textDelta("b"), messageEnd("stop")])
+        makeEvents([
+          messageStart(),
+          textDelta("a"),
+          messageEnd("toolUse"),
+          messageStart(),
+          textDelta("b"),
+          messageEnd("stop")
+        ])
       )
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onAssistantDelta });
@@ -77,10 +85,46 @@ describe("useStreamingChat", () => {
       await result.current.send("hi", []);
     });
 
-    // One pre-opened bubble + one opened for the second turn.
     expect(onAssistantStart).toHaveBeenCalledTimes(2);
     const deltas = onAssistantDelta.mock.calls.map(([s]) => s);
     expect(deltas).toEqual(["a", "b"]);
+  });
+
+  it("attaches each message's tool to its own bubble, matching a reopened session", async () => {
+    const onAssistantStart = vi.fn();
+    const toolBubbles: Array<[string, number]> = [];
+    const onToolCallUpdate = vi.fn((tc: { id: string; status: string }) => {
+      if (tc.status === "running") toolBubbles.push([tc.id, onAssistantStart.mock.calls.length]);
+    });
+    const toolStart = (id: string, name: string) =>
+      agentEvent({ type: "tool_execution_start", toolCallId: id, toolName: name, args: {} });
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([
+          messageStart(),
+          messageEnd("toolUse"),
+          toolStart("read1", "read"),
+          messageStart(),
+          messageEnd("toolUse"),
+          toolStart("bash1", "bash"),
+          messageStart(),
+          textDelta("answer"),
+          messageEnd("stop")
+        ])
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAssistantStart, onToolCallUpdate });
+
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+
+    // read tool opened bubble #1, bash tool opened bubble #2, answer opened bubble #3.
+    expect(toolBubbles).toEqual([
+      ["read1", 1],
+      ["bash1", 2]
+    ]);
+    expect(onAssistantStart).toHaveBeenCalledTimes(3);
   });
 
   it("accumulates reasoning text from thinking deltas", async () => {
@@ -186,38 +230,32 @@ describe("useStreamingChat", () => {
     expect(onToolCallUpdate).not.toHaveBeenCalled();
   });
 
-  it("removes the empty assistant bubble when the run fails before any text", async () => {
-    let assistantId = "";
-    const onAssistantRemove = vi.fn();
+  it("creates no assistant bubble when the run fails before any content", async () => {
+    const onAssistantStart = vi.fn();
     const api = {
       runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }]))
     } as unknown as ApiClient;
-    const { result } = makeHook(api, {
-      onAssistantStart: (m: { id: string }) => {
-        assistantId = m.id;
-      },
-      onError: vi.fn(),
-      onAssistantRemove
-    });
+    const { result } = makeHook(api, { onAssistantStart, onError: vi.fn() });
     await act(async () => {
       await result.current.send("hi", []);
     });
-    await waitFor(() => expect(onAssistantRemove).toHaveBeenCalledWith(assistantId));
+    await waitFor(() => expect(result.current.sending).toBe(false));
+    expect(onAssistantStart).not.toHaveBeenCalled();
   });
 
-  it("keeps the assistant bubble when some text streamed before failure", async () => {
-    const onAssistantRemove = vi.fn();
+  it("keeps the streamed assistant bubble when the run fails after some text", async () => {
+    const onAssistantStart = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
         makeEvents([textDelta("partial"), { type: "run_failed", payload: { error: "boom" } }])
       )
     } as unknown as ApiClient;
-    const { result } = makeHook(api, { onError: vi.fn(), onAssistantRemove });
+    const { result } = makeHook(api, { onAssistantStart, onError: vi.fn() });
     await act(async () => {
       await result.current.send("hi", []);
     });
     await waitFor(() => expect(result.current.sending).toBe(false));
-    expect(onAssistantRemove).not.toHaveBeenCalled();
+    expect(onAssistantStart).toHaveBeenCalledTimes(1);
   });
 
   it("can abort an active run and clear sending state", async () => {
