@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ApiClient } from "@/api/client.js";
 import { useMessages } from "@/hooks/useMessages.js";
 import { useProviders } from "@/hooks/useProviders.js";
@@ -33,6 +33,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const actualModel = composerModel || firstProvider?.defaultModel || "";
   const [error, setError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<{ text: string; contextFiles: string[] } | null>(null);
+  // Ids of the most recent optimistic pair, so a retry can drop them before resending.
+  const lastUserIdRef = useRef<string | null>(null);
+  const lastAssistantIdRef = useRef<string | null>(null);
 
   const stream = useStreamingChat({
     api,
@@ -41,10 +44,17 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     model: actualModel,
     permission,
     reasoning,
-    onUserAppend: messages.append,
-    onAssistantStart: messages.append,
+    onUserAppend: (m) => {
+      lastUserIdRef.current = m.id;
+      messages.append(m);
+    },
+    onAssistantStart: (m) => {
+      lastAssistantIdRef.current = m.id;
+      messages.append(m);
+    },
     onAssistantDelta: messages.appendToLast,
     onToolCallUpdate: messages.upsertToolCall,
+    onAssistantRemove: messages.removeMessage,
     onComplete: () => setError(null),
     onError: setError
   });
@@ -80,10 +90,12 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   }, [pendingPrompt, actualProviderId]);
 
   function retry() {
-    if (lastSent) {
-      setError(null);
-      void stream.send(lastSent.text, lastSent.contextFiles);
-    }
+    if (!lastSent) return;
+    setError(null);
+    // Drop the failed attempt's bubbles so the resend doesn't duplicate them.
+    if (lastUserIdRef.current) messages.removeMessage(lastUserIdRef.current);
+    if (lastAssistantIdRef.current) messages.removeMessage(lastAssistantIdRef.current);
+    void stream.send(lastSent.text, lastSent.contextFiles);
   }
 
   return (

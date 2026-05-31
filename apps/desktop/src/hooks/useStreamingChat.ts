@@ -20,6 +20,8 @@ interface Options {
   onAssistantStart: (m: Message) => void;
   onAssistantDelta: (delta: string) => void;
   onToolCallUpdate?: (tool: ToolCall) => void;
+  /** Drop the optimistic assistant bubble when a run fails before streaming any text. */
+  onAssistantRemove?: (id: string) => void;
   onComplete: () => void;
   onError?: (msg: string) => void;
 }
@@ -87,15 +89,17 @@ export function useStreamingChat(opts: Options) {
       sendingRef.current = true;
       setSending(true);
       setToolCalls([]);
+      const stamp = Date.now();
+      const assistantId = `local-assistant-${stamp}`;
+      let sawDelta = false;
       try {
-        const stamp = Date.now();
         opts.onUserAppend({
           id: `local-user-${stamp}`,
           role: "user",
           content: text
         });
         opts.onAssistantStart({
-          id: `local-assistant-${stamp}`,
+          id: assistantId,
           role: "assistant",
           content: ""
         });
@@ -118,6 +122,7 @@ export function useStreamingChat(opts: Options) {
           if (event.type === "assistant_delta") {
             const delta = (event.payload as { text?: string } | undefined)?.text ?? "";
             if (delta) {
+              sawDelta = true;
               bufferRef.current += delta;
               schedule();
             }
@@ -141,15 +146,19 @@ export function useStreamingChat(opts: Options) {
               args?: unknown;
               partialResult?: unknown;
             };
-            const tool = {
-              id: p.toolCallId ?? `tool-${Date.now()}`,
-              name: p.toolName ?? "tool",
-              subtitle: toolSubtitle(p.args),
-              status: "running",
-              result: resultText(p.partialResult)
-            } satisfies ToolCall;
-            setToolCalls((prev) => prev.map((tc) => (tc.id === tool.id ? { ...tc, ...tool } : tc)));
-            opts.onToolCallUpdate?.(tool);
+            if (p.toolCallId) {
+              const tool = {
+                id: p.toolCallId,
+                name: p.toolName ?? "tool",
+                subtitle: toolSubtitle(p.args),
+                status: "running",
+                result: resultText(p.partialResult)
+              } satisfies ToolCall;
+              setToolCalls((prev) =>
+                prev.map((tc) => (tc.id === tool.id ? { ...tc, ...tool } : tc))
+              );
+              opts.onToolCallUpdate?.(tool);
+            }
           }
           if (event.type === "tool_completed" || event.type === "tool_failed") {
             const p = event.payload as { toolCallId?: string; toolName?: string; result?: unknown };
@@ -183,7 +192,11 @@ export function useStreamingChat(opts: Options) {
         opts.onComplete();
       } catch (err) {
         flush();
-        if (!isAbortError(err)) opts.onError?.((err as Error).message);
+        if (!isAbortError(err)) {
+          opts.onError?.((err as Error).message);
+          // Nothing streamed → drop the empty assistant bubble so it doesn't linger.
+          if (!sawDelta) opts.onAssistantRemove?.(assistantId);
+        }
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         sendingRef.current = false;

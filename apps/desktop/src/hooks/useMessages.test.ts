@@ -6,9 +6,7 @@ import { useMessages } from "./useMessages.js";
 describe("useMessages", () => {
   it("loads messages for session", async () => {
     const api = {
-      listMessages: vi.fn(async () => [
-        { id: "m1", role: "user", content: "hi" }
-      ] as Message[])
+      listMessages: vi.fn(async () => [{ id: "m1", role: "user", content: "hi" }] as Message[])
     } as unknown as ApiClient;
     const { result } = renderHook(() => useMessages(api, "s1"));
     await waitFor(() => expect(result.current.data).toHaveLength(1));
@@ -35,13 +33,27 @@ describe("useMessages", () => {
     expect(result.current.data[1]?.content).toBe("hello world");
   });
 
+  it("removeMessage drops a message by id", () => {
+    const api = { listMessages: vi.fn(async () => []) } as unknown as ApiClient;
+    const { result } = renderHook(() => useMessages(api, "s1"));
+    act(() => {
+      result.current.append({ id: "x", role: "user", content: "u" });
+      result.current.append({ id: "y", role: "assistant", content: "" });
+    });
+    act(() => {
+      result.current.removeMessage("y");
+    });
+    expect(result.current.data.map((m) => m.id)).toEqual(["x"]);
+  });
+
   it("does not overwrite optimistic messages when initial load resolves late", async () => {
     let resolveMessages: (messages: Message[]) => void = () => {};
     const api = {
       listMessages: vi.fn(
-        () => new Promise<Message[]>((resolve) => {
-          resolveMessages = resolve;
-        })
+        () =>
+          new Promise<Message[]>((resolve) => {
+            resolveMessages = resolve;
+          })
       )
     } as unknown as ApiClient;
     const { result } = renderHook(() => useMessages(api, "s1"));

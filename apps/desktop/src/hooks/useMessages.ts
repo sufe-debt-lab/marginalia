@@ -34,6 +34,10 @@ export function useMessages(api: ApiClient, sessionId: string | null) {
     setData((items) => [...items, m]);
   }, []);
 
+  const removeMessage = useCallback((id: string) => {
+    setData((items) => items.filter((m) => m.id !== id));
+  }, []);
+
   const appendToLast = useCallback((delta: string) => {
     setData((items) => {
       const last = items[items.length - 1];
@@ -68,5 +72,5 @@ export function useMessages(api: ApiClient, sessionId: string | null) {
     });
   }, []);
 
-  return { data, loading, append, appendToLast, upsertToolCall, set: setData };
+  return { data, loading, append, removeMessage, appendToLast, upsertToolCall, set: setData };
 }

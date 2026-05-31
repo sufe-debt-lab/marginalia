@@ -126,6 +126,125 @@ describe("useStreamingChat", () => {
     await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
   });
 
+  it("transitions a tool call to done matched by toolCallId", async () => {
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([
+          {
+            type: "tool_started",
+            payload: { toolCallId: "t1", toolName: "read", args: { path: "a.ts" } }
+          },
+          { type: "tool_completed", payload: { toolCallId: "t1", result: "done-result" } }
+        ])
+      )
+    } as unknown as ApiClient;
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: vi.fn(),
+        onAssistantDelta: vi.fn(),
+        onComplete: vi.fn()
+      })
+    );
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+    await waitFor(() =>
+      expect(result.current.toolCalls).toEqual([
+        { id: "t1", name: "read", subtitle: "a.ts", status: "done", result: "done-result" }
+      ])
+    );
+  });
+
+  it("does not propagate a tool_updated event that has no toolCallId", async () => {
+    const onToolCallUpdate = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([{ type: "tool_updated", payload: { toolName: "read", partialResult: "x" } }])
+      )
+    } as unknown as ApiClient;
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: vi.fn(),
+        onAssistantDelta: vi.fn(),
+        onToolCallUpdate,
+        onComplete: vi.fn()
+      })
+    );
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+    expect(onToolCallUpdate).not.toHaveBeenCalled();
+  });
+
+  it("removes the empty assistant bubble when the run fails before any text", async () => {
+    let assistantId = "";
+    const onAssistantRemove = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }]))
+    } as unknown as ApiClient;
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: (m) => {
+          assistantId = m.id;
+        },
+        onAssistantDelta: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+        onAssistantRemove
+      })
+    );
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+    await waitFor(() => expect(onAssistantRemove).toHaveBeenCalledWith(assistantId));
+  });
+
+  it("keeps the assistant bubble when some text streamed before failure", async () => {
+    const onAssistantRemove = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([
+          { type: "assistant_delta", payload: { text: "partial" } },
+          { type: "run_failed", payload: { error: "boom" } }
+        ])
+      )
+    } as unknown as ApiClient;
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: vi.fn(),
+        onAssistantDelta: vi.fn(),
+        onComplete: vi.fn(),
+        onError: vi.fn(),
+        onAssistantRemove
+      })
+    );
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+    await waitFor(() => expect(result.current.sending).toBe(false));
+    expect(onAssistantRemove).not.toHaveBeenCalled();
+  });
+
   it("can abort an active run and clear sending state", async () => {
     let seenSignal: AbortSignal | undefined;
     const api = {
