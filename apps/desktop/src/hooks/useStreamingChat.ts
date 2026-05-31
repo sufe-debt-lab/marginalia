@@ -40,6 +40,9 @@ function isAbortError(err: unknown): boolean {
 
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
+  // Transient reasoning text for the current turn; shown while the model thinks,
+  // cleared once the answer starts. Not persisted (a reopened session has none).
+  const [reasoning, setReasoning] = useState("");
   const bufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -67,6 +70,7 @@ export function useStreamingChat(opts: Options) {
       abortRef.current = controller;
       sendingRef.current = true;
       setSending(true);
+      setReasoning("");
       const stamp = Date.now();
       // pi emits one assistant message per turn (separated by message_end). We pre-open
       // the first bubble and open a fresh one whenever a new turn starts streaming, so
@@ -91,9 +95,13 @@ export function useStreamingChat(opts: Options) {
         switch (pi.type) {
           case "message_update": {
             const ev = pi.assistantMessageEvent;
+            if (ev?.type === "thinking_delta" && ev.delta) {
+              setReasoning((r) => r + ev.delta);
+            }
             if (ev?.type === "text_delta" && ev.delta) {
               ensureBubble();
               sawDelta = true;
+              setReasoning((r) => (r ? "" : r));
               bufferRef.current += ev.delta;
               schedule();
             }
@@ -101,6 +109,7 @@ export function useStreamingChat(opts: Options) {
           }
           case "message_end": {
             flush();
+            setReasoning("");
             if (pi.message?.stopReason === "error") {
               throw new Error(pi.message.errorMessage ?? "agent failed");
             }
@@ -189,5 +198,5 @@ export function useStreamingChat(opts: Options) {
     abortRef.current?.abort();
   }, []);
 
-  return { send, stop, sending };
+  return { send, stop, sending, reasoning };
 }

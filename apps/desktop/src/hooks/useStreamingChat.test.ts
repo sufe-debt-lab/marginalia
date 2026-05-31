@@ -15,6 +15,8 @@ const textDelta = (delta: string) =>
   agentEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
 const messageEnd = (stopReason = "stop") =>
   agentEvent({ type: "message_end", message: { stopReason } });
+const thinkingDelta = (delta: string) =>
+  agentEvent({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta } });
 
 function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
   return renderHook(() =>
@@ -79,6 +81,28 @@ describe("useStreamingChat", () => {
     expect(onAssistantStart).toHaveBeenCalledTimes(2);
     const deltas = onAssistantDelta.mock.calls.map(([s]) => s);
     expect(deltas).toEqual(["a", "b"]);
+  });
+
+  it("accumulates reasoning text from thinking deltas", async () => {
+    const api = {
+      runChat: vi.fn(async () => makeEvents([thinkingDelta("ab"), thinkingDelta("cd")]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api);
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+    await waitFor(() => expect(result.current.reasoning).toBe("abcd"));
+  });
+
+  it("clears reasoning once the answer starts streaming", async () => {
+    const api = {
+      runChat: vi.fn(async () => makeEvents([thinkingDelta("x"), textDelta("y")]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api);
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+    await waitFor(() => expect(result.current.reasoning).toBe(""));
   });
 
   it("sends when text is empty but context files are attached", async () => {

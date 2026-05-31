@@ -107,6 +107,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           onRetry={retry}
           model={actualModel || undefined}
           streaming={stream.sending}
+          reasoning={stream.reasoning}
         />
       </div>
       <div className="border-t border-border bg-background px-4 py-3">

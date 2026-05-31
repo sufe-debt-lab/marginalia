@@ -44,7 +44,8 @@ export const en = {
   chat: {
     noMessages: "No messages yet",
     assistant: "assistant",
-    noProvider: "No provider configured"
+    noProvider: "No provider configured",
+    thinking: "Thinking…"
   },
   settings: {
     title: "Settings",
@@ -190,7 +191,8 @@ export const zh = {
   chat: {
     noMessages: "还没有消息",
     assistant: "assistant",
-    noProvider: "未配置服务商"
+    noProvider: "未配置服务商",
+    thinking: "思考中…"
   },
   settings: {
     title: "设置",
