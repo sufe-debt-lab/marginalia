@@ -80,7 +80,8 @@ export function useStreamingChat(opts: Options) {
 
   const send = useCallback(
     async (text: string, contextFiles: string[]) => {
-      if (!opts.sessionId || !text.trim() || sendingRef.current) return;
+      if (!opts.sessionId || sendingRef.current) return;
+      if (!text.trim() && contextFiles.length === 0) return;
       const controller = new AbortController();
       abortRef.current = controller;
       sendingRef.current = true;
@@ -98,16 +99,20 @@ export function useStreamingChat(opts: Options) {
           role: "assistant",
           content: ""
         });
-        const events = await opts.api.runChat(opts.sessionId, {
-          providerId: opts.providerId,
-          model: opts.model,
-          message: text,
-          contextFiles,
-          permission: opts.permission,
-          reasoning: opts.reasoning
-        }, {
-          signal: controller.signal
-        });
+        const events = await opts.api.runChat(
+          opts.sessionId,
+          {
+            providerId: opts.providerId,
+            model: opts.model,
+            message: text,
+            contextFiles,
+            permission: opts.permission,
+            reasoning: opts.reasoning
+          },
+          {
+            signal: controller.signal
+          }
+        );
         for await (const event of events) {
           if (controller.signal.aborted) break;
           if (event.type === "assistant_delta") {
@@ -143,9 +148,7 @@ export function useStreamingChat(opts: Options) {
               status: "running",
               result: resultText(p.partialResult)
             } satisfies ToolCall;
-            setToolCalls((prev) =>
-              prev.map((tc) => (tc.id === tool.id ? { ...tc, ...tool } : tc))
-            );
+            setToolCalls((prev) => prev.map((tc) => (tc.id === tool.id ? { ...tc, ...tool } : tc)));
             opts.onToolCallUpdate?.(tool);
           }
           if (event.type === "tool_completed" || event.type === "tool_failed") {

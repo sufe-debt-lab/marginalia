@@ -62,7 +62,7 @@ describe("Composer", () => {
     expect(onSubmit).toHaveBeenCalledWith("hi");
   });
 
-  it("@ shows mention menu and selecting adds context file", async () => {
+  it("@ inserts an inline mention token without creating an attachment card", async () => {
     const onAdd = vi.fn();
     render(
       <Composer
@@ -80,9 +80,11 @@ describe("Composer", () => {
         placeholder=""
       />
     );
-    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "@");
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.type(input, "@");
     await userEvent.click(await screen.findByText("src/App.tsx"));
-    expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
+    expect(input).toHaveValue("@src/App.tsx ");
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
   it("opens the slash menu when '/' is typed mid-sentence", async () => {
@@ -106,7 +108,7 @@ describe("Composer", () => {
     expect(await screen.findByText("/model")).toBeInTheDocument();
   });
 
-  it("@ mid-sentence adds a context file", async () => {
+  it("@ mid-sentence inserts an inline mention token", async () => {
     const onAdd = vi.fn();
     render(
       <Composer
@@ -124,12 +126,15 @@ describe("Composer", () => {
         placeholder=""
       />
     );
-    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "see @App");
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.type(input, "see @App");
     await userEvent.click(await screen.findByText("src/App.tsx"));
-    expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
+    expect(input).toHaveValue("see @src/App.tsx ");
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
-  it("the + button opens an attachment picker", async () => {
+  it("the + button opens an attachment picker and selecting adds a context file", async () => {
+    const onAdd = vi.fn();
     render(
       <Composer
         api={api()}
@@ -139,7 +144,7 @@ describe("Composer", () => {
         model="M2.7"
         onModelChange={vi.fn()}
         contextFiles={[]}
-        onAddContextFile={vi.fn()}
+        onAddContextFile={onAdd}
         onRemoveContextFile={vi.fn()}
         sending={false}
         onSubmit={vi.fn()}
@@ -147,7 +152,53 @@ describe("Composer", () => {
       />
     );
     await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
-    expect(await screen.findByText("src/App.tsx")).toBeInTheDocument();
+    await userEvent.click(await screen.findByText("src/App.tsx"));
+    expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
+  });
+
+  it("can send with only attachments and no text", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={["src/x.ts"]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={onSubmit}
+        placeholder=""
+      />
+    );
+    const send = screen.getByRole("button", { name: /send/i });
+    expect(send).toBeEnabled();
+    await userEvent.click(send);
+    expect(onSubmit).toHaveBeenCalledWith("");
+  });
+
+  it("disables send when the disabled prop is set, even with attachments", () => {
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={["a.ts"]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        disabled
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
   });
 
   it("changing permission calls onPermissionChange", async () => {

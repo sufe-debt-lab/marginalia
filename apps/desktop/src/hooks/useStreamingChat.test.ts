@@ -25,7 +25,11 @@ describe("useStreamingChat", () => {
           { type: "assistant_delta", payload: { text: "lo" } }
         ])
       ),
-      createMessage: vi.fn(async (_sid, input) => ({ id: "u", role: input.role, content: input.content }))
+      createMessage: vi.fn(async (_sid, input) => ({
+        id: "u",
+        role: input.role,
+        content: input.content
+      }))
     } as unknown as ApiClient;
 
     const { result } = renderHook(() =>
@@ -53,12 +57,54 @@ describe("useStreamingChat", () => {
     expect(onAssistantStart).toHaveBeenCalled();
   });
 
+  it("sends when text is empty but context files are attached", async () => {
+    const runChat = vi.fn(async () =>
+      makeEvents([{ type: "assistant_delta", payload: { text: "ok" } }])
+    );
+    const api = { runChat } as unknown as ApiClient;
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: vi.fn(),
+        onAssistantDelta: vi.fn(),
+        onComplete: vi.fn()
+      })
+    );
+    await act(async () => {
+      await result.current.send("", ["a.ts"]);
+    });
+    expect(runChat).toHaveBeenCalled();
+  });
+
+  it("does not send when both text and context files are empty", async () => {
+    const runChat = vi.fn();
+    const api = { runChat } as unknown as ApiClient;
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: vi.fn(),
+        onAssistantDelta: vi.fn(),
+        onComplete: vi.fn()
+      })
+    );
+    await act(async () => {
+      await result.current.send("   ", []);
+    });
+    expect(runChat).not.toHaveBeenCalled();
+  });
+
   it("sets error on run_failed and stops", async () => {
     const onError = vi.fn();
     const api = {
-      runChat: vi.fn(async () =>
-        makeEvents([{ type: "run_failed", payload: { error: "boom" } }])
-      ),
+      runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }])),
       createMessage: vi.fn(async () => ({ id: "u", role: "user", content: "" }))
     } as unknown as ApiClient;
     const { result } = renderHook(() =>

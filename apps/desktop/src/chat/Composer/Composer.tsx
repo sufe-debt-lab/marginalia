@@ -20,6 +20,8 @@ interface Props {
   onAddContextFile: (path: string) => void;
   onRemoveContextFile: (path: string) => void;
   sending: boolean;
+  /** Hard-disable the send button (e.g. no workspace / no provider), independent of streaming. */
+  disabled?: boolean;
   onStop?: () => void;
   onSubmit: (text: string) => void;
   placeholder: string;
@@ -85,7 +87,10 @@ export function Composer(props: Props) {
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [mentionSuggestions, setMentionSuggestions] = useState<{ path: string }[]>([]);
   const [trigger, setTrigger] = useState<Trigger | null>(null);
+  // Which UI opened the file menu: an inline `@` mention vs the `+` attachment picker.
+  const [pickerMode, setPickerMode] = useState<"mention" | "attach">("mention");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const canSubmit = !props.disabled && (draft.trim().length > 0 || props.contextFiles.length > 0);
 
   function autoSize() {
     const el = textareaRef.current;
@@ -115,6 +120,7 @@ export function Composer(props: Props) {
       setMentionSuggestions([]);
     } else {
       setSlashQuery(null);
+      setPickerMode("mention");
       if (props.workspaceId) {
         const items = await props.api.searchFiles(props.workspaceId, next.query);
         setMentionSuggestions(Array.isArray(items) ? items : []);
@@ -123,9 +129,8 @@ export function Composer(props: Props) {
   }
 
   function submit() {
-    if (props.sending) return;
+    if (props.sending || !canSubmit) return;
     const text = draft.trim();
-    if (!text) return;
     props.onSubmit(text);
     setDraft("");
     closeMenus();
@@ -154,18 +159,23 @@ export function Composer(props: Props) {
     closeMenus();
   }
 
-  function pickMention(path: string) {
-    props.onAddContextFile(path);
-    // Remove the "@query" token when the menu was opened by typing; the "+"
-    // picker has no trigger, so nothing to strip.
-    if (trigger) replaceTriggerToken("");
-    else textareaRef.current?.focus();
+  /** A file was chosen from the menu — `@` keeps an inline reference, `+` makes an attachment card. */
+  function pickFile(path: string) {
+    if (pickerMode === "mention") {
+      // Keep an inline `@path` token in the message; it is resolved to file
+      // content on send (see ChatView/extractMentions). No attachment card.
+      replaceTriggerToken(`@${path} `);
+    } else {
+      props.onAddContextFile(path);
+      textareaRef.current?.focus();
+    }
     setTrigger(null);
     setMentionSuggestions([]);
   }
 
   async function openAttachPicker() {
     if (!props.workspaceId) return;
+    setPickerMode("attach");
     const items = await props.api.searchFiles(props.workspaceId, "");
     setTrigger(null);
     setSlashQuery(null);
@@ -180,7 +190,7 @@ export function Composer(props: Props) {
       {mentionSuggestions.length > 0 && (
         <MentionMenu
           suggestions={mentionSuggestions}
-          onSelect={pickMention}
+          onSelect={pickFile}
           onClose={() => setMentionSuggestions([])}
         />
       )}
@@ -274,7 +284,7 @@ export function Composer(props: Props) {
             <Button
               size="icon"
               className="ml-1 h-7 w-7 rounded-full"
-              disabled={!draft.trim()}
+              disabled={!canSubmit}
               onClick={submit}
               aria-label={t("composer.send")}
             >

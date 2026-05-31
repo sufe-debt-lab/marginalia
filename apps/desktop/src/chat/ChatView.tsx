@@ -6,6 +6,7 @@ import { useStreamingChat } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
 import { Composer } from "./Composer/Composer.js";
+import { extractMentions } from "./Composer/mentions.js";
 import { MessageStream } from "./MessageStream.js";
 
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
@@ -48,13 +49,18 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     onError: setError
   });
 
+  // `+` attachments (contextFiles) plus inline `@path` mentions from the text.
+  function filesFor(text: string): string[] {
+    return [...new Set([...contextFiles, ...extractMentions(text)])];
+  }
+
   function submit(text: string) {
     if (!actualProviderId) {
       setError(t("chat.noProvider"));
       return;
     }
     setError(null);
-    const files = [...contextFiles];
+    const files = filesFor(text);
     setLastSent({ text, contextFiles: files });
     clearContextFiles();
     void stream.send(text, files);
@@ -64,7 +70,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   useEffect(() => {
     if (pendingPrompt && actualProviderId) {
       const text = pendingPrompt;
-      const files = [...contextFiles];
+      const files = filesFor(text);
       setPendingPrompt(null);
       setLastSent({ text, contextFiles: files });
       clearContextFiles();

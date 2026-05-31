@@ -88,7 +88,8 @@ export function NewThreadView({ api }: { api: ApiClient }) {
           reasoning={reasoning}
           onPermissionChange={setPermission}
           onReasoningChange={setReasoning}
-          sending={!canSend}
+          sending={false}
+          disabled={!canSend}
           onSubmit={submit}
           placeholder={t("newThread.placeholder")}
           autoFocus
