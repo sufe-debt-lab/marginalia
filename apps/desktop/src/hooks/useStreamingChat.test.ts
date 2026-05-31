@@ -9,47 +9,51 @@ async function* makeEvents(events: RunEvent[]) {
   }
 }
 
+/** Wrap a raw pi event in the SSE `agent_event` envelope the server now emits. */
+const agentEvent = (event: unknown): RunEvent => ({ type: "agent_event", payload: { event } });
+const textDelta = (delta: string) =>
+  agentEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
+const messageEnd = (stopReason = "stop") =>
+  agentEvent({ type: "message_end", message: { stopReason } });
+
+function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
+  return renderHook(() =>
+    useStreamingChat({
+      api,
+      sessionId: "s",
+      providerId: "p",
+      model: "m",
+      onUserAppend: vi.fn(),
+      onAssistantStart: vi.fn(),
+      onAssistantDelta: vi.fn(),
+      onComplete: vi.fn(),
+      ...overrides
+    })
+  );
+}
+
 describe("useStreamingChat", () => {
   beforeEach(() => vi.useRealTimers());
 
-  it("sends a message and accumulates assistant deltas", async () => {
+  it("accumulates assistant text deltas from agent_event", async () => {
+    const onAssistantDelta = vi.fn();
     const onUserAppend = vi.fn();
     const onAssistantStart = vi.fn();
-    const onAssistantDelta = vi.fn();
     const onComplete = vi.fn();
-
     const api = {
-      runChat: vi.fn(async () =>
-        makeEvents([
-          { type: "assistant_delta", payload: { text: "hel" } },
-          { type: "assistant_delta", payload: { text: "lo" } }
-        ])
-      ),
-      createMessage: vi.fn(async (_sid, input) => ({
-        id: "u",
-        role: input.role,
-        content: input.content
-      }))
+      runChat: vi.fn(async () => makeEvents([textDelta("hel"), textDelta("lo")]))
     } as unknown as ApiClient;
-
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend,
-        onAssistantStart,
-        onAssistantDelta,
-        onComplete
-      })
-    );
+    const { result } = makeHook(api, {
+      onAssistantDelta,
+      onUserAppend,
+      onAssistantStart,
+      onComplete
+    });
 
     await act(async () => {
       await result.current.send("hi", []);
     });
 
-    await waitFor(() => expect(onAssistantDelta).toHaveBeenCalled());
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
     const total = onAssistantDelta.mock.calls.reduce((acc, [s]) => acc + s, "");
     expect(total).toBe("hello");
@@ -57,23 +61,29 @@ describe("useStreamingChat", () => {
     expect(onAssistantStart).toHaveBeenCalled();
   });
 
+  it("opens a fresh assistant bubble after each turn boundary", async () => {
+    const onAssistantStart = vi.fn();
+    const onAssistantDelta = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([textDelta("a"), messageEnd("toolUse"), textDelta("b"), messageEnd("stop")])
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAssistantStart, onAssistantDelta });
+
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+
+    // One pre-opened bubble + one opened for the second turn.
+    expect(onAssistantStart).toHaveBeenCalledTimes(2);
+    const deltas = onAssistantDelta.mock.calls.map(([s]) => s);
+    expect(deltas).toEqual(["a", "b"]);
+  });
+
   it("sends when text is empty but context files are attached", async () => {
-    const runChat = vi.fn(async () =>
-      makeEvents([{ type: "assistant_delta", payload: { text: "ok" } }])
-    );
-    const api = { runChat } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn()
-      })
-    );
+    const runChat = vi.fn(async () => makeEvents([textDelta("ok")]));
+    const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
       await result.current.send("", ["a.ts"]);
     });
@@ -82,19 +92,7 @@ describe("useStreamingChat", () => {
 
   it("does not send when both text and context files are empty", async () => {
     const runChat = vi.fn();
-    const api = { runChat } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn()
-      })
-    );
+    const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
       await result.current.send("   ", []);
     });
@@ -104,22 +102,9 @@ describe("useStreamingChat", () => {
   it("sets error on run_failed and stops", async () => {
     const onError = vi.fn();
     const api = {
-      runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }])),
-      createMessage: vi.fn(async () => ({ id: "u", role: "user", content: "" }))
+      runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }]))
     } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn(),
-        onError
-      })
-    );
+    const { result } = makeHook(api, { onError });
     await act(async () => {
       await result.current.send("hi", []);
     });
@@ -127,59 +112,50 @@ describe("useStreamingChat", () => {
   });
 
   it("transitions a tool call to done matched by toolCallId", async () => {
+    const onToolCallUpdate = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
         makeEvents([
-          {
-            type: "tool_started",
-            payload: { toolCallId: "t1", toolName: "read", args: { path: "a.ts" } }
-          },
-          { type: "tool_completed", payload: { toolCallId: "t1", result: "done-result" } }
+          agentEvent({
+            type: "tool_execution_start",
+            toolCallId: "t1",
+            toolName: "read",
+            args: { path: "a.ts" }
+          }),
+          agentEvent({
+            type: "tool_execution_end",
+            toolCallId: "t1",
+            toolName: "read",
+            result: "done-result",
+            isError: false
+          })
         ])
       )
     } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn()
-      })
-    );
+    const { result } = makeHook(api, { onToolCallUpdate });
     await act(async () => {
       await result.current.send("hi", []);
     });
     await waitFor(() =>
-      expect(result.current.toolCalls).toEqual([
-        { id: "t1", name: "read", subtitle: "a.ts", status: "done", result: "done-result" }
-      ])
+      expect(onToolCallUpdate).toHaveBeenLastCalledWith({
+        id: "t1",
+        name: "read",
+        status: "done",
+        result: "done-result"
+      })
     );
   });
 
-  it("does not propagate a tool_updated event that has no toolCallId", async () => {
+  it("ignores tool execution events that have no toolCallId", async () => {
     const onToolCallUpdate = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
-        makeEvents([{ type: "tool_updated", payload: { toolName: "read", partialResult: "x" } }])
+        makeEvents([
+          agentEvent({ type: "tool_execution_update", toolName: "read", partialResult: "x" })
+        ])
       )
     } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onToolCallUpdate,
-        onComplete: vi.fn()
-      })
-    );
+    const { result } = makeHook(api, { onToolCallUpdate });
     await act(async () => {
       await result.current.send("hi", []);
     });
@@ -192,22 +168,13 @@ describe("useStreamingChat", () => {
     const api = {
       runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }]))
     } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: (m) => {
-          assistantId = m.id;
-        },
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn(),
-        onError: vi.fn(),
-        onAssistantRemove
-      })
-    );
+    const { result } = makeHook(api, {
+      onAssistantStart: (m: { id: string }) => {
+        assistantId = m.id;
+      },
+      onError: vi.fn(),
+      onAssistantRemove
+    });
     await act(async () => {
       await result.current.send("hi", []);
     });
@@ -218,26 +185,10 @@ describe("useStreamingChat", () => {
     const onAssistantRemove = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
-        makeEvents([
-          { type: "assistant_delta", payload: { text: "partial" } },
-          { type: "run_failed", payload: { error: "boom" } }
-        ])
+        makeEvents([textDelta("partial"), { type: "run_failed", payload: { error: "boom" } }])
       )
     } as unknown as ApiClient;
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn(),
-        onError: vi.fn(),
-        onAssistantRemove
-      })
-    );
+    const { result } = makeHook(api, { onError: vi.fn(), onAssistantRemove });
     await act(async () => {
       await result.current.send("hi", []);
     });
@@ -260,18 +211,7 @@ describe("useStreamingChat", () => {
       })
     } as unknown as ApiClient;
 
-    const { result } = renderHook(() =>
-      useStreamingChat({
-        api,
-        sessionId: "s",
-        providerId: "p",
-        model: "m",
-        onUserAppend: vi.fn(),
-        onAssistantStart: vi.fn(),
-        onAssistantDelta: vi.fn(),
-        onComplete: vi.fn()
-      })
-    );
+    const { result } = makeHook(api);
 
     await act(async () => {
       void result.current.send("hi", []);

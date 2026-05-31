@@ -9,6 +9,13 @@ async function* events(items: RunEvent[]) {
   for (const e of items) yield e;
 }
 
+const textDelta = (delta: string): RunEvent => ({
+  type: "agent_event",
+  payload: {
+    event: { type: "message_update", assistantMessageEvent: { type: "text_delta", delta } }
+  }
+});
+
 function makeApi(): ApiClient {
   return {
     listProviders: vi.fn(async () => [{ id: "p1", name: "Minimax", defaultModel: "M2.7" }]),
@@ -18,7 +25,7 @@ function makeApi(): ApiClient {
       role: input.role,
       content: input.content
     })),
-    runChat: vi.fn(async () => events([{ type: "assistant_delta", payload: { text: "hi" } }])),
+    runChat: vi.fn(async () => events([textDelta("hi")])),
     searchFiles: vi.fn(async () => [])
   } as unknown as ApiClient;
 }
@@ -59,9 +66,7 @@ describe("ChatView", () => {
       .mockImplementationOnce(async () =>
         events([{ type: "run_failed", payload: { error: "boom" } }])
       )
-      .mockImplementationOnce(async () =>
-        events([{ type: "assistant_delta", payload: { text: "ok" } }])
-      );
+      .mockImplementationOnce(async () => events([textDelta("ok")]));
     useAppStore.setState({ pendingPrompt: "hello there" });
     render(<ChatView api={api} sessionId="s1" />);
 

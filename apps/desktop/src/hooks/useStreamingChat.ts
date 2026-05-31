@@ -1,13 +1,6 @@
 import { useCallback, useRef, useState } from "react";
+import { resultText, toolSubtitle } from "@marginalia/chat-core";
 import type { ApiClient, Message, ToolCall } from "@/api/client.js";
-
-/** Pull a compact, human-readable argument out of a pi tool call's args. */
-function toolSubtitle(args: unknown): string {
-  if (!args || typeof args !== "object") return "";
-  const a = args as Record<string, unknown>;
-  const candidate = a.path ?? a.file_path ?? a.filePath ?? a.command ?? a.pattern ?? a.query;
-  return typeof candidate === "string" ? candidate : "";
-}
 
 interface Options {
   api: ApiClient;
@@ -26,41 +19,27 @@ interface Options {
   onError?: (msg: string) => void;
 }
 
+/** The subset of a raw pi `AgentSessionEvent` the chat UI derives state from. */
+type PiEvent = {
+  type?: string;
+  assistantMessageEvent?: { type?: string; delta?: string };
+  message?: { stopReason?: string; errorMessage?: string };
+  toolCallId?: string;
+  toolName?: string;
+  args?: unknown;
+  partialResult?: unknown;
+  result?: unknown;
+  isError?: boolean;
+};
+
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException
     ? err.name === "AbortError"
     : err instanceof Error && err.name === "AbortError";
 }
 
-function resultText(result: unknown): string | undefined {
-  if (!result) return undefined;
-  if (typeof result === "string") return result.slice(0, 400);
-  if (typeof result !== "object") return String(result);
-  const record = result as Record<string, unknown>;
-  const content = record.content;
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object") {
-          const candidate = part as { text?: unknown };
-          return typeof candidate.text === "string" ? candidate.text : "";
-        }
-        return "";
-      })
-      .join("");
-    if (text) return text.slice(0, 400);
-  }
-  try {
-    return JSON.stringify(result).slice(0, 400);
-  } catch {
-    return undefined;
-  }
-}
-
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
-  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const bufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -88,21 +67,83 @@ export function useStreamingChat(opts: Options) {
       abortRef.current = controller;
       sendingRef.current = true;
       setSending(true);
-      setToolCalls([]);
       const stamp = Date.now();
-      const assistantId = `local-assistant-${stamp}`;
+      // pi emits one assistant message per turn (separated by message_end). We pre-open
+      // the first bubble and open a fresh one whenever a new turn starts streaming, so
+      // the live view splits bubbles the same way a reopened session does.
+      const firstAssistantId = `local-assistant-${stamp}`;
+      let turn = 0;
+      let needNewBubble = false;
       let sawDelta = false;
-      try {
-        opts.onUserAppend({
-          id: `local-user-${stamp}`,
-          role: "user",
-          content: text
-        });
+
+      function ensureBubble() {
+        if (!needNewBubble) return;
+        turn += 1;
         opts.onAssistantStart({
-          id: assistantId,
+          id: `local-assistant-${stamp}-${turn}`,
           role: "assistant",
           content: ""
         });
+        needNewBubble = false;
+      }
+
+      function handlePiEvent(pi: PiEvent) {
+        switch (pi.type) {
+          case "message_update": {
+            const ev = pi.assistantMessageEvent;
+            if (ev?.type === "text_delta" && ev.delta) {
+              ensureBubble();
+              sawDelta = true;
+              bufferRef.current += ev.delta;
+              schedule();
+            }
+            break;
+          }
+          case "message_end": {
+            flush();
+            if (pi.message?.stopReason === "error") {
+              throw new Error(pi.message.errorMessage ?? "agent failed");
+            }
+            needNewBubble = true;
+            break;
+          }
+          case "tool_execution_start":
+            if (pi.toolCallId) {
+              opts.onToolCallUpdate?.({
+                id: pi.toolCallId,
+                name: pi.toolName ?? "tool",
+                subtitle: toolSubtitle(pi.args),
+                status: "running"
+              });
+            }
+            break;
+          case "tool_execution_update":
+            if (pi.toolCallId) {
+              opts.onToolCallUpdate?.({
+                id: pi.toolCallId,
+                name: pi.toolName ?? "tool",
+                subtitle: toolSubtitle(pi.args),
+                status: "running",
+                result: resultText(pi.partialResult)
+              });
+            }
+            break;
+          case "tool_execution_end":
+            if (pi.toolCallId) {
+              opts.onToolCallUpdate?.({
+                id: pi.toolCallId,
+                name: pi.toolName ?? "tool",
+                status: pi.isError ? "failed" : "done",
+                result: resultText(pi.result)
+              });
+            }
+            break;
+        }
+      }
+
+      try {
+        opts.onUserAppend({ id: `local-user-${stamp}`, role: "user", content: text });
+        opts.onAssistantStart({ id: firstAssistantId, role: "assistant", content: "" });
         const events = await opts.api.runChat(
           opts.sessionId,
           {
@@ -113,80 +154,18 @@ export function useStreamingChat(opts: Options) {
             permission: opts.permission,
             reasoning: opts.reasoning
           },
-          {
-            signal: controller.signal
-          }
+          { signal: controller.signal }
         );
         for await (const event of events) {
           if (controller.signal.aborted) break;
-          if (event.type === "assistant_delta") {
-            const delta = (event.payload as { text?: string } | undefined)?.text ?? "";
-            if (delta) {
-              sawDelta = true;
-              bufferRef.current += delta;
-              schedule();
-            }
-          }
-          if (event.type === "tool_started") {
-            const p = event.payload as { toolCallId?: string; toolName?: string; args?: unknown };
-            const id = p.toolCallId ?? `tool-${Date.now()}`;
-            const tool = {
-              id,
-              name: p.toolName ?? "tool",
-              subtitle: toolSubtitle(p.args),
-              status: "running"
-            } satisfies ToolCall;
-            setToolCalls((prev) => [...prev, tool]);
-            opts.onToolCallUpdate?.(tool);
-          }
-          if (event.type === "tool_updated") {
-            const p = event.payload as {
-              toolCallId?: string;
-              toolName?: string;
-              args?: unknown;
-              partialResult?: unknown;
-            };
-            if (p.toolCallId) {
-              const tool = {
-                id: p.toolCallId,
-                name: p.toolName ?? "tool",
-                subtitle: toolSubtitle(p.args),
-                status: "running",
-                result: resultText(p.partialResult)
-              } satisfies ToolCall;
-              setToolCalls((prev) =>
-                prev.map((tc) => (tc.id === tool.id ? { ...tc, ...tool } : tc))
-              );
-              opts.onToolCallUpdate?.(tool);
-            }
-          }
-          if (event.type === "tool_completed" || event.type === "tool_failed") {
-            const p = event.payload as { toolCallId?: string; toolName?: string; result?: unknown };
-            const status = event.type === "tool_failed" ? "failed" : "done";
-            const result = resultText(p.result);
-            let nextTool: ToolCall | null = null;
-            setToolCalls((prev) =>
-              prev.map((tc) => {
-                if (tc.id !== p.toolCallId) return tc;
-                nextTool = { ...tc, status, result };
-                return nextTool;
-              })
-            );
-            if (p.toolCallId) {
-              opts.onToolCallUpdate?.(
-                nextTool ?? {
-                  id: p.toolCallId,
-                  name: p.toolName ?? "tool",
-                  status,
-                  result
-                }
-              );
-            }
-          }
           if (event.type === "run_failed") {
-            const errMsg = (event.payload as { error?: string } | undefined)?.error ?? "run failed";
-            throw new Error(errMsg);
+            throw new Error(
+              (event.payload as { error?: string } | undefined)?.error ?? "run failed"
+            );
           }
+          if (event.type !== "agent_event") continue;
+          const pi = (event.payload as { event?: PiEvent } | undefined)?.event;
+          if (pi) handlePiEvent(pi);
         }
         flush();
         opts.onComplete();
@@ -195,7 +174,7 @@ export function useStreamingChat(opts: Options) {
         if (!isAbortError(err)) {
           opts.onError?.((err as Error).message);
           // Nothing streamed → drop the empty assistant bubble so it doesn't linger.
-          if (!sawDelta) opts.onAssistantRemove?.(assistantId);
+          if (!sawDelta) opts.onAssistantRemove?.(firstAssistantId);
         }
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
@@ -210,5 +189,5 @@ export function useStreamingChat(opts: Options) {
     abortRef.current?.abort();
   }, []);
 
-  return { send, stop, sending, toolCalls };
+  return { send, stop, sending };
 }

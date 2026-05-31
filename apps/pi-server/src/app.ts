@@ -241,7 +241,6 @@ export function createApp(options: AppOptions = {}) {
       };
       await emit("run_started", { model: modelId });
 
-      let assistantText = "";
       let failed = false;
       try {
         const result = await agentClient.run({
@@ -249,7 +248,11 @@ export function createApp(options: AppOptions = {}) {
           workspaceRoot: workspace.rootDir,
           piProviderId: piProviderId(provider.name),
           modelId,
-          message: await buildAgentMessage(workspace.rootDir, body.message, body.contextFiles ?? []),
+          message: await buildAgentMessage(
+            workspace.rootDir,
+            body.message,
+            body.contextFiles ?? []
+          ),
           agentSessionPath: session.agentSessionPath ?? null,
           permission: body.permission,
           reasoning: body.reasoning ?? null,
@@ -257,53 +260,25 @@ export function createApp(options: AppOptions = {}) {
         });
         if (result.sessionFile) setAgentSessionPath(db, sessionId, result.sessionFile);
 
+        // Single source of truth: forward raw pi events; the client derives all
+        // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
+        // envelope (started/failed/completed) is added on top.
         for await (const event of result.events) {
           await emit("agent_event", { event });
-          const e = event as any;
-          if (e?.type === "message_update" && e.assistantMessageEvent?.type === "text_delta") {
-            const delta = e.assistantMessageEvent.delta as string | undefined;
-            if (delta) {
-              assistantText += delta;
-              await emit("assistant_delta", { text: delta });
-            }
-          }
-          if (e?.type === "tool_execution_start") {
-            await emit("tool_started", {
-              toolCallId: e.toolCallId,
-              toolName: e.toolName,
-              args: e.args ?? null
-            });
-          }
-          if (e?.type === "tool_execution_update") {
-            await emit("tool_updated", {
-              toolCallId: e.toolCallId,
-              toolName: e.toolName,
-              args: e.args ?? null,
-              partialResult: e.partialResult ?? null
-            });
-          }
-          if (e?.type === "tool_execution_end") {
-            await emit(e.isError ? "tool_failed" : "tool_completed", {
-              toolCallId: e.toolCallId,
-              toolName: e.toolName,
-              result: e.result ?? null,
-              isError: Boolean(e.isError)
-            });
-          }
-          if (e?.type === "message_end") {
-            const stop = e.message?.stopReason;
-            if (stop === "error") {
-              const msg = e.message?.errorMessage ?? "agent failed";
-              await emit("run_failed", { error: msg });
-              completeRun(db, run.id, "failed", msg);
-              failed = true;
-              return;
-            }
+          const e = event as {
+            type?: string;
+            message?: { stopReason?: string; errorMessage?: string };
+          };
+          if (e?.type === "message_end" && e.message?.stopReason === "error") {
+            const msg = e.message.errorMessage ?? "agent failed";
+            await emit("run_failed", { error: msg });
+            completeRun(db, run.id, "failed", msg);
+            failed = true;
+            return;
           }
         }
 
         if (!failed) {
-          await emit("assistant_message", { content: assistantText });
           await emit("run_completed");
           completeRun(db, run.id, "completed");
         }

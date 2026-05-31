@@ -143,14 +143,15 @@ describe("chat runs", () => {
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     const text = await response.text();
     expect(text).toContain('"type":"run_started"');
-    expect(text).toContain('"type":"assistant_delta"');
-    expect(text).toContain('"text":"hel"');
-    expect(text).toContain('"text":"lo"');
+    // Single source of truth: only the raw agent_event stream carries content.
     expect(text).toContain('"type":"agent_event"');
+    expect(text).toContain('"delta":"hel"');
+    expect(text).toContain('"delta":"lo"');
+    expect(text).not.toContain('"type":"assistant_delta"');
     expect(text).toContain('"type":"run_completed"');
   });
 
-  it("forwards pi tool-execution events as tool_started / tool_completed SSE", async () => {
+  it("forwards pi tool-execution events only as raw agent_event SSE", async () => {
     const db = memoryDb();
     migrate(db);
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-tool" });
@@ -197,10 +198,12 @@ describe("chat runs", () => {
       body: JSON.stringify({ providerId: provider.id, message: "read it" })
     });
     const text = await response.text();
-    expect(text).toContain('"type":"tool_started"');
+    expect(text).toContain('"type":"agent_event"');
+    expect(text).toContain('"tool_execution_start"');
     expect(text).toContain('"toolName":"read"');
     expect(text).toContain('"path":"docs/spec.md"');
-    expect(text).toContain('"type":"tool_completed"');
+    expect(text).toContain('"tool_execution_end"');
+    expect(text).not.toContain('"type":"tool_started"');
   });
 
   it("passes pi provider id and model into AgentClient.run", async () => {
