@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { Message } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { markdownComponents } from "@/lib/markdown.js";
+import { ToolCard } from "./ToolCard.js";
 
 function MessageItemImpl({
   message,
@@ -36,6 +37,13 @@ function MessageItemImpl({
         </ReactMarkdown>
         {streaming && <span className="caret" aria-hidden />}
       </div>
+      {message.toolCalls && message.toolCalls.length > 0 && (
+        <div className="mt-1.5 flex flex-col gap-2">
+          {message.toolCalls.map((tool) => (
+            <ToolCard key={tool.id} tool={tool} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

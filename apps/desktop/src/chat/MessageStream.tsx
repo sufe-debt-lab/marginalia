@@ -1,8 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
-import type { Message } from "@/api/client.js";
+import type { Message, ToolCall } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
-import type { ToolCall } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { MessageItem } from "./MessageItem.js";
 import { ToolCard } from "./ToolCard.js";
@@ -20,6 +19,13 @@ export function MessageStream({ messages, error, onRetry, model, streaming, tool
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+  const lastIndex = messages.length - 1;
+  const renderedToolIds = useMemo(
+    () => new Set(messages.flatMap((m) => m.toolCalls?.map((tc) => tc.id) ?? [])),
+    [messages]
+  );
+  const looseToolCalls = toolCalls?.filter((tc) => !renderedToolIds.has(tc.id)) ?? [];
+
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -34,8 +40,6 @@ export function MessageStream({ messages, error, onRetry, model, streaming, tool
     );
   }
 
-  const lastIndex = messages.length - 1;
-
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
       {messages.map((m, i) => (
@@ -46,9 +50,9 @@ export function MessageStream({ messages, error, onRetry, model, streaming, tool
           streaming={Boolean(streaming) && i === lastIndex && m.role === "assistant"}
         />
       ))}
-      {toolCalls && toolCalls.length > 0 && (
+      {looseToolCalls.length > 0 && (
         <div className="flex flex-col gap-2">
-          {toolCalls.map((tc) => (
+          {looseToolCalls.map((tc) => (
             <ToolCard key={tc.id} tool={tc} />
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "@/api/client.js";
@@ -48,9 +48,9 @@ describe("SettingsView", () => {
     render(<SettingsView api={fakeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: /providers/i }));
     await userEvent.click(screen.getByRole("button", { name: /add provider/i }));
-    // preset cards first
-    const openai = await screen.findByText("OpenAI");
-    await userEvent.click(openai);
+    // preset cards first — scope to the dialog (the "Others" list also lists OpenAI)
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByText("OpenAI"));
     // choosing a preset reveals the API key field (name prefilled)
     await waitFor(() => expect(screen.getByLabelText(/api key/i)).toBeInTheDocument());
     expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe("OpenAI");

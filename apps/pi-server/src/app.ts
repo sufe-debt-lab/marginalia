@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { createReadStream, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import type Database from "better-sqlite3";
 import { AuthStorage, ModelRegistry, createAgentSession } from "@earendil-works/pi-coding-agent";
 import { getModel } from "@earendil-works/pi-ai";
@@ -33,8 +35,15 @@ import {
   setAgentSessionPath,
   updateSession
 } from "./db/repositories.js";
-import { readDocument, type DocumentContent } from "./files/document-reader.js";
+import {
+  DocumentPreviewError,
+  mimeFromPath,
+  previewErrorStatus,
+  readDocument,
+  type DocumentContent
+} from "./files/document-reader.js";
 import { listWorkspaceFiles, searchWorkspaceFiles } from "./files/file-tree.js";
+import { resolveWorkspacePath } from "./files/path-sandbox.js";
 import { createHealthInfo } from "./health.js";
 import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
 
@@ -105,6 +114,34 @@ export function createApp(options: AppOptions = {}) {
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
     try {
       return c.json(await documentReader(workspace.rootDir, c.req.query("path") ?? ""));
+    } catch (error) {
+      if ((error as Error).message === "Path escapes workspace")
+        return c.json({ error: "Path escapes workspace" }, 403);
+      if (error instanceof DocumentPreviewError) {
+        return c.json(
+          { error: error.message, code: error.code, ...error.meta },
+          previewErrorStatus(error.code)
+        );
+      }
+      return c.json({ error: "file not found" }, 404);
+    }
+  });
+  app.get("/workspaces/:id/files/raw", (c) => {
+    const workspace = getWorkspace(db, c.req.param("id"));
+    if (!workspace) return c.json({ error: "workspace not found" }, 404);
+    const filePath = c.req.query("path") ?? "";
+    try {
+      const absolute = resolveWorkspacePath(workspace.rootDir, filePath);
+      const stat = statSync(absolute);
+      if (!stat.isFile()) return c.json({ error: "not a file" }, 400);
+      const stream = createReadStream(absolute);
+      return new Response(Readable.toWeb(stream) as ReadableStream, {
+        headers: {
+          "content-type": mimeFromPath(filePath),
+          "content-length": String(stat.size),
+          "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(path.basename(filePath))}`
+        }
+      });
     } catch (error) {
       if ((error as Error).message === "Path escapes workspace")
         return c.json({ error: "Path escapes workspace" }, 403);
@@ -212,10 +249,11 @@ export function createApp(options: AppOptions = {}) {
           workspaceRoot: workspace.rootDir,
           piProviderId: piProviderId(provider.name),
           modelId,
-          message: body.message,
+          message: await buildAgentMessage(workspace.rootDir, body.message, body.contextFiles ?? []),
           agentSessionPath: session.agentSessionPath ?? null,
           permission: body.permission,
-          reasoning: body.reasoning ?? null
+          reasoning: body.reasoning ?? null,
+          abortSignal: c.req.raw.signal
         });
         if (result.sessionFile) setAgentSessionPath(db, sessionId, result.sessionFile);
 
@@ -236,10 +274,19 @@ export function createApp(options: AppOptions = {}) {
               args: e.args ?? null
             });
           }
+          if (e?.type === "tool_execution_update") {
+            await emit("tool_updated", {
+              toolCallId: e.toolCallId,
+              toolName: e.toolName,
+              args: e.args ?? null,
+              partialResult: e.partialResult ?? null
+            });
+          }
           if (e?.type === "tool_execution_end") {
             await emit(e.isError ? "tool_failed" : "tool_completed", {
               toolCallId: e.toolCallId,
               toolName: e.toolName,
+              result: e.result ?? null,
               isError: Boolean(e.isError)
             });
           }
@@ -281,4 +328,41 @@ function syncProviderKeys(db: Database.Database, authStorage: AuthStorage) {
     const piId = piProviderId(row.name);
     if (piId && row.api_key) authStorage.setRuntimeApiKey(piId, row.api_key);
   }
+}
+
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+async function buildAgentMessage(
+  workspaceRoot: string,
+  message: string,
+  contextFiles: readonly string[]
+): Promise<string> {
+  const unique = [...new Set(contextFiles.map((p) => p.trim()).filter(Boolean))];
+  if (unique.length === 0) return message;
+
+  const attachments: string[] = [];
+  for (const filePath of unique) {
+    try {
+      const doc = await readDocument(workspaceRoot, filePath);
+      const text = doc.rawOnly
+        ? `[${doc.mime} attachment; content preview unavailable. Use file tools if you need to inspect it.]`
+        : doc.text;
+      attachments.push(
+        `<attached_file path="${escapeAttr(filePath)}" mime="${escapeAttr(doc.mime)}">\n${text}\n</attached_file>`
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unavailable";
+      attachments.push(
+        `<attached_file path="${escapeAttr(filePath)}" error="${escapeAttr(reason)}">\n</attached_file>`
+      );
+    }
+  }
+
+  return `${message}\n\n<attached_files>\n${attachments.join("\n")}\n</attached_files>`;
 }

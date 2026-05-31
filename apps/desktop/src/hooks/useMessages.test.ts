@@ -34,4 +34,44 @@ describe("useMessages", () => {
     });
     expect(result.current.data[1]?.content).toBe("hello world");
   });
+
+  it("does not overwrite optimistic messages when initial load resolves late", async () => {
+    let resolveMessages: (messages: Message[]) => void = () => {};
+    const api = {
+      listMessages: vi.fn(
+        () => new Promise<Message[]>((resolve) => {
+          resolveMessages = resolve;
+        })
+      )
+    } as unknown as ApiClient;
+    const { result } = renderHook(() => useMessages(api, "s1"));
+
+    act(() => {
+      result.current.append({ id: "local-u", role: "user", content: "hi" });
+      result.current.append({ id: "local-a", role: "assistant", content: "" });
+    });
+    act(() => {
+      resolveMessages([]);
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data.map((m) => m.id)).toEqual(["local-u", "local-a"]);
+  });
+
+  it("loads the next session after a session switch", async () => {
+    const api = {
+      listMessages: vi.fn(async (sessionId: string) =>
+        sessionId === "s1"
+          ? ([{ id: "s1-m", role: "user", content: "one" }] as Message[])
+          : ([{ id: "s2-m", role: "user", content: "two" }] as Message[])
+      )
+    } as unknown as ApiClient;
+    const { result, rerender } = renderHook(({ sessionId }) => useMessages(api, sessionId), {
+      initialProps: { sessionId: "s1" }
+    });
+
+    await waitFor(() => expect(result.current.data.map((m) => m.id)).toEqual(["s1-m"]));
+    rerender({ sessionId: "s2" });
+    await waitFor(() => expect(result.current.data.map((m) => m.id)).toEqual(["s2-m"]));
+  });
 });

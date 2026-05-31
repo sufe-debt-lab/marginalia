@@ -20,6 +20,15 @@ export type Message = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  toolCalls?: ToolCall[];
+};
+
+export type ToolCall = {
+  id: string;
+  name: string;
+  subtitle?: string;
+  status: "running" | "done" | "failed";
+  result?: string;
 };
 
 export type Provider = {
@@ -42,7 +51,12 @@ export type DocumentContent = {
   path: string;
   mime: string;
   text: string;
-  pages?: number;
+  language?: string;
+  lineCount?: number;
+  lineCountExact?: boolean;
+  bytesRead?: number;
+  bytesTotal?: number;
+  rawOnly?: boolean;
   truncated: boolean;
 };
 
@@ -109,6 +123,10 @@ export class ApiClient {
     );
   }
 
+  rawDocumentUrl(workspaceId: string, path: string) {
+    return `${this.baseUrl}/workspaces/${workspaceId}/files/raw?path=${encodeURIComponent(path)}`;
+  }
+
   searchFiles(workspaceId: string, q: string) {
     return this.request<{ path: string; match: "name" | "content" }[]>(
       `/workspaces/${workspaceId}/files/search?q=${encodeURIComponent(q)}`
@@ -131,12 +149,14 @@ export class ApiClient {
       contextFiles?: string[];
       permission?: "full" | "ask" | "readonly";
       reasoning?: "low" | "medium" | "high" | "xhigh";
-    }
+    },
+    options: { signal?: AbortSignal } = {}
   ): Promise<AsyncIterable<RunEvent>> {
     const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(input)
+      body: JSON.stringify(input),
+      signal: options.signal
     });
     if (!response.ok) {
       const error = (await response.json().catch(() => ({ error: response.statusText }))) as {

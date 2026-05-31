@@ -177,7 +177,7 @@ describe("Composer", () => {
     expect(onPermissionChange).toHaveBeenCalledWith("readonly");
   });
 
-  it("disables send while sending", () => {
+  it("replaces send with stop while sending", () => {
     render(
       <Composer
         api={api()}
@@ -194,6 +194,30 @@ describe("Composer", () => {
         placeholder=""
       />
     );
-    expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /send/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
+  });
+
+  it("shows a stop button while sending", async () => {
+    const onStop = vi.fn();
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={true}
+        onStop={onStop}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    await userEvent.click(screen.getByRole("button", { name: /stop/i }));
+    expect(onStop).toHaveBeenCalled();
   });
 });

@@ -79,4 +79,45 @@ describe("useStreamingChat", () => {
     });
     await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
   });
+
+  it("can abort an active run and clear sending state", async () => {
+    let seenSignal: AbortSignal | undefined;
+    const api = {
+      runChat: vi.fn(async (_sid, _input, options?: { signal?: AbortSignal }) => {
+        seenSignal = options?.signal;
+        return (async function* () {
+          await new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError"))
+            );
+          });
+        })();
+      })
+    } as unknown as ApiClient;
+
+    const { result } = renderHook(() =>
+      useStreamingChat({
+        api,
+        sessionId: "s",
+        providerId: "p",
+        model: "m",
+        onUserAppend: vi.fn(),
+        onAssistantStart: vi.fn(),
+        onAssistantDelta: vi.fn(),
+        onComplete: vi.fn()
+      })
+    );
+
+    await act(async () => {
+      void result.current.send("hi", []);
+    });
+    await waitFor(() => expect(result.current.sending).toBe(true));
+
+    await act(async () => {
+      result.current.stop();
+    });
+
+    expect(seenSignal?.aborted).toBe(true);
+    await waitFor(() => expect(result.current.sending).toBe(false));
+  });
 });

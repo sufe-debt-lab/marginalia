@@ -249,6 +249,54 @@ describe("chat runs", () => {
     });
   });
 
+  it("includes selected context file contents in the agent message", async () => {
+    let seen: any = null;
+    const db = memoryDb();
+    migrate(db);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "docs-context-"));
+    fs.writeFileSync(path.join(root, "note.md"), "# Note\nattached context");
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: root });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop"
+    });
+
+    const stubClient = {
+      async run(input: any) {
+        seen = input;
+        async function* iterate() {
+          yield { type: "message_end", message: { stopReason: "end", content: "ok" } } as any;
+        }
+        return { sessionFile: "/tmp/x.jsonl", events: iterate(), dispose() {} };
+      }
+    };
+
+    const app = createApp({ db, agentClient: stubClient as any });
+    const provider = await (
+      await app.request("/providers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
+      })
+    ).json();
+
+    const response = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        providerId: provider.id,
+        message: "summarize",
+        contextFiles: ["note.md"]
+      })
+    });
+    await response.text();
+
+    expect(seen.message).toContain("summarize");
+    expect(seen.message).toContain('<attached_file path="note.md"');
+    expect(seen.message).toContain("# Note\nattached context");
+  });
+
   it("serves messages from the pi session file when present", async () => {
     const db = memoryDb();
     migrate(db);

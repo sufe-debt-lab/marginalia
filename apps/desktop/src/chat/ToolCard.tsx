@@ -1,5 +1,5 @@
 import { ChevronRight, FileText } from "lucide-react";
-import type { ToolCall } from "@/hooks/useStreamingChat.js";
+import type { ToolCall } from "@/api/client.js";
 import { cn } from "@/lib/cn.js";
 
 /**
@@ -14,6 +14,7 @@ export function ToolCard({ tool }: { tool: ToolCall }) {
       <FileText className="h-3.5 w-3.5 text-text-muted" />
       <span className="font-medium">{tool.name}</span>
       {tool.subtitle && <span className="mono text-[11.5px] text-text-muted">{tool.subtitle}</span>}
+      {tool.result && <span className="truncate text-[11.5px] text-text-muted">{tool.result}</span>}
       <span className="flex-1" />
       <ChevronRight className="h-3 w-3 text-text-faint" />
     </div>

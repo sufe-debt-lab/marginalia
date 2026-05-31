@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, Plus, X } from "lucide-react";
+import { ArrowUp, Plus, Square, X } from "lucide-react";
 import type { ApiClient, Provider } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -20,6 +20,7 @@ interface Props {
   onAddContextFile: (path: string) => void;
   onRemoveContextFile: (path: string) => void;
   sending: boolean;
+  onStop?: () => void;
   onSubmit: (text: string) => void;
   placeholder: string;
   autoFocus?: boolean;
@@ -122,6 +123,7 @@ export function Composer(props: Props) {
   }
 
   function submit() {
+    if (props.sending) return;
     const text = draft.trim();
     if (!text) return;
     props.onSubmit(text);
@@ -235,40 +237,50 @@ export function Composer(props: Props) {
             "min-h-[40px] max-h-[260px]"
           )}
         />
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-text-muted"
-              aria-label={t("composer.addAttachment")}
-              disabled={!props.workspaceId}
-              onClick={() => void openAttachPicker()}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <PermissionChip
-              value={props.permission ?? "full"}
-              onChange={props.onPermissionChange ?? (() => {})}
-            />
-            <ModelPicker
-              providers={props.providers}
-              providerId={props.providerId}
-              model={props.model}
-              onChange={props.onModelChange}
-              reasoning={props.reasoning ?? "medium"}
-              onReasoningChange={props.onReasoningChange ?? (() => {})}
-            />
-          </div>
+        <div className="mt-2 flex items-center gap-1">
           <Button
+            variant="ghost"
             size="icon"
-            className="h-7 w-7 rounded-full"
-            disabled={props.sending || !draft.trim()}
-            onClick={submit}
-            aria-label={t("composer.send")}
+            className="h-7 w-7 text-text-muted"
+            aria-label={t("composer.addAttachment")}
+            disabled={!props.workspaceId}
+            onClick={() => void openAttachPicker()}
           >
-            <ArrowUp className="h-4 w-4" strokeWidth={2} />
+            <Plus className="h-4 w-4" />
           </Button>
+          <PermissionChip
+            value={props.permission ?? "full"}
+            onChange={props.onPermissionChange ?? (() => {})}
+          />
+          <span className="flex-1" />
+          <ModelPicker
+            providers={props.providers}
+            providerId={props.providerId}
+            model={props.model}
+            onChange={props.onModelChange}
+            reasoning={props.reasoning ?? "medium"}
+            onReasoningChange={props.onReasoningChange ?? (() => {})}
+          />
+          {props.sending ? (
+            <Button
+              size="icon"
+              className="ml-1 h-7 w-7 rounded-full"
+              onClick={props.onStop}
+              aria-label={t("composer.stop")}
+            >
+              <Square className="h-3.5 w-3.5" strokeWidth={2} />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="ml-1 h-7 w-7 rounded-full"
+              disabled={!draft.trim()}
+              onClick={submit}
+              aria-label={t("composer.send")}
+            >
+              <ArrowUp className="h-4 w-4" strokeWidth={2} />
+            </Button>
+          )}
         </div>
       </div>
     </div>

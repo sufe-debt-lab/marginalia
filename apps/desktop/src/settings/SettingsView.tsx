@@ -22,7 +22,12 @@ import { useProviders } from "@/hooks/useProviders.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
 import { useAppStore } from "@/store/app-store.js";
-import { PROVIDER_PRESETS, modelsForProvider } from "./provider-catalog.js";
+import {
+  PROVIDER_PRESETS,
+  brandColorFor,
+  modelsForProvider,
+  unconfiguredPresets
+} from "./provider-catalog.js";
 
 type SettingsTab = "general" | "providers" | "mcp" | "skills";
 
@@ -308,13 +313,20 @@ function ProvidersPane({ api }: { api: ApiClient }) {
   const loaded = useProviders(api);
   const [extra, setExtra] = useState<Provider[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [seedPreset, setSeedPreset] = useState<string | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const reasoning = useAppStore((s) => s.reasoning);
   const setReasoning = useAppStore((s) => s.setReasoning);
   const composerModel = useAppStore((s) => s.composerModel);
   const providers = [...loaded.data, ...extra];
+  const others = unconfiguredPresets(providers);
   const globalDefault = providers[0]?.defaultModel ?? t("settings.none");
   const workspaceModel = composerModel || providers[0]?.defaultModel || t("settings.none");
+
+  function openAddWith(presetKey: string | null) {
+    setSeedPreset(presetKey);
+    setAddOpen(true);
+  }
 
   async function handleTest(id: string) {
     try {
@@ -381,7 +393,7 @@ function ProvidersPane({ api }: { api: ApiClient }) {
               <RotateCw className={cn("mr-1 h-3 w-3", diagnosing && "animate-spin")} />
               {t("settings.runDiagnostics")}
             </Button>
-            <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Button size="sm" onClick={() => openAddWith(null)}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               {t("settings.addProvider")}
             </Button>
@@ -431,9 +443,7 @@ function ProvidersPane({ api }: { api: ApiClient }) {
         {providers.map((p, i) => (
           <div key={p.id} className={cn(i < providers.length - 1 && "border-b border-border-soft")}>
             <div className="flex items-center gap-3.5 px-4 py-3.5">
-              <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-surface-3 font-mono text-xs font-semibold text-text-muted">
-                {p.name.slice(0, 1).toUpperCase()}
-              </span>
+              <ProviderAvatar name={p.name} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{p.name}</span>
@@ -484,24 +494,78 @@ function ProvidersPane({ api }: { api: ApiClient }) {
         ))}
       </SettingCard>
 
+      {others.length > 0 && (
+        <>
+          <SectionLabel>{t("settings.others")}</SectionLabel>
+          <SettingCard>
+            {others.map((preset, i) => (
+              <div
+                key={preset.key}
+                className={cn(
+                  "flex items-center gap-3.5 px-4 py-3.5",
+                  i < others.length - 1 && "border-b border-border-soft"
+                )}
+              >
+                <ProviderAvatar name={preset.name} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">
+                    {locale === "zh" ? preset.labelZh : preset.label}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-text-muted">
+                    <span className="dot idle" />
+                    <span>{t("settings.notConfigured")}</span>
+                  </div>
+                </div>
+                <Button variant="secondary" size="sm" onClick={() => openAddWith(preset.key)}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  {t("settings.add")}
+                </Button>
+              </div>
+            ))}
+          </SettingCard>
+        </>
+      )}
+
       <ProviderPresetDialog
         open={addOpen}
         locale={locale}
-        onClose={() => setAddOpen(false)}
+        seedPresetKey={seedPreset}
+        onClose={() => {
+          setAddOpen(false);
+          setSeedPreset(null);
+        }}
         onSubmit={handleAdd}
       />
     </>
   );
 }
 
+function ProviderAvatar({ name }: { name: string }) {
+  const color = brandColorFor(name);
+  return (
+    <span
+      className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg font-mono text-xs font-semibold"
+      style={
+        color
+          ? { background: color, color: "#fff" }
+          : { background: "var(--surface-3)", color: "var(--text-muted)" }
+      }
+    >
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
 function ProviderPresetDialog({
   open,
   locale,
+  seedPresetKey,
   onClose,
   onSubmit
 }: {
   open: boolean;
   locale: "en" | "zh";
+  seedPresetKey?: string | null;
   onClose: () => void;
   onSubmit: (input: {
     name: string;
@@ -542,6 +606,12 @@ function ProviderPresetDialog({
     setBaseUrl(p.baseUrl);
     setDefaultModel(p.defaultModel);
   }
+
+  // When opened from an "Others" row, jump straight to that preset's form.
+  useEffect(() => {
+    if (open && seedPresetKey) choosePreset(seedPresetKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, seedPresetKey]);
 
   return (
     <Dialog

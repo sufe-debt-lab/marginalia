@@ -1,21 +1,46 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FolderOpen, FolderTree, Paperclip, Pencil, RotateCw, Search } from "lucide-react";
 import type { ApiClient } from "@/api/client.js";
+import { ResizeHandle } from "@/components/ResizeHandle.js";
 import { Button } from "@/components/ui/button.js";
 import { useDocumentContent } from "@/hooks/useDocumentContent.js";
 import { useFileTree } from "@/hooks/useFileTree.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
 import { cn } from "@/lib/cn.js";
-import { DocumentTabs } from "./DocumentTabs.js";
+import { DocumentTabs, type Tab } from "./DocumentTabs.js";
 import { DocumentTree } from "./DocumentTree.js";
 import { DocumentViewer } from "./DocumentViewer.js";
 
-export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceId: string }) {
+/** Unique parent directory paths implied by a flat list of file paths. */
+function derivedDirs(paths: readonly string[]): Set<string> {
+  const dirs = new Set<string>();
+  for (const p of paths) {
+    const parts = p.split("/");
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
+  }
+  return dirs;
+}
+
+function clampTreeWidth(width: number): number {
+  return Math.max(160, Math.min(520, width));
+}
+
+export function DocumentPanel({
+  api,
+  workspaceId,
+  workspaceName
+}: {
+  api: ApiClient;
+  workspaceId: string;
+  workspaceName?: string | null;
+}) {
   const { t } = useTranslation();
-  const [tabs, setTabs] = useState<string[]>([]);
+  const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(true);
+  const [treeWidth, setTreeWidth] = useState(240);
+  const [filter, setFilter] = useState("");
   const tree = useFileTree(api, workspaceId);
   const doc = useDocumentContent(api, workspaceId, activeTab);
   const addContextFile = useAppStore((s) => s.addContextFile);
@@ -23,31 +48,83 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
   // No tab open → file tree fills the panel. A tab open → split (narrow tree + viewer).
   const hasTab = activeTab !== null;
   const treeVisible = !hasTab || treeOpen;
+  const activeFileUrl = activeTab ? api.rawDocumentUrl(workspaceId, activeTab) : undefined;
+
+  // Directory paths implied by the tree. Folder rows only expand/collapse
+  // (handled by @pierre/trees) — never open a tab — so opening guards against them.
+  const allDirs = useMemo(() => derivedDirs(tree.paths), [tree.paths]);
+
+  const needle = filter.trim().toLowerCase();
+  const visiblePaths = useMemo(
+    () => (needle ? tree.paths.filter((p) => p.toLowerCase().includes(needle)) : tree.paths),
+    [tree.paths, needle]
+  );
+  const visibleDirs = useMemo(
+    () => [...allDirs].filter((d) => visiblePaths.some((p) => p.startsWith(d + "/"))),
+    [allDirs, visiblePaths]
+  );
+
+  // O(1) lookup instead of O(n) includes() on every openTab call
+  const treePathSet = useMemo(() => new Set(tree.paths), [tree.paths]);
 
   function openTab(path: string) {
-    setTabs((existing) => (existing.includes(path) ? existing : [...existing, path]));
+    if (allDirs.has(path) || !treePathSet.has(path)) return;
+
+    setTabs((existing) => {
+      // If path already open, just switch to it (no tab change)
+      if (existing.some((t) => t.path === path)) {
+        return existing;
+      }
+
+      // Find current active tab - check from existing tabs (avoids stale closure)
+      const activeTabData = activeTab ? existing.find((t) => t.path === activeTab) : null;
+
+      // If current tab exists and is NOT pinned, replace it instead of adding new tab
+      if (activeTab && activeTabData && !activeTabData.pinned) {
+        return existing.map((t) => (t.path === activeTab ? { ...t, path } : t));
+      }
+
+      // Otherwise add new tab
+      return [...existing, { path, pinned: false }];
+    });
+
+    // Set activeTab outside setTabs to avoid stale closure
     setActiveTab(path);
   }
 
   function closeTab(path: string) {
     setTabs((existing) => {
-      const next = existing.filter((p) => p !== path);
-      setActiveTab((current) => (current !== path ? current : (next[next.length - 1] ?? null)));
+      const next = existing.filter((t) => t.path !== path);
+      setActiveTab((current) =>
+        current !== path ? current : (next[next.length - 1]?.path ?? null)
+      );
       return next;
     });
+  }
+
+  function togglePin(path: string) {
+    setTabs((existing) => existing.map((t) => (t.path === path ? { ...t, pinned: !t.pinned } : t)));
   }
 
   const treeColumn = (
     <div
       className={cn(
-        "flex min-h-0 flex-col bg-surface-2 text-xs",
-        hasTab ? "w-48 shrink-0 border-r border-border-soft" : "flex-1"
+        "relative flex min-h-0 flex-col bg-surface-2 text-xs",
+        hasTab ? "shrink-0 border-r border-border-soft" : "flex-1"
       )}
+      style={hasTab ? { width: treeWidth } : undefined}
     >
       <div className="p-2.5">
-        <div className="flex items-center gap-1.5 rounded-md bg-surface px-2 py-1 text-text-subtle">
-          <Search className="h-3 w-3" />
-          <span className="text-[11.5px]">{t("docPanel.filterFiles")}</span>
+        <div className="flex items-center gap-1.5 rounded border border-border-soft bg-surface px-2 py-1">
+          <Search className="h-3 w-3 shrink-0 text-text-faint" />
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder={t("docPanel.filterFiles")}
+            aria-label={t("docPanel.filterFiles")}
+            className="min-w-0 flex-1 bg-transparent text-[11.5px] text-foreground outline-none placeholder:text-text-faint"
+          />
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-2">
@@ -55,12 +132,24 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
           <p className="px-2 py-1 text-text-muted">{t("docPanel.loading")}</p>
         ) : (
           <>
-            <DocumentTree paths={tree.paths} onSelect={openTab} />
+            <DocumentTree paths={visiblePaths} onSelect={openTab} />
             {/* Test-only seam: @pierre/trees renders to a canvas-like tree that
-                jsdom can't click. Gated to Vitest so it never ships in prod/dev DOM. */}
+                jsdom can't click. Gated to Vitest so it never ships in prod/dev DOM.
+                Folder rows are derived (mirrors pierre) so the folder-guard is
+                exercisable: clicking a folder must only expand, never open a tab. */}
             {import.meta.env.MODE === "test" && (
               <div data-testid="doc-tree-fallback" className="sr-only">
-                {tree.paths.map((p) => (
+                {visibleDirs.map((d) => (
+                  <button
+                    key={`dir:${d}`}
+                    type="button"
+                    aria-label={`Open ${d}`}
+                    onClick={() => openTab(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+                {visiblePaths.map((p) => (
                   <button
                     key={p}
                     type="button"
@@ -84,6 +173,13 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
           </span>
         </div>
       )}
+      {hasTab && (
+        <ResizeHandle
+          side="right"
+          getWidth={() => treeWidth}
+          onWidth={(next) => setTreeWidth(clampTreeWidth(next))}
+        />
+      )}
     </div>
   );
 
@@ -94,7 +190,8 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
         activeTab={activeTab}
         onSelect={setActiveTab}
         onClose={closeTab}
-        onAdd={() => setTreeOpen(true)}
+        onPin={togglePin}
+        workspaceName={workspaceName}
       />
 
       {hasTab && (
@@ -125,6 +222,7 @@ export function DocumentPanel({ api, workspaceId }: { api: ApiClient; workspaceI
                 content={doc.content}
                 loading={doc.loading}
                 error={doc.error}
+                fileUrl={activeFileUrl}
               />
             </div>
             <div className="flex items-center gap-2 border-t border-border-soft bg-surface px-3 py-2">

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ResizeHandle } from "@/components/ResizeHandle.js";
 import { useApi } from "@/hooks/useApi.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -22,8 +23,14 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const leftWidth = useAppStore((s) => s.leftSidebarWidth);
   const setLeftWidth = useAppStore((s) => s.setLeftSidebarWidth);
+  const rightWidth = useAppStore((s) => s.rightPanelWidth);
+  const setRightWidth = useAppStore((s) => s.setRightPanelWidth);
   const workspaces = useWorkspaces(api);
   const noWorkspaces = !workspaces.loading && workspaces.data.length === 0;
+  const activeWorkspaceName = useMemo(
+    () => workspaces.data.find((w) => w.id === activeWorkspaceId)?.name ?? null,
+    [workspaces.data, activeWorkspaceId]
+  );
   const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
 
   const title =
@@ -61,9 +68,15 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
         {showRight && activeWorkspaceId && (
           <aside
             aria-label="Document panel"
-            className="min-h-0 w-[388px] shrink-0 overflow-hidden border-l border-border-soft"
+            style={{ width: rightWidth }}
+            className="pane-width-transition relative min-h-0 shrink-0 overflow-hidden border-l border-border-soft"
           >
-            <DocumentPanel api={api} workspaceId={activeWorkspaceId} />
+            <ResizeHandle side="left" getWidth={() => rightWidth} onWidth={setRightWidth} />
+            <DocumentPanel
+              api={api}
+              workspaceId={activeWorkspaceId}
+              workspaceName={activeWorkspaceName}
+            />
           </aside>
         )}
       </div>

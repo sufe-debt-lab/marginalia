@@ -1,11 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { readableExtensions, textExtensions } from "./document-reader.js";
 import { resolveWorkspacePath } from "./path-sandbox.js";
 
 const ignored = new Set([".git", "node_modules"]);
-const maxReadableBytes = 5 * 1024 * 1024;
-const readableExtensions = new Set([".md", ".txt", ".pdf"]);
-const textExtensions = new Set([".md", ".txt"]);
+const maxReadableBytes = 10 * 1024 * 1024;
 
 export type FileEntry = { path: string; name: string; kind: "file" };
 export type SearchResult = { path: string; match: "name" | "content" };
@@ -32,7 +31,10 @@ export function listWorkspaceFiles(rootDir: string): FileEntry[] {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function searchWorkspaceFiles(rootDir: string, query: string): Promise<SearchResult[]> {
+export async function searchWorkspaceFiles(
+  rootDir: string,
+  query: string
+): Promise<SearchResult[]> {
   const normalized = query.trim().toLowerCase();
   const results: SearchResult[] = [];
 

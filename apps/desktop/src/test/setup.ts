@@ -63,3 +63,25 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   // @ts-expect-error attach to globalThis for libraries that read from there
   globalThis.PointerEvent = PointerEventShim;
 }
+
+if (typeof HTMLCanvasElement !== "undefined") {
+  Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+    configurable: true,
+    value: function () {
+      return {
+        scale() {},
+        clearRect() {},
+        drawImage() {},
+        fillRect() {},
+        restore() {},
+        save() {},
+        setTransform() {},
+        transform() {},
+        translate() {},
+        measureText() {
+          return { width: 0 };
+        }
+      };
+    }
+  });
+}

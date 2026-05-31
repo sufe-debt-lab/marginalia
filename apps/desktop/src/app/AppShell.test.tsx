@@ -20,7 +20,8 @@ describe("AppShell", () => {
       leftSidebarWidth: 240
     });
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url.endsWith("/health")) {
         return new Response(JSON.stringify({ status: "ok" }), {
           headers: { "content-type": "application/json" }
@@ -65,5 +66,12 @@ describe("AppShell", () => {
     render(<AppShell serverUrl="http://x" />);
     const aside = screen.getByRole("complementary", { name: /sidebar/i });
     expect(aside).toHaveStyle({ width: "320px" });
+  });
+
+  it("uses rightPanelWidth from store in chat view", () => {
+    useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", rightPanelWidth: 420 });
+    render(<AppShell serverUrl="http://x" />);
+    const aside = screen.getByRole("complementary", { name: /document panel/i });
+    expect(aside).toHaveStyle({ width: "420px" });
   });
 });

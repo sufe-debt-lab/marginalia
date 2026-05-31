@@ -44,6 +44,11 @@ export class PiCodingAgentClient implements AgentClient {
       session.setThinkingLevel(input.reasoning);
     }
 
+    const abort = () => {
+      void (handle.session as unknown as { abort?: () => Promise<void> }).abort?.();
+    };
+    input.abortSignal?.addEventListener("abort", abort, { once: true });
+
     const queue: AgentSessionEvent[] = [];
     const waiters: Array<(value: IteratorResult<AgentSessionEvent>) => void> = [];
     let finished = false;
@@ -65,6 +70,7 @@ export class PiCodingAgentClient implements AgentClient {
       })
       .finally(() => {
         finished = true;
+        input.abortSignal?.removeEventListener("abort", abort);
         unsubscribe?.();
         for (const waiter of waiters.splice(0)) {
           waiter({ value: undefined as unknown as AgentSessionEvent, done: true });

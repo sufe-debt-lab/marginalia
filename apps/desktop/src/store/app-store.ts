@@ -18,6 +18,7 @@ interface AppState {
   rightPanelCollapsed: boolean;
   pinnedWorkspaceIds: string[];
   leftSidebarWidth: number;
+  rightPanelWidth: number;
   // Composer model + agent controls — shared across NewThread and Chat.
   composerProviderId: string | null;
   composerModel: string | null;
@@ -39,6 +40,7 @@ interface AppState {
   togglePin: (id: string) => void;
   removePin: (id: string) => void;
   setLeftSidebarWidth: (px: number) => void;
+  setRightPanelWidth: (px: number) => void;
   setComposerModel: (providerId: string, model: string) => void;
   setPermission: (p: AgentPermission) => void;
   setReasoning: (r: AgentReasoning) => void;
@@ -47,6 +49,8 @@ interface AppState {
 
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 480;
+const MIN_RIGHT_WIDTH = 280;
+const MAX_RIGHT_WIDTH = 640;
 
 const localStorageAdapter: StateStorage = {
   getItem: (name) => getLocalStorage()?.getItem(name) ?? null,
@@ -77,6 +81,7 @@ export const useAppStore = create<AppState>()(
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
       leftSidebarWidth: 240,
+      rightPanelWidth: 388,
       composerProviderId: null,
       composerModel: null,
       permission: "full",
@@ -116,6 +121,10 @@ export const useAppStore = create<AppState>()(
         })),
       setLeftSidebarWidth: (px) =>
         set({ leftSidebarWidth: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(px))) }),
+      setRightPanelWidth: (px) =>
+        set({
+          rightPanelWidth: Math.max(MIN_RIGHT_WIDTH, Math.min(MAX_RIGHT_WIDTH, Math.round(px)))
+        }),
       setComposerModel: (providerId, model) =>
         set({ composerProviderId: providerId, composerModel: model }),
       setPermission: (p) => set({ permission: p }),
@@ -133,6 +142,7 @@ export const useAppStore = create<AppState>()(
         rightPanelCollapsed: s.rightPanelCollapsed,
         pinnedWorkspaceIds: s.pinnedWorkspaceIds,
         leftSidebarWidth: s.leftSidebarWidth,
+        rightPanelWidth: s.rightPanelWidth,
         permission: s.permission,
         reasoning: s.reasoning,
         composerProviderId: s.composerProviderId,

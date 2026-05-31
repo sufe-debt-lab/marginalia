@@ -135,4 +135,17 @@ describe("useAppStore", () => {
     expect(stored.state?.leftSidebarWidth).toBe(300);
     expect(stored.state?.pinnedWorkspaceIds).toBeDefined();
   });
+
+  it("setRightPanelWidth clamps between 280 and 640 and persists", () => {
+    const { setRightPanelWidth } = useAppStore.getState();
+    expect(useAppStore.getState().rightPanelWidth).toBe(388);
+    setRightPanelWidth(100);
+    expect(useAppStore.getState().rightPanelWidth).toBe(280);
+    setRightPanelWidth(9999);
+    expect(useAppStore.getState().rightPanelWidth).toBe(640);
+    setRightPanelWidth(420);
+    expect(useAppStore.getState().rightPanelWidth).toBe(420);
+    const stored = JSON.parse(localStorage.getItem("my-cowork-app") || "{}");
+    expect(stored.state?.rightPanelWidth).toBe(420);
+  });
 });

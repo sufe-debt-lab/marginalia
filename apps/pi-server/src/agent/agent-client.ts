@@ -44,6 +44,8 @@ export type AgentRunInput = {
   reasoning?: AgentReasoning | null;
   /** Optional passthrough for pi's prompt options (e.g. images). */
   promptOptions?: PromptOptions;
+  /** Client disconnect / explicit stop signal. */
+  abortSignal?: AbortSignal;
 };
 
 export type AgentRunResult = {

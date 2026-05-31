@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { ToolCall } from "@/hooks/useStreamingChat.js";
+import type { ToolCall } from "@/api/client.js";
 import { ToolCard } from "./ToolCard.js";
 
 function card(status: ToolCall["status"]) {

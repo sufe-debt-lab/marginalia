@@ -89,6 +89,34 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   }
 ];
 
+/** Brand accent colours for provider avatars (design: settings.jsx ProviderRow). */
+const BRAND_COLORS: { match: string; color: string }[] = [
+  { match: "openai", color: "#10a37f" },
+  { match: "anthropic", color: "#d97757" },
+  { match: "zhipu", color: "#4d6bfe" },
+  { match: "glm", color: "#4d6bfe" },
+  { match: "minimax", color: "#ff5a5f" },
+  { match: "xiaomi", color: "#ff6900" },
+  { match: "mimo", color: "#ff6900" },
+  { match: "deepseek", color: "#4d6bfe" },
+  { match: "gemini", color: "#4285f4" },
+  { match: "google", color: "#4285f4" }
+];
+
+/** A brand colour for a provider name, or null to fall back to a neutral swatch. */
+export function brandColorFor(name: string): string | null {
+  const n = name.toLowerCase();
+  return BRAND_COLORS.find((b) => n.includes(b.match))?.color ?? null;
+}
+
+/** Presets the user hasn't configured yet — rendered in the "Others" group. */
+export function unconfiguredPresets(
+  providers: readonly Pick<Provider, "name">[]
+): ProviderPreset[] {
+  const have = new Set(providers.map((p) => p.name.trim().toLowerCase()));
+  return PROVIDER_PRESETS.filter((p) => !have.has(p.name.toLowerCase()));
+}
+
 /** Match a stored provider back to its preset (by base URL first, then name). */
 export function findPreset(
   provider: Pick<Provider, "name" | "baseUrl">

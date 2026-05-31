@@ -18,6 +18,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const contextFiles = useAppStore((s) => s.contextFiles);
   const addContext = useAppStore((s) => s.addContextFile);
   const removeContext = useAppStore((s) => s.removeContextFile);
+  const clearContextFiles = useAppStore((s) => s.clearContextFiles);
   const composerProviderId = useAppStore((s) => s.composerProviderId);
   const composerModel = useAppStore((s) => s.composerModel);
   const setComposerModel = useAppStore((s) => s.setComposerModel);
@@ -30,7 +31,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const actualProviderId = composerProviderId || firstProvider?.id || "";
   const actualModel = composerModel || firstProvider?.defaultModel || "";
   const [error, setError] = useState<string | null>(null);
-  const [lastSent, setLastSent] = useState<string | null>(null);
+  const [lastSent, setLastSent] = useState<{ text: string; contextFiles: string[] } | null>(null);
 
   const stream = useStreamingChat({
     api,
@@ -42,6 +43,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     onUserAppend: messages.append,
     onAssistantStart: messages.append,
     onAssistantDelta: messages.appendToLast,
+    onToolCallUpdate: messages.upsertToolCall,
     onComplete: () => setError(null),
     onError: setError
   });
@@ -52,17 +54,21 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       return;
     }
     setError(null);
-    setLastSent(text);
-    void stream.send(text, [...contextFiles]);
+    const files = [...contextFiles];
+    setLastSent({ text, contextFiles: files });
+    clearContextFiles();
+    void stream.send(text, files);
   }
 
   // 消费 pendingPrompt 一次
   useEffect(() => {
     if (pendingPrompt && actualProviderId) {
       const text = pendingPrompt;
+      const files = [...contextFiles];
       setPendingPrompt(null);
-      setLastSent(text);
-      void stream.send(text, [...contextFiles]);
+      setLastSent({ text, contextFiles: files });
+      clearContextFiles();
+      void stream.send(text, files);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPrompt, actualProviderId]);
@@ -70,7 +76,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   function retry() {
     if (lastSent) {
       setError(null);
-      void stream.send(lastSent, [...contextFiles]);
+      void stream.send(lastSent.text, lastSent.contextFiles);
     }
   }
 
@@ -103,6 +109,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
             onPermissionChange={setPermission}
             onReasoningChange={setReasoning}
             sending={stream.sending}
+            onStop={stream.stop}
             onSubmit={submit}
             placeholder={t("composer.chatPlaceholder")}
           />

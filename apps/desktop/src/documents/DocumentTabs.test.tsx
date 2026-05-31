@@ -9,11 +9,14 @@ describe("DocumentTabs", () => {
   it("renders tabs with active highlight", () => {
     render(
       <DocumentTabs
-        tabs={["README.md", "src/App.tsx"]}
+        tabs={[
+          { path: "README.md", pinned: false },
+          { path: "src/App.tsx", pinned: true }
+        ]}
         activeTab="src/App.tsx"
         onSelect={() => {}}
         onClose={() => {}}
-        onAdd={() => {}}
+        onPin={() => {}}
       />
     );
     expect(screen.getByText("README.md")).toBeInTheDocument();
@@ -24,11 +27,11 @@ describe("DocumentTabs", () => {
     const onClose = vi.fn();
     render(
       <DocumentTabs
-        tabs={["README.md"]}
+        tabs={[{ path: "README.md", pinned: false }]}
         activeTab="README.md"
         onSelect={() => {}}
         onClose={onClose}
-        onAdd={() => {}}
+        onPin={() => {}}
       />
     );
     await userEvent.click(screen.getByRole("button", { name: /close README\.md/i }));
@@ -39,23 +42,17 @@ describe("DocumentTabs", () => {
     const onSelect = vi.fn();
     render(
       <DocumentTabs
-        tabs={["README.md", "src/App.tsx"]}
+        tabs={[
+          { path: "README.md", pinned: false },
+          { path: "src/App.tsx", pinned: false }
+        ]}
         activeTab="README.md"
         onSelect={onSelect}
         onClose={() => {}}
-        onAdd={() => {}}
+        onPin={() => {}}
       />
     );
     await userEvent.click(screen.getByText("App.tsx"));
     expect(onSelect).toHaveBeenCalledWith("src/App.tsx");
-  });
-
-  it("add button triggers onAdd", async () => {
-    const onAdd = vi.fn();
-    render(
-      <DocumentTabs tabs={[]} activeTab={null} onSelect={() => {}} onClose={() => {}} onAdd={onAdd} />
-    );
-    await userEvent.click(screen.getByRole("button", { name: /add tab/i }));
-    expect(onAdd).toHaveBeenCalled();
   });
 });
