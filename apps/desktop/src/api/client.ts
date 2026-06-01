@@ -1,4 +1,5 @@
 import { streamSse } from "./sse-stream.js";
+import type { ChatEntry, PiMessageCore } from "@marginalia/chat-core";
 
 export type Workspace = {
   id: string;
@@ -16,20 +17,9 @@ export type Session = {
   updatedAt?: number;
 };
 
-export type Message = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  toolCalls?: ToolCall[];
-};
+export type { ChatEntry };
 
-export type ToolCall = {
-  id: string;
-  name: string;
-  subtitle?: string;
-  status: "running" | "done" | "failed";
-  result?: string;
-};
+type StoredMessageRole = Exclude<PiMessageCore, { role: "toolResult" }>["role"];
 
 export type Provider = {
   id: string;
@@ -84,11 +74,11 @@ export class ApiClient {
   }
 
   listMessages(sessionId: string) {
-    return this.request<Message[]>(`/sessions/${sessionId}/messages`);
+    return this.request<ChatEntry[]>(`/sessions/${sessionId}/messages`);
   }
 
-  createMessage(sessionId: string, input: { role: Message["role"]; content: string }) {
-    return this.request<Message>(`/sessions/${sessionId}/messages`, {
+  createMessage(sessionId: string, input: { role: StoredMessageRole; content: string }) {
+    return this.request<ChatEntry>(`/sessions/${sessionId}/messages`, {
       method: "POST",
       body: JSON.stringify(input)
     });

@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChatAssistantMessage, ChatToolResult } from "@marginalia/chat-core";
 import type { ApiClient, RunEvent } from "@/api/client.js";
 import { useStreamingChat } from "./useStreamingChat.js";
 
@@ -19,6 +20,42 @@ const messageEnd = (stopReason = "stop") =>
 const thinkingDelta = (delta: string) =>
   agentEvent({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta } });
 
+const usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+};
+
+function assistantMessage(
+  content: ChatAssistantMessage["content"] = [],
+  stopReason: ChatAssistantMessage["stopReason"] = "stop"
+): ChatAssistantMessage {
+  return {
+    role: "assistant",
+    content,
+    api: "anthropic-messages",
+    provider: "minimax-cn",
+    model: "MiniMax-M2.7",
+    usage,
+    stopReason,
+    timestamp: 1
+  };
+}
+
+function toolResultMessage(isError = false): ChatToolResult {
+  return {
+    role: "toolResult",
+    toolCallId: "t1",
+    toolName: "read",
+    content: [{ type: "text", text: isError ? "failed-result" : "done-result" }],
+    isError,
+    timestamp: 2
+  };
+}
+
 function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
   return renderHook(() =>
     useStreamingChat({
@@ -29,6 +66,9 @@ function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
       onUserAppend: vi.fn(),
       onAssistantStart: vi.fn(),
       onAssistantDelta: vi.fn(),
+      onAssistantReplace: vi.fn(),
+      onToolCallUpsert: vi.fn(),
+      onToolResultUpsert: vi.fn(),
       onComplete: vi.fn(),
       ...overrides
     })
@@ -93,8 +133,8 @@ describe("useStreamingChat", () => {
   it("attaches each message's tool to its own bubble, matching a reopened session", async () => {
     const onAssistantStart = vi.fn();
     const toolBubbles: Array<[string, number]> = [];
-    const onToolCallUpdate = vi.fn((tc: { id: string; status: string }) => {
-      if (tc.status === "running") toolBubbles.push([tc.id, onAssistantStart.mock.calls.length]);
+    const onToolCallUpsert = vi.fn((tc: { id: string }) => {
+      toolBubbles.push([tc.id, onAssistantStart.mock.calls.length]);
     });
     const toolStart = (id: string, name: string) =>
       agentEvent({ type: "tool_execution_start", toolCallId: id, toolName: name, args: {} });
@@ -113,7 +153,7 @@ describe("useStreamingChat", () => {
         ])
       )
     } as unknown as ApiClient;
-    const { result } = makeHook(api, { onAssistantStart, onToolCallUpdate });
+    const { result } = makeHook(api, { onAssistantStart, onToolCallUpsert });
 
     await act(async () => {
       await result.current.send("hi", []);
@@ -179,8 +219,8 @@ describe("useStreamingChat", () => {
     await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
   });
 
-  it("transitions a tool call to done matched by toolCallId", async () => {
-    const onToolCallUpdate = vi.fn();
+  it("appends a toolResult entry matched by toolCallId", async () => {
+    const onToolResultUpsert = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
         makeEvents([
@@ -200,22 +240,26 @@ describe("useStreamingChat", () => {
         ])
       )
     } as unknown as ApiClient;
-    const { result } = makeHook(api, { onToolCallUpdate });
+    const { result } = makeHook(api, { onToolResultUpsert });
     await act(async () => {
       await result.current.send("hi", []);
     });
     await waitFor(() =>
-      expect(onToolCallUpdate).toHaveBeenLastCalledWith({
-        id: "t1",
-        name: "read",
-        status: "done",
-        result: "done-result"
-      })
+      expect(onToolResultUpsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            role: "toolResult",
+            toolCallId: "t1",
+            toolName: "read",
+            isError: false
+          })
+        })
+      )
     );
   });
 
   it("ignores tool execution events that have no toolCallId", async () => {
-    const onToolCallUpdate = vi.fn();
+    const onToolCallUpsert = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
         makeEvents([
@@ -223,11 +267,59 @@ describe("useStreamingChat", () => {
         ])
       )
     } as unknown as ApiClient;
-    const { result } = makeHook(api, { onToolCallUpdate });
+    const { result } = makeHook(api, { onToolCallUpsert });
     await act(async () => {
       await result.current.send("hi", []);
     });
-    expect(onToolCallUpdate).not.toHaveBeenCalled();
+    expect(onToolCallUpsert).not.toHaveBeenCalled();
+  });
+
+  it("uses pi assistant toolCall content and toolResult messages for live parity", async () => {
+    const onAssistantReplace = vi.fn();
+    const onToolResultUpsert = vi.fn();
+    const finalResult = toolResultMessage();
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([
+          agentEvent({ type: "message_start", message: assistantMessage([], "toolUse") }),
+          agentEvent({
+            type: "message_update",
+            message: assistantMessage(
+              [{ type: "toolCall", id: "t1", name: "read", arguments: { path: "a.ts" } }],
+              "toolUse"
+            ),
+            assistantMessageEvent: { type: "toolcall_end" }
+          }),
+          agentEvent({
+            type: "message_start",
+            message: finalResult
+          }),
+          agentEvent({
+            type: "message_end",
+            message: finalResult
+          })
+        ])
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAssistantReplace, onToolResultUpsert });
+
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+
+    expect(onAssistantReplace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          role: "assistant",
+          content: expect.arrayContaining([expect.objectContaining({ type: "toolCall", id: "t1" })])
+        })
+      })
+    );
+    expect(onToolResultUpsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ role: "toolResult", toolCallId: "t1" })
+      })
+    );
   });
 
   it("creates no assistant bubble when the run fails before any content", async () => {

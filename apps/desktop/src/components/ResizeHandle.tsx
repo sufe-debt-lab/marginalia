@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { cn } from "@/lib/cn.js";
 
 interface Props {
@@ -24,18 +24,18 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
     commitRef.current = onCommit;
   }, [getWidth, onWidth, onCommit]);
 
-  function clearGlobals() {
+  const clearGlobals = useCallback(() => {
     document.documentElement.removeAttribute("data-resizing-panels");
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
-  }
+  }, []);
 
   function flush() {
     frame.current = null;
     setRef.current(nextWidth.current);
   }
 
-  function endDrag(pointerId?: number, target?: Element) {
+  const endDrag = useCallback((pointerId?: number, target?: Element) => {
     if (!dragging.current) return;
     dragging.current = false;
     if (pointerId !== undefined && target instanceof HTMLElement) {
@@ -52,7 +52,7 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
     }
     commitRef.current?.(nextWidth.current);
     clearGlobals();
-  }
+  }, [clearGlobals]);
 
   useEffect(() => {
     const cancel = () => endDrag();
@@ -65,7 +65,7 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
       window.removeEventListener("blur", cancel);
       if (dragging.current) clearGlobals();
     };
-  }, []);
+  }, [clearGlobals, endDrag]);
 
   return (
     <div

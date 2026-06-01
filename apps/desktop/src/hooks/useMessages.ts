@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ApiClient, Message, ToolCall } from "@/api/client.js";
+import type { ChatEntry, ChatToolCall, ChatToolResult } from "@marginalia/chat-core";
+import type { ApiClient } from "@/api/client.js";
 
 export function useMessages(api: ApiClient, sessionId: string | null) {
-  const [data, setData] = useState<Message[]>([]);
+  const [data, setData] = useState<ChatEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export function useMessages(api: ApiClient, sessionId: string | null) {
     };
   }, [api, sessionId]);
 
-  const append = useCallback((m: Message) => {
+  const append = useCallback((m: ChatEntry) => {
     setData((items) => [...items, m]);
   }, []);
 
@@ -47,36 +48,87 @@ export function useMessages(api: ApiClient, sessionId: string | null) {
   const appendToLast = useCallback((delta: string) => {
     setData((items) => {
       const last = items[items.length - 1];
-      if (!last || last.role !== "assistant") return items;
+      if (!last || last.message.role !== "assistant") return items;
       const next = items.slice(0, -1);
-      next.push({ ...last, content: last.content + delta });
+      const content = last.message.content.slice();
+      const tail = content[content.length - 1];
+      if (tail?.type === "text") {
+        content[content.length - 1] = { ...tail, text: tail.text + delta };
+      } else {
+        content.push({ type: "text", text: delta });
+      }
+      next.push({ ...last, message: { ...last.message, content } });
       return next;
     });
   }, []);
 
-  const upsertToolCall = useCallback((tool: ToolCall) => {
+  const replaceAssistant = useCallback((entry: ChatEntry) => {
+    if (entry.message.role !== "assistant") return;
     setData((items) => {
-      const existingIndex = items.findIndex((m) => m.toolCalls?.some((tc) => tc.id === tool.id));
-      const targetIndex =
-        existingIndex >= 0
-          ? existingIndex
-          : [...items].reverse().findIndex((m) => m.role === "assistant");
-      if (targetIndex < 0) return items;
-
-      const index = existingIndex >= 0 ? existingIndex : items.length - 1 - targetIndex;
-      const message = items[index];
-      if (!message || message.role !== "assistant") return items;
-
-      const current = message.toolCalls ?? [];
-      const found = current.some((tc) => tc.id === tool.id);
-      const toolCalls = found
-        ? current.map((tc) => (tc.id === tool.id ? { ...tc, ...tool } : tc))
-        : [...current, tool];
+      const index = items.findIndex((item) => item.id === entry.id);
+      if (index < 0) return [...items, entry];
       const next = items.slice();
-      next[index] = { ...message, toolCalls };
+      next[index] = entry;
       return next;
     });
   }, []);
 
-  return { data, loading, append, removeMessage, appendToLast, upsertToolCall, set: setData };
+  const upsertToolCall = useCallback((tool: ChatToolCall) => {
+    setData((items) => {
+      const existingIndex = items.findIndex(
+        (entry) =>
+          entry.message.role === "assistant" &&
+          entry.message.content.some((part) => part.type === "toolCall" && part.id === tool.id)
+      );
+      const index = existingIndex >= 0 ? existingIndex : lastAssistantIndex(items);
+      if (index < 0) return items;
+
+      const message = items[index];
+      if (!message || message.message.role !== "assistant") return items;
+
+      const found = message.message.content.some(
+        (part) => part.type === "toolCall" && part.id === tool.id
+      );
+      const content = found
+        ? message.message.content.map((part) =>
+            part.type === "toolCall" && part.id === tool.id ? { ...part, ...tool } : part
+          )
+        : [...message.message.content, tool];
+      const next = items.slice();
+      next[index] = { ...message, message: { ...message.message, content } };
+      return next;
+    });
+  }, []);
+
+  const upsertToolResult = useCallback((entry: ChatEntry & { message: ChatToolResult }) => {
+    setData((items) => {
+      const index = items.findIndex(
+        (item) =>
+          item.message.role === "toolResult" && item.message.toolCallId === entry.message.toolCallId
+      );
+      if (index < 0) return [...items, entry];
+      const next = items.slice();
+      next[index] = { ...entry, id: items[index]?.id ?? entry.id };
+      return next;
+    });
+  }, []);
+
+  return {
+    data,
+    loading,
+    append,
+    removeMessage,
+    appendToLast,
+    replaceAssistant,
+    upsertToolCall,
+    upsertToolResult,
+    set: setData
+  };
+}
+
+function lastAssistantIndex(items: readonly ChatEntry[]): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index]?.message.role === "assistant") return index;
+  }
+  return -1;
 }

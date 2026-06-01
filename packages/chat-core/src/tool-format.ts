@@ -1,54 +1,77 @@
-/**
- * Pure formatting helpers shared by the desktop chat UI and pi-server, so the
- * same projection of pi tool/message payloads is used live and on session reopen.
- */
+import type {
+  ChatAssistantMessage,
+  ChatEntry,
+  ChatToolCall,
+  ChatToolExecutionResult,
+  ChatToolResult,
+  ChatUserMessage
+} from "./types.js";
+
+type ChatMessageContent =
+  | ChatUserMessage["content"]
+  | ChatAssistantMessage["content"]
+  | ChatToolResult["content"];
+
+type ToolResultTextSource = ChatToolResult | ChatToolExecutionResult | string | undefined;
 
 /** Flatten pi message content (string or array of text/typed parts) into plain text. */
-export function stringifyContent(content: unknown): string {
+export function stringifyContent(content: ChatMessageContent): string {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part) return "";
-      if (typeof part === "string") return part;
-      const candidate = part as { type?: string; text?: unknown };
-      if (candidate.type === "text" && typeof candidate.text === "string") return candidate.text;
-      return "";
-    })
-    .join("");
+  return content.map((part) => (part.type === "text" ? part.text : "")).join("");
+}
+
+export function assistantText(message: ChatAssistantMessage): string {
+  return stringifyContent(message.content);
+}
+
+/** A zeroed token-usage block for synthesizing assistant messages that carry no real usage data. */
+export function emptyUsage(): ChatAssistantMessage["usage"] {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+  };
+}
+
+export function isAssistantToolCall(
+  part: ChatAssistantMessage["content"][number]
+): part is ChatToolCall {
+  return part.type === "toolCall";
+}
+
+export function findToolResult(
+  entries: readonly ChatEntry[],
+  toolCallId: string
+): ChatToolResult | undefined {
+  return entries.find(
+    (entry) => entry.message.role === "toolResult" && entry.message.toolCallId === toolCallId
+  )?.message as ChatToolResult | undefined;
+}
+
+export function collectToolResults(entries: readonly ChatEntry[]): Map<string, ChatToolResult> {
+  const results = new Map<string, ChatToolResult>();
+  for (const entry of entries) {
+    if (entry.message.role === "toolResult") {
+      results.set(entry.message.toolCallId, entry.message);
+    }
+  }
+  return results;
 }
 
 /** A compact, human-readable argument pulled from a pi tool call's args. */
-export function toolSubtitle(args: unknown): string | undefined {
-  if (!args || typeof args !== "object") return undefined;
-  const a = args as Record<string, unknown>;
-  const candidate = a.path ?? a.file_path ?? a.filePath ?? a.command ?? a.pattern ?? a.query;
+export function toolSubtitle(args: ChatToolCall["arguments"]): string | undefined {
+  const candidate =
+    args.path ?? args.file_path ?? args.filePath ?? args.command ?? args.pattern ?? args.query;
   return typeof candidate === "string" ? candidate : undefined;
 }
 
 /** A short, display-ready string for a tool result (truncated to 400 chars). */
-export function resultText(result: unknown): string | undefined {
-  if (!result) return undefined;
+export function resultText(result: ToolResultTextSource): string | undefined {
+  if (result === undefined) return undefined;
   if (typeof result === "string") return result.slice(0, 400);
-  if (typeof result !== "object") return String(result);
-  const record = result as Record<string, unknown>;
-  const content = record.content;
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object") {
-          const candidate = part as { text?: unknown };
-          return typeof candidate.text === "string" ? candidate.text : "";
-        }
-        return "";
-      })
-      .join("");
-    if (text) return text.slice(0, 400);
-  }
-  try {
-    return JSON.stringify(result).slice(0, 400);
-  } catch {
-    return undefined;
-  }
+  const text = stringifyContent(result.content);
+  return text ? text.slice(0, 400) : undefined;
 }

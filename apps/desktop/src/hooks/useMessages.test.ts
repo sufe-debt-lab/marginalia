@@ -1,12 +1,41 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ApiClient, Message } from "@/api/client.js";
+import type { ChatEntry } from "@marginalia/chat-core";
+import type { ApiClient } from "@/api/client.js";
 import { useMessages } from "./useMessages.js";
+
+const usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+};
+
+const user = (id: string, content: string): ChatEntry => ({
+  id,
+  message: { role: "user", content, timestamp: 1 }
+});
+
+const assistant = (id: string, text = ""): ChatEntry => ({
+  id,
+  message: {
+    role: "assistant",
+    content: text ? [{ type: "text", text }] : [],
+    api: "anthropic-messages",
+    provider: "minimax-cn",
+    model: "MiniMax-M2.7",
+    usage,
+    stopReason: "stop",
+    timestamp: 2
+  }
+});
 
 describe("useMessages", () => {
   it("loads messages for session", async () => {
     const api = {
-      listMessages: vi.fn(async () => [{ id: "m1", role: "user", content: "hi" }] as Message[])
+      listMessages: vi.fn(async () => [user("m1", "hi")])
     } as unknown as ApiClient;
     const { result } = renderHook(() => useMessages(api, "s1"));
     await waitFor(() => expect(result.current.data).toHaveLength(1));
@@ -23,22 +52,25 @@ describe("useMessages", () => {
     const api = { listMessages: vi.fn(async () => []) } as unknown as ApiClient;
     const { result } = renderHook(() => useMessages(api, "s1"));
     act(() => {
-      result.current.append({ id: "x", role: "user", content: "u" });
-      result.current.append({ id: "y", role: "assistant", content: "" });
+      result.current.append(user("x", "u"));
+      result.current.append(assistant("y"));
     });
     act(() => {
       result.current.appendToLast("hello");
       result.current.appendToLast(" world");
     });
-    expect(result.current.data[1]?.content).toBe("hello world");
+    expect(result.current.data[1]?.message).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "hello world" }]
+    });
   });
 
   it("removeMessage drops a message by id", () => {
     const api = { listMessages: vi.fn(async () => []) } as unknown as ApiClient;
     const { result } = renderHook(() => useMessages(api, "s1"));
     act(() => {
-      result.current.append({ id: "x", role: "user", content: "u" });
-      result.current.append({ id: "y", role: "assistant", content: "" });
+      result.current.append(user("x", "u"));
+      result.current.append(assistant("y"));
     });
     act(() => {
       result.current.removeMessage("y");
@@ -47,11 +79,11 @@ describe("useMessages", () => {
   });
 
   it("does not overwrite optimistic messages when initial load resolves late", async () => {
-    let resolveMessages: (messages: Message[]) => void = () => {};
+    let resolveMessages: (messages: ChatEntry[]) => void = () => {};
     const api = {
       listMessages: vi.fn(
         () =>
-          new Promise<Message[]>((resolve) => {
+          new Promise<ChatEntry[]>((resolve) => {
             resolveMessages = resolve;
           })
       )
@@ -59,8 +91,8 @@ describe("useMessages", () => {
     const { result } = renderHook(() => useMessages(api, "s1"));
 
     act(() => {
-      result.current.append({ id: "local-u", role: "user", content: "hi" });
-      result.current.append({ id: "local-a", role: "assistant", content: "" });
+      result.current.append(user("local-u", "hi"));
+      result.current.append(assistant("local-a"));
     });
     act(() => {
       resolveMessages([]);
@@ -71,11 +103,11 @@ describe("useMessages", () => {
   });
 
   it("merges loaded history with optimistic messages appended while loading", async () => {
-    let resolveMessages: (messages: Message[]) => void = () => {};
+    let resolveMessages: (messages: ChatEntry[]) => void = () => {};
     const api = {
       listMessages: vi.fn(
         () =>
-          new Promise<Message[]>((resolve) => {
+          new Promise<ChatEntry[]>((resolve) => {
             resolveMessages = resolve;
           })
       )
@@ -83,11 +115,11 @@ describe("useMessages", () => {
     const { result } = renderHook(() => useMessages(api, "s1"));
 
     act(() => {
-      result.current.append({ id: "local-user-1", role: "user", content: "hi" });
-      result.current.append({ id: "local-assistant-1", role: "assistant", content: "" });
+      result.current.append(user("local-user-1", "hi"));
+      result.current.append(assistant("local-assistant-1"));
     });
     act(() => {
-      resolveMessages([{ id: "hist", role: "user", content: "old" }]);
+      resolveMessages([user("hist", "old")]);
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -102,8 +134,8 @@ describe("useMessages", () => {
     const api = {
       listMessages: vi.fn(async (sessionId: string) =>
         sessionId === "s1"
-          ? ([{ id: "s1-m", role: "user", content: "one" }] as Message[])
-          : ([{ id: "s2-m", role: "user", content: "two" }] as Message[])
+          ? [user("s1-m", "one")]
+          : [user("s2-m", "two")]
       )
     } as unknown as ApiClient;
     const { result, rerender } = renderHook(({ sessionId }) => useMessages(api, sessionId), {
@@ -113,5 +145,40 @@ describe("useMessages", () => {
     await waitFor(() => expect(result.current.data.map((m) => m.id)).toEqual(["s1-m"]));
     rerender({ sessionId: "s2" });
     await waitFor(() => expect(result.current.data.map((m) => m.id)).toEqual(["s2-m"]));
+  });
+
+  it("upserts assistant tool calls and tool results by toolCallId", () => {
+    const api = { listMessages: vi.fn(async () => []) } as unknown as ApiClient;
+    const { result } = renderHook(() => useMessages(api, "s1"));
+    act(() => {
+      result.current.append(assistant("a1"));
+      result.current.upsertToolCall({
+        type: "toolCall",
+        id: "tc1",
+        name: "read",
+        arguments: { path: "package.json" }
+      });
+      result.current.upsertToolResult({
+        id: "local-tool-tc1",
+        message: {
+          role: "toolResult",
+          toolCallId: "tc1",
+          toolName: "read",
+          content: [{ type: "text", text: "done" }],
+          isError: false,
+          timestamp: 3
+        }
+      });
+    });
+
+    expect(result.current.data).toHaveLength(2);
+    expect(result.current.data[0]?.message).toMatchObject({
+      role: "assistant",
+      content: [{ type: "toolCall", id: "tc1", name: "read" }]
+    });
+    expect(result.current.data[1]?.message).toMatchObject({
+      role: "toolResult",
+      toolCallId: "tc1"
+    });
   });
 });

@@ -352,8 +352,19 @@ describe("chat runs", () => {
     const app = createApp({ db });
     const response = await app.request(`/sessions/${session.id}/messages`);
     expect(await response.json()).toEqual([
-      { id: "u1", role: "user", content: "hi" },
-      { id: "a1", role: "assistant", content: "yo" }
+      { id: "u1", message: { role: "user", content: "hi", timestamp: 1748390401000 } },
+      {
+        id: "a1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "yo" }],
+          api: "anthropic-messages",
+          provider: "minimax-cn",
+          model: "MiniMax-M2.7",
+          stopReason: "stop",
+          timestamp: 1748390402000
+        }
+      }
     ]);
   });
 });

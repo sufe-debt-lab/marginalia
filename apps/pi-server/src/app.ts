@@ -8,6 +8,8 @@ import { Readable } from "node:stream";
 import type Database from "better-sqlite3";
 import { AuthStorage, ModelRegistry, createAgentSession } from "@earendil-works/pi-coding-agent";
 import { getModel } from "@earendil-works/pi-ai";
+import { emptyUsage } from "@marginalia/chat-core";
+import type { ChatEntry } from "@marginalia/chat-core";
 import type { AgentClient } from "./agent/agent-client.js";
 import { AgentSessionRegistry } from "./agent/agent-session-registry.js";
 import { PiCodingAgentClient } from "./agent/pi-coding-agent-client.js";
@@ -31,6 +33,7 @@ import {
   listProviders,
   listSessions,
   listWorkspaces,
+  type Message,
   markWorkspaceOpened,
   setAgentSessionPath,
   updateSession
@@ -168,11 +171,14 @@ export function createApp(options: AppOptions = {}) {
     if (session.agentSessionPath) {
       return c.json(readMessagesFromSessionFile(session.agentSessionPath));
     }
-    return c.json(getMessages(db, session.id));
+    return c.json(getMessages(db, session.id).map(storedMessageToChatEntry));
   });
   app.post("/sessions/:sessionId/messages", async (c) => {
-    const body = await c.req.json<{ role: "user" | "assistant" | "system"; content: string }>();
-    return c.json(createMessage(db, { sessionId: c.req.param("sessionId"), ...body }), 201);
+    const body = await c.req.json<{ role: Message["role"]; content: string }>();
+    return c.json(
+      storedMessageToChatEntry(createMessage(db, { sessionId: c.req.param("sessionId"), ...body })),
+      201
+    );
   });
   app.post("/quick-chat", (c) => {
     const workspace = getRecentWorkspace(db);
@@ -291,6 +297,28 @@ export function createApp(options: AppOptions = {}) {
   });
 
   return app;
+}
+
+function storedMessageToChatEntry(message: Message): ChatEntry {
+  if (message.role === "user") {
+    return {
+      id: message.id,
+      message: { role: "user", content: message.content, timestamp: message.createdAt }
+    };
+  }
+  return {
+    id: message.id,
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: message.content }],
+      api: "marginalia-legacy",
+      provider: "marginalia",
+      model: "",
+      usage: emptyUsage(),
+      stopReason: "stop",
+      timestamp: message.createdAt
+    }
+  };
 }
 
 function syncProviderKeys(db: Database.Database, authStorage: AuthStorage) {

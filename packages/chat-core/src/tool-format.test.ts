@@ -1,23 +1,96 @@
 import { describe, expect, it } from "vitest";
-import { resultText, stringifyContent, toolSubtitle } from "./tool-format.js";
+import type {
+  ChatAssistantMessage,
+  ChatEntry,
+  ChatToolCall,
+  ChatToolExecutionResult,
+  ChatToolResult,
+  ChatUserMessage
+} from "./types.js";
+import {
+  assistantText,
+  collectToolResults,
+  findToolResult,
+  resultText,
+  stringifyContent,
+  toolSubtitle
+} from "./tool-format.js";
+
+const usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+};
 
 describe("stringifyContent", () => {
   it("returns strings as-is", () => {
-    expect(stringifyContent("hello")).toBe("hello");
+    const content: ChatUserMessage["content"] = "hello";
+    expect(stringifyContent(content)).toBe("hello");
   });
 
   it("joins text parts and ignores non-text parts", () => {
+    const content: ChatAssistantMessage["content"] = [
+      { type: "text", text: "a" },
+      { type: "toolCall", id: "t", name: "read", arguments: {} },
+      { type: "text", text: "b" }
+    ];
+    expect(stringifyContent(content)).toBe("ab");
+  });
+});
+
+describe("assistantText", () => {
+  it("extracts only text content from a pi assistant message", () => {
     expect(
-      stringifyContent([
-        { type: "text", text: "a" },
-        { type: "toolCall", id: "t", name: "read" },
-        { type: "text", text: "b" }
-      ])
-    ).toBe("ab");
+      assistantText({
+        role: "assistant",
+        content: [
+          { type: "text", text: "before " },
+          { type: "toolCall", id: "tc1", name: "read", arguments: { path: "a.ts" } },
+          { type: "text", text: "after" }
+        ],
+        api: "anthropic-messages",
+        provider: "minimax-cn",
+        model: "MiniMax-M2.7",
+        usage,
+        stopReason: "toolUse",
+        timestamp: 1
+      })
+    ).toBe("before after");
+  });
+});
+
+describe("tool result matching", () => {
+  const done: ChatToolResult = {
+    role: "toolResult",
+    toolCallId: "tc1",
+    toolName: "read",
+    content: [{ type: "text", text: "done" }],
+    isError: false,
+    timestamp: 2
+  };
+  const failed: ChatToolResult = {
+    role: "toolResult",
+    toolCallId: "tc2",
+    toolName: "bash",
+    content: [{ type: "text", text: "failed" }],
+    isError: true,
+    timestamp: 3
+  };
+  const entries: ChatEntry[] = [
+    { id: "tr1", message: done },
+    { id: "tr2", message: failed }
+  ];
+
+  it("finds a matching toolResult by toolCallId", () => {
+    expect(findToolResult(entries, "tc1")).toBe(done);
+    expect(findToolResult(entries, "missing")).toBeUndefined();
   });
 
-  it("returns empty string for non-string, non-array input", () => {
-    expect(stringifyContent({ foo: 1 })).toBe("");
+  it("collects the latest toolResult for each tool call", () => {
+    expect(collectToolResults(entries).get("tc2")).toBe(failed);
   });
 });
 
@@ -28,8 +101,8 @@ describe("toolSubtitle", () => {
   });
 
   it("returns undefined when no recognised field is present", () => {
-    expect(toolSubtitle({ other: 1 })).toBeUndefined();
-    expect(toolSubtitle(null)).toBeUndefined();
+    const args: ChatToolCall["arguments"] = { other: 1 };
+    expect(toolSubtitle(args)).toBeUndefined();
   });
 });
 
@@ -39,7 +112,24 @@ describe("resultText", () => {
   });
 
   it("extracts text from a content array", () => {
-    expect(resultText({ content: [{ text: "done" }] })).toBe("done");
+    const result: ChatToolExecutionResult = {
+      content: [{ type: "text", text: "done" }],
+      details: undefined
+    };
+    expect(resultText(result)).toBe("done");
+  });
+
+  it("extracts text from a pi toolResult message", () => {
+    expect(
+      resultText({
+        role: "toolResult",
+        toolCallId: "tc1",
+        toolName: "read",
+        content: [{ type: "text", text: "done" }],
+        isError: false,
+        timestamp: 1
+      })
+    ).toBe("done");
   });
 
   it("returns undefined for empty input", () => {

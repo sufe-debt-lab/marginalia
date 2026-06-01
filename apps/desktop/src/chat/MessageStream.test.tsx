@@ -1,7 +1,36 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { ChatEntry } from "@marginalia/chat-core";
 import { MessageStream } from "./MessageStream.js";
+
+const usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+};
+
+const user = (id: string, content: string): ChatEntry => ({
+  id,
+  message: { role: "user", content, timestamp: 1 }
+});
+
+const assistant = (id: string, text: string): ChatEntry => ({
+  id,
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "anthropic-messages",
+    provider: "minimax-cn",
+    model: "MiniMax-M2.7",
+    usage,
+    stopReason: "stop",
+    timestamp: 2
+  }
+});
 
 describe("MessageStream", () => {
   it("renders empty state when no messages", () => {
@@ -12,10 +41,7 @@ describe("MessageStream", () => {
   it("renders messages", () => {
     render(
       <MessageStream
-        messages={[
-          { id: "1", role: "user", content: "hi" },
-          { id: "2", role: "assistant", content: "yo" }
-        ]}
+        messages={[user("1", "hi"), assistant("2", "yo")]}
         error={null}
         onRetry={() => {}}
       />
@@ -29,7 +55,7 @@ describe("MessageStream", () => {
     Element.prototype.scrollIntoView = scrollSpy;
     const { rerender } = render(
       <MessageStream
-        messages={[{ id: "1", role: "assistant", content: "a" }]}
+        messages={[assistant("1", "a")]}
         error={null}
         onRetry={() => {}}
         streaming
@@ -38,7 +64,7 @@ describe("MessageStream", () => {
     const before = scrollSpy.mock.calls.length;
     rerender(
       <MessageStream
-        messages={[{ id: "1", role: "assistant", content: "ab cd" }]}
+        messages={[assistant("1", "ab cd")]}
         error={null}
         onRetry={() => {}}
         streaming
@@ -50,7 +76,7 @@ describe("MessageStream", () => {
   it("shows a thinking indicator while reasoning streams", () => {
     render(
       <MessageStream
-        messages={[{ id: "1", role: "assistant", content: "" }]}
+        messages={[assistant("1", "")]}
         error={null}
         onRetry={() => {}}
         streaming
@@ -65,7 +91,7 @@ describe("MessageStream", () => {
     const onRetry = vi.fn();
     render(
       <MessageStream
-        messages={[{ id: "1", role: "user", content: "hi" }]}
+        messages={[user("1", "hi")]}
         error="boom"
         onRetry={onRetry}
       />
@@ -74,5 +100,51 @@ describe("MessageStream", () => {
     expect(screen.getByText("run_failed")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("attaches toolResult entries to prior assistant tool calls", () => {
+    const { container } = render(
+      <MessageStream
+        messages={[
+          {
+            id: "a1",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "toolCall",
+                  id: "tc1",
+                  name: "read",
+                  arguments: { path: "package.json" }
+                }
+              ],
+              api: "anthropic-messages",
+              provider: "minimax-cn",
+              model: "MiniMax-M2.7",
+              usage,
+              stopReason: "toolUse",
+              timestamp: 2
+            }
+          },
+          {
+            id: "tr1",
+            message: {
+              role: "toolResult",
+              toolCallId: "tc1",
+              toolName: "read",
+              content: [{ type: "text", text: "done output" }],
+              isError: false,
+              timestamp: 3
+            }
+          }
+        ]}
+        error={null}
+        onRetry={() => {}}
+      />
+    );
+
+    expect(screen.getByText("read")).toBeInTheDocument();
+    expect(screen.getByText("done output")).toBeInTheDocument();
+    expect(within(container).getAllByText("assistant")).toHaveLength(1);
   });
 });

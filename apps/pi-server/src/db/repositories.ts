@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
+import type { PiMessageCore } from "@marginalia/chat-core";
 
 let clock = Date.now();
 const now = () => ++clock;
@@ -27,7 +28,7 @@ export type Session = {
 export type Message = {
   id: string;
   sessionId: string;
-  role: "user" | "assistant" | "system";
+  role: Exclude<PiMessageCore, { role: "toolResult" }>["role"];
   content: string;
   createdAt: number;
 };

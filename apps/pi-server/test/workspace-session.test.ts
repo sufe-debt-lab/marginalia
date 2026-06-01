@@ -160,7 +160,7 @@ describe("workspace API", () => {
       { id: session.id, title: "Read paper" }
     ]);
     expect(await (await app.request(`/sessions/${session.id}/messages`)).json()).toMatchObject([
-      { role: "user", content: "hello" }
+      { message: { role: "user", content: "hello" } }
     ]);
 
     const quick = await app.request("/quick-chat", { method: "POST" });

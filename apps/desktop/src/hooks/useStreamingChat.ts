@@ -1,6 +1,13 @@
 import { useCallback, useRef, useState } from "react";
-import { resultText, toolSubtitle } from "@marginalia/chat-core";
-import type { ApiClient, Message, ToolCall } from "@/api/client.js";
+import { emptyUsage, resultText } from "@marginalia/chat-core";
+import type {
+  ChatAssistantMessage,
+  ChatEntry,
+  ChatToolCall,
+  ChatToolExecutionResult,
+  ChatToolResult
+} from "@marginalia/chat-core";
+import type { ApiClient } from "@/api/client.js";
 
 interface Options {
   api: ApiClient;
@@ -9,10 +16,12 @@ interface Options {
   model: string;
   permission?: "full" | "ask" | "readonly";
   reasoning?: "low" | "medium" | "high" | "xhigh";
-  onUserAppend: (m: Message) => void;
-  onAssistantStart: (m: Message) => void;
+  onUserAppend: (m: ChatEntry) => void;
+  onAssistantStart: (m: ChatEntry) => void;
+  onAssistantReplace: (m: ChatEntry) => void;
   onAssistantDelta: (delta: string) => void;
-  onToolCallUpdate?: (tool: ToolCall) => void;
+  onToolCallUpsert?: (tool: ChatToolCall) => void;
+  onToolResultUpsert?: (entry: ChatEntry & { message: ChatToolResult }) => void;
   onComplete: () => void;
   onError?: (msg: string) => void;
 }
@@ -21,12 +30,12 @@ interface Options {
 type PiEvent = {
   type?: string;
   assistantMessageEvent?: { type?: string; delta?: string };
-  message?: { role?: string; stopReason?: string; errorMessage?: string };
+  message?: unknown;
   toolCallId?: string;
   toolName?: string;
   args?: unknown;
   partialResult?: unknown;
-  result?: unknown;
+  result?: ChatToolExecutionResult | string;
   isError?: boolean;
 };
 
@@ -36,29 +45,103 @@ function isAbortError(err: unknown): boolean {
     : err instanceof Error && err.name === "AbortError";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function isAssistantMessage(message: unknown): message is ChatAssistantMessage {
+  return isRecord(message) && message.role === "assistant" && Array.isArray(message.content);
+}
+
+function isToolResultMessage(message: unknown): message is ChatToolResult {
+  return (
+    isRecord(message) &&
+    message.role === "toolResult" &&
+    typeof message.toolCallId === "string" &&
+    typeof message.toolName === "string" &&
+    Array.isArray(message.content) &&
+    typeof message.isError === "boolean"
+  );
+}
+
+function fallbackAssistant(
+  providerId: string,
+  model: string,
+  timestamp: number
+): ChatAssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: "marginalia-stream",
+    provider: providerId,
+    model,
+    usage: emptyUsage(),
+    stopReason: "stop",
+    timestamp
+  };
+}
+
+function toolCallFromEvent(pi: PiEvent): ChatToolCall | null {
+  if (!pi.toolCallId) return null;
+  return {
+    type: "toolCall",
+    id: pi.toolCallId,
+    name: pi.toolName ?? "tool",
+    arguments: isRecord(pi.args) ? pi.args : {}
+  };
+}
+
+function toolResultEntryFromEvent(
+  pi: PiEvent,
+  timestamp: number
+): (ChatEntry & { message: ChatToolResult }) | null {
+  if (!pi.toolCallId) return null;
+  const text = resultText(pi.result);
+  const content: ChatToolResult["content"] = text ? [{ type: "text", text }] : [];
+  return {
+    id: `local-tool-result-${timestamp}-${pi.toolCallId}`,
+    message: {
+      role: "toolResult",
+      toolCallId: pi.toolCallId,
+      toolName: pi.toolName ?? "tool",
+      content,
+      isError: Boolean(pi.isError),
+      timestamp: Date.now()
+    }
+  };
+}
+
+function toolResultEntryFromMessage(
+  message: ChatToolResult,
+  timestamp: number
+): ChatEntry & { message: ChatToolResult } {
+  return {
+    id: `local-tool-result-${timestamp}-${message.toolCallId}`,
+    message
+  };
+}
+
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
-  // Transient reasoning text for the current turn; shown while the model thinks,
-  // cleared once the answer starts. Not persisted (a reopened session has none).
   const [reasoning, setReasoning] = useState("");
   const bufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
 
-  function flush() {
+  const flush = useCallback(() => {
     if (bufferRef.current.length > 0) {
       const text = bufferRef.current;
       bufferRef.current = "";
       opts.onAssistantDelta(text);
     }
     rafRef.current = null;
-  }
+  }, [opts]);
 
-  function schedule() {
+  const schedule = useCallback(() => {
     if (rafRef.current != null) return;
     rafRef.current = requestAnimationFrame(flush);
-  }
+  }, [flush]);
 
   const send = useCallback(
     async (text: string, contextFiles: string[]) => {
@@ -70,90 +153,88 @@ export function useStreamingChat(opts: Options) {
       setSending(true);
       setReasoning("");
       const stamp = Date.now();
-      // pi emits one assistant message per turn, bounded by message_start. We open a
-      // bubble lazily on the first content of each message (text or tool), so the live
-      // view splits bubbles exactly like a reopened session — and a run that fails
-      // before any content leaves no empty bubble behind. Tool execution events fire
-      // after their message's message_end but before the next message_start, so they
-      // still attach to the message that declared them.
       let turn = 0;
-      let needNewBubble = true;
+      let currentAssistantId: string | null = null;
+      let needNewAssistant = true;
 
-      function ensureBubble() {
-        if (!needNewBubble) return;
+      function startAssistant(message?: ChatAssistantMessage): string {
         turn += 1;
+        currentAssistantId = `local-assistant-${stamp}-${turn}`;
         opts.onAssistantStart({
-          id: `local-assistant-${stamp}-${turn}`,
-          role: "assistant",
-          content: ""
+          id: currentAssistantId,
+          message: message ?? fallbackAssistant(opts.providerId, opts.model, stamp)
         });
-        needNewBubble = false;
+        needNewAssistant = false;
+        return currentAssistantId;
+      }
+
+      function ensureAssistant(message?: ChatAssistantMessage): string {
+        if (needNewAssistant || !currentAssistantId) return startAssistant(message);
+        if (message) opts.onAssistantReplace({ id: currentAssistantId, message });
+        return currentAssistantId;
       }
 
       function handlePiEvent(pi: PiEvent) {
         switch (pi.type) {
-          case "message_start":
-            // A new assistant message → the next content opens a fresh bubble.
-            if (pi.message?.role === "assistant") needNewBubble = true;
+          case "message_start": {
+            if (isRecord(pi.message) && pi.message.role === "assistant") {
+              needNewAssistant = true;
+              startAssistant(isAssistantMessage(pi.message) ? pi.message : undefined);
+            } else if (isToolResultMessage(pi.message)) {
+              opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
+            }
             break;
+          }
           case "message_update": {
             const ev = pi.assistantMessageEvent;
-            if (ev?.type === "thinking_delta" && ev.delta) {
-              setReasoning((r) => r + ev.delta);
-            }
-            if (ev?.type === "text_delta" && ev.delta) {
-              ensureBubble();
-              setReasoning((r) => (r ? "" : r));
+            if (isAssistantMessage(pi.message)) {
+              ensureAssistant(pi.message);
+            } else if (ev?.type === "text_delta" && ev.delta) {
+              ensureAssistant();
+              setReasoning("");
               bufferRef.current += ev.delta;
               schedule();
+            }
+            if (ev?.type === "thinking_delta" && ev.delta) {
+              setReasoning((r) => r + ev.delta);
             }
             break;
           }
           case "message_end": {
             flush();
             setReasoning("");
-            if (pi.message?.stopReason === "error") {
-              throw new Error(pi.message.errorMessage ?? "agent failed");
+            if (isAssistantMessage(pi.message)) ensureAssistant(pi.message);
+            if (isToolResultMessage(pi.message)) {
+              opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
+            }
+            if (isRecord(pi.message) && pi.message.stopReason === "error") {
+              const detail = pi.message.errorMessage;
+              throw new Error(typeof detail === "string" ? detail : "agent failed");
             }
             break;
           }
           case "tool_execution_start":
-            if (pi.toolCallId) {
-              ensureBubble();
-              opts.onToolCallUpdate?.({
-                id: pi.toolCallId,
-                name: pi.toolName ?? "tool",
-                subtitle: toolSubtitle(pi.args),
-                status: "running"
-              });
+          case "tool_execution_update": {
+            const tool = toolCallFromEvent(pi);
+            if (tool) {
+              ensureAssistant();
+              opts.onToolCallUpsert?.(tool);
             }
             break;
-          case "tool_execution_update":
-            if (pi.toolCallId) {
-              opts.onToolCallUpdate?.({
-                id: pi.toolCallId,
-                name: pi.toolName ?? "tool",
-                subtitle: toolSubtitle(pi.args),
-                status: "running",
-                result: resultText(pi.partialResult)
-              });
-            }
+          }
+          case "tool_execution_end": {
+            const entry = toolResultEntryFromEvent(pi, stamp);
+            if (entry) opts.onToolResultUpsert?.(entry);
             break;
-          case "tool_execution_end":
-            if (pi.toolCallId) {
-              opts.onToolCallUpdate?.({
-                id: pi.toolCallId,
-                name: pi.toolName ?? "tool",
-                status: pi.isError ? "failed" : "done",
-                result: resultText(pi.result)
-              });
-            }
-            break;
+          }
         }
       }
 
       try {
-        opts.onUserAppend({ id: `local-user-${stamp}`, role: "user", content: text });
+        opts.onUserAppend({
+          id: `local-user-${stamp}`,
+          message: { role: "user", content: text, timestamp: stamp }
+        });
         const events = await opts.api.runChat(
           opts.sessionId,
           {
@@ -188,7 +269,7 @@ export function useStreamingChat(opts: Options) {
         setSending(false);
       }
     },
-    [opts]
+    [flush, opts, schedule]
   );
 
   const stop = useCallback(() => {

@@ -56,10 +56,10 @@ describe("SettingsView", () => {
     expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe("OpenAI");
   });
 
-  it("shows the defaults summary bar with reasoning budget", async () => {
+  it("shows each provider default model", async () => {
     render(<SettingsView api={fakeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: /providers/i }));
-    await waitFor(() => expect(screen.getByText(/global default model/i)).toBeInTheDocument());
-    expect(screen.getByText(/reasoning budget/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("claude-sonnet-4.6")).toBeInTheDocument());
+    expect(screen.getByText(/^default$/i)).toBeInTheDocument();
   });
 });

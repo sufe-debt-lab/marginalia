@@ -1,12 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
-import type { Message } from "@/api/client.js";
+import { stringifyContent } from "@marginalia/chat-core";
+import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { MessageItem } from "./MessageItem.js";
 
 interface Props {
-  messages: readonly Message[];
+  messages: readonly ChatEntry[];
   error: string | null;
   onRetry: () => void;
   model?: string;
@@ -18,20 +19,36 @@ interface Props {
 export function MessageStream({ messages, error, onRetry, model, streaming, reasoning }: Props) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  // One pass splits toolResults out (they attach to their tool call, not their own bubble) and
+  // builds the lookup map. Memoizing keeps the map reference stable across streaming deltas so
+  // memoized MessageItems only re-render when their own entry changes.
+  const { toolResultsByCallId, visibleMessages } = useMemo(() => {
+    const results = new Map<string, ChatToolResult>();
+    const visible: ChatEntry[] = [];
+    for (const entry of messages) {
+      if (entry.message.role === "toolResult") results.set(entry.message.toolCallId, entry.message);
+      else visible.push(entry);
+    }
+    return { toolResultsByCallId: results, visibleMessages: visible };
+  }, [messages]);
 
-  const lastIndex = messages.length - 1;
+  const lastIndex = visibleMessages.length - 1;
 
   // Follow the conversation as it grows AND as the last message streams in
   // (delta updates don't change messages.length, so depend on the content too).
-  const last = messages[lastIndex];
-  const tail = `${messages.length}:${last?.content.length ?? 0}:${last?.toolCalls?.length ?? 0}:${reasoning?.length ?? 0}`;
+  const last = visibleMessages[lastIndex];
+  const lastText =
+    last?.message.role === "user" || last?.message.role === "assistant"
+      ? stringifyContent(last.message.content)
+      : "";
+  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [tail]);
 
-  if (messages.length === 0 && !error) {
+  if (visibleMessages.length === 0 && !error) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         {t("chat.noMessages")}
@@ -41,12 +58,13 @@ export function MessageStream({ messages, error, onRetry, model, streaming, reas
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-      {messages.map((m, i) => (
+      {visibleMessages.map((entry, i) => (
         <MessageItem
-          key={m.id}
-          message={m}
-          model={m.role === "assistant" ? model : undefined}
-          streaming={Boolean(streaming) && i === lastIndex && m.role === "assistant"}
+          key={entry.id}
+          entry={entry}
+          toolResultsByCallId={toolResultsByCallId}
+          model={entry.message.role === "assistant" ? model : undefined}
+          streaming={Boolean(streaming) && i === lastIndex && entry.message.role === "assistant"}
         />
       ))}
       {streaming && reasoning && (

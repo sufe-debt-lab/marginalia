@@ -8,11 +8,12 @@ pnpm workspace (`apps/*`, `packages/*`). Node ≥20.11, pnpm@9.15.4, ESM (`"type
 
 - `apps/desktop` — `@marginalia/desktop`: Electron + React 18 + Vite + Tailwind UI. Tests: Vitest + jsdom + Testing Library.
 - `apps/pi-server` — `@marginalia/pi-server`: Hono HTTP server wrapping `@earendil-works/pi-coding-agent`. Tests: Vitest.
+- `packages/chat-core` — `@marginalia/chat-core`: shared chat types and small render helpers over pi message/tool types.
 
 ## Commands
 
 - All packages: `pnpm test` / `pnpm typecheck` / `pnpm build` (run `-r`).
-- One package: `pnpm --filter @marginalia/desktop <test|typecheck|build>` (or `@marginalia/pi-server`).
+- One package: `pnpm --filter @marginalia/desktop <test|typecheck|build>` (or `@marginalia/pi-server`, `@marginalia/chat-core`).
 - Single test by name/pattern: `pnpm --filter @marginalia/desktop test -- <pattern>` (Vitest `run`).
 - `pnpm --filter @marginalia/desktop dev` launches the **Electron app** (Vite + Electron together), not just a browser page.
 - Desktop `typecheck` runs two tsconfigs (`tsconfig.json` for src, `tsconfig.node.json` for vite/electron config) — both must pass.
@@ -24,6 +25,14 @@ pnpm workspace (`apps/*`, `packages/*`). Node ≥20.11, pnpm@9.15.4, ESM (`"type
 - **i18n is mandatory** in `apps/desktop`: every user-facing string (text, `aria-label`, placeholder, toast) goes through `t()` from `@/i18n/useTranslation.js`. Add keys to both `en` and `zh` in `src/i18n/messages.ts` — `zh` uses `satisfies` so a missing key fails typecheck. No hardcoded English in the UI.
 - Visual design tokens are locked to **mono + serif + emerald** (see `src/styles.css` + `tailwind.config.ts`); use the design tokens (`text-muted`, `border-soft`, `brand`, `.dot`, `.h-display`, etc.) rather than ad-hoc colors.
 
+## Chat model conventions
+
+- `apps/pi-server` forwards raw pi `agent_event` payloads plus the run envelope (`run_started`, `run_failed`, `run_completed`). Do not re-map them into desktop-only delta/tool event shapes.
+- Chat history uses `ChatEntry = { id, message }` from `@marginalia/chat-core`; keep message bodies pi-shaped. Do not reintroduce flattened `UiMessage`/`UiToolCall` types or fake roles such as `system`.
+- `packages/chat-core` should stay a thin bridge over pi types and small render helpers. Prefer pi types from `@earendil-works/pi-ai` / `@earendil-works/pi-agent-core` instead of duplicating message or tool schemas.
+- Desktop chat rendering derives UI state from entries: assistant `toolCall` content renders tool UI; matching `toolResult` messages attach by `toolCallId` and are not standalone chat bubbles.
+- Live streaming and reopened session rendering must match. Use pi `message_start` boundaries for assistant bubbles.
+
 ## Commit gate (standing rule)
 
 Before every commit:
@@ -33,5 +42,5 @@ Before every commit:
 
 ## Git conventions
 
-- Conventional commits with package scope: `feat(desktop): …`, `fix(pi-server): …`, `chore(desktop): …`, `polish(desktop): …`.
+- Conventional commits with package scope: `feat(desktop): …`, `fix(pi-server): …`, `refactor(chat-core): …`, `chore(desktop): …`, `polish(desktop): …`.
 - Branch off `main`; never commit directly to `main`. Commit/push only when asked.

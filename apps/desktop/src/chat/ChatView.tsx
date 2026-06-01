@@ -54,8 +54,10 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       lastAssistantIdRef.current = m.id;
       messages.append(m);
     },
+    onAssistantReplace: messages.replaceAssistant,
     onAssistantDelta: messages.appendToLast,
-    onToolCallUpdate: messages.upsertToolCall,
+    onToolCallUpsert: messages.upsertToolCall,
+    onToolResultUpsert: messages.upsertToolResult,
     onComplete: () => setError(null),
     onError: setError
   });
