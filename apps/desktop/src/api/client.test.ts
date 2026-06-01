@@ -13,7 +13,11 @@ describe("ApiClient.runChat", () => {
 
     const api = new ApiClient("http://server");
     const events: unknown[] = [];
-    const stream = await api.runChat("s1", { providerId: "p1", model: "MiniMax-M2.7", message: "hi" });
+    const stream = await api.runChat("s1", {
+      providerId: "p1",
+      model: "MiniMax-M2.7",
+      message: "hi"
+    });
     for await (const event of stream) events.push(event);
     expect(events).toEqual([
       { type: "run_started", payload: { model: "MiniMax-M2.7" } },

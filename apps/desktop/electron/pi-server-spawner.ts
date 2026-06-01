@@ -53,7 +53,12 @@ export function selectNodePath(options: SelectNodePathOptions) {
     }) as SpawnSyncReturns<string>;
     if (result.status === 0) return { nodePath: candidate, diagnostics };
 
-    const detail = (result.stderr || result.stdout || result.error?.message || `exit ${result.status}`).trim();
+    const detail = (
+      result.stderr ||
+      result.stdout ||
+      result.error?.message ||
+      `exit ${result.status}`
+    ).trim();
     diagnostics.push(`node preflight failed for ${candidate}: ${detail}`);
   }
 
@@ -93,6 +98,9 @@ type StartOptions = {
   timeoutMs?: number;
 };
 
+// TODO: 需要确定打包后能不能正常启动，现在的启动的方式感觉不太好，resolve 感觉不稳定，业界的最佳实践是怎么样的，需要进行调研比较
+// 如果客户机器（mac/windows/linux）没有 nodejs 环境怎么办，能内置统一的环境吗
+// 现在 better-sqlite3 、electron 需要的 nodejs 版本是什么，是统一的吗
 export async function startPiServer(options: StartOptions = {}): Promise<PiServerStatus> {
   const spawn = options.spawn ?? nodeSpawn;
   const scriptPath = options.scriptPath ?? resolvePiServerScriptPath();
@@ -100,7 +108,10 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
   const nodeSelection = options.nodePath
     ? { nodePath: options.nodePath, diagnostics: [] }
     : selectNodePath({ cwd, spawnSync: options.spawnSync });
-  const child = spawn(nodeSelection.nodePath, [scriptPath], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(nodeSelection.nodePath, [scriptPath], {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   const parser = createReadyLineParser();
   const logs: string[] = [...nodeSelection.diagnostics.slice(-10)];
   const pushLog = (source: "stdout" | "stderr", chunk: Buffer) => {

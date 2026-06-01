@@ -1,4 +1,6 @@
-export async function* streamSse<T = unknown>(body: ReadableStream<Uint8Array> | null): AsyncIterable<T> {
+export async function* streamSse<T = unknown>(
+  body: ReadableStream<Uint8Array> | null
+): AsyncIterable<T> {
   if (!body) return;
   const reader = body.getReader();
   const decoder = new TextDecoder();

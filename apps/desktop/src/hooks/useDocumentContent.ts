@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ApiClient, DocumentContent } from "@/api/client.js";
 
-export function useDocumentContent(
-  api: ApiClient,
-  workspaceId: string,
-  path: string | null
-) {
+export function useDocumentContent(api: ApiClient, workspaceId: string, path: string | null) {
   const cacheRef = useRef<Map<string, DocumentContent>>(new Map());
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [loading, setLoading] = useState(false);

@@ -40,7 +40,9 @@ if (typeof Element !== "undefined") {
     Element.prototype.releasePointerCapture = function () {};
   }
   if (!Element.prototype.hasPointerCapture) {
-    Element.prototype.hasPointerCapture = function () { return false; };
+    Element.prototype.hasPointerCapture = function () {
+      return false;
+    };
   }
 }
 

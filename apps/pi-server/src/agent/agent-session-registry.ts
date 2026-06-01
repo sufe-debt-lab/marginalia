@@ -15,9 +15,7 @@ export type CreateSessionOptions = {
   [key: string]: unknown;
 };
 
-export type CreateSessionFn = (
-  options: CreateSessionOptions
-) => Promise<{ session: AgentSession }>;
+export type CreateSessionFn = (options: CreateSessionOptions) => Promise<{ session: AgentSession }>;
 
 export type RegistryDeps = {
   authStorage: AuthStorage;
@@ -56,7 +54,10 @@ function defaultSessionManagerFor(workspaceRoot: string, existing: string | null
 export class AgentSessionRegistry {
   private readonly entries = new Map<string, SessionHandle>();
   private readonly maxEntries: number;
-  private readonly sessionManagerFor: (workspaceRoot: string, existingPath: string | null) => SessionManager;
+  private readonly sessionManagerFor: (
+    workspaceRoot: string,
+    existingPath: string | null
+  ) => SessionManager;
 
   constructor(private readonly deps: RegistryDeps) {
     this.maxEntries = deps.maxEntries ?? 20;
@@ -71,7 +72,10 @@ export class AgentSessionRegistry {
       return hit;
     }
 
-    const sessionManager = this.sessionManagerFor(input.workspaceRoot, input.agentSessionPath ?? null);
+    const sessionManager = this.sessionManagerFor(
+      input.workspaceRoot,
+      input.agentSessionPath ?? null
+    );
     const { session } = await this.deps.createSession({
       ...(input.config ?? {}),
       cwd: input.workspaceRoot,

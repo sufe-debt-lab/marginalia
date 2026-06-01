@@ -63,7 +63,9 @@ describe("Sidebar", () => {
     render(<Sidebar api={api} />);
     await waitFor(() => screen.getByText("alpha"));
     await userEvent.click(screen.getByRole("button", { name: /new workspace/i }));
-    await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith({ name: "path", rootDir: "/picked/path" }));
+    await waitFor(() =>
+      expect(api.createWorkspace).toHaveBeenCalledWith({ name: "path", rootDir: "/picked/path" })
+    );
   });
 
   it("plus button: when picker cancels, no create call", async () => {

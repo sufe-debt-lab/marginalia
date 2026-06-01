@@ -13,8 +13,8 @@ describe("useDocumentContent", () => {
         truncated: false
       }))
     } as unknown as ApiClient;
-    const { result, rerender } = renderHook(({ path }: { path: string | null }) =>
-      useDocumentContent(api, "w", path),
+    const { result, rerender } = renderHook(
+      ({ path }: { path: string | null }) => useDocumentContent(api, "w", path),
       { initialProps: { path: "a.txt" as string | null } }
     );
     await waitFor(() => expect(result.current.content?.text).toBe("content of a.txt"));

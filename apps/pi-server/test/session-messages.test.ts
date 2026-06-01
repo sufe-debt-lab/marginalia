@@ -14,7 +14,13 @@ function writeJsonl(lines: object[]) {
 describe("readMessagesFromSessionFile", () => {
   it("returns user and assistant messages in order, ignoring header and non-message entries", () => {
     const file = writeJsonl([
-      { type: "session", version: 3, id: "abc", cwd: "/tmp", timestamp: "2026-05-26T00:00:00.000Z" },
+      {
+        type: "session",
+        version: 3,
+        id: "abc",
+        cwd: "/tmp",
+        timestamp: "2026-05-26T00:00:00.000Z"
+      },
       {
         type: "message",
         id: "1",
@@ -54,7 +60,13 @@ describe("readMessagesFromSessionFile", () => {
 
   it("preserves assistant tool calls and matching tool results for reopened sessions", () => {
     const file = writeJsonl([
-      { type: "session", version: 3, id: "abc", cwd: "/tmp", timestamp: "2026-05-26T00:00:00.000Z" },
+      {
+        type: "session",
+        version: 3,
+        id: "abc",
+        cwd: "/tmp",
+        timestamp: "2026-05-26T00:00:00.000Z"
+      },
       {
         type: "message",
         id: "u1",
@@ -89,7 +101,7 @@ describe("readMessagesFromSessionFile", () => {
           role: "toolResult",
           toolCallId: "tc1",
           toolName: "read",
-          content: [{ type: "text", text: "{ \"name\": \"demo\" }" }],
+          content: [{ type: "text", text: '{ "name": "demo" }' }],
           isError: false,
           timestamp: 1748390403000
         }

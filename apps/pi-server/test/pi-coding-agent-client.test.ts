@@ -28,7 +28,10 @@ describe("PiCodingAgentClient", () => {
   it("streams pi-native events and resolves sessionFile", async () => {
     const events: AgentSessionEvent[] = [
       { type: "agent_start" } as AgentSessionEvent,
-      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hi" } } as unknown as AgentSessionEvent,
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "hi" }
+      } as unknown as AgentSessionEvent,
       { type: "message_end", message: { stopReason: "end" } } as unknown as AgentSessionEvent
     ];
     const session = fakeSession(events);

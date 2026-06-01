@@ -18,8 +18,16 @@ interface Props {
 export function PermissionChip({ value, onChange }: Props) {
   const { t } = useTranslation();
   const conf: Record<Permission, { icon: typeof Eye; label: string; className: string }> = {
-    full: { icon: ShieldAlert, label: t("composer.permFull"), className: "text-[oklch(0.58_0.17_35)]" },
-    ask: { icon: ShieldQuestion, label: t("composer.permAsk"), className: "text-[oklch(0.55_0.15_80)]" },
+    full: {
+      icon: ShieldAlert,
+      label: t("composer.permFull"),
+      className: "text-[oklch(0.58_0.17_35)]"
+    },
+    ask: {
+      icon: ShieldQuestion,
+      label: t("composer.permAsk"),
+      className: "text-[oklch(0.55_0.15_80)]"
+    },
     readonly: { icon: Eye, label: t("composer.permReadonly"), className: "text-text-muted" }
   };
   const Active = conf[value].icon;

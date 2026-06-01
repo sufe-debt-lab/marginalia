@@ -90,7 +90,14 @@ export function createWorkspace(db: Database.Database, input: { name: string; ro
   } satisfies Workspace;
   db.prepare(
     "insert into workspaces (id, name, root_dir, last_opened_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?)"
-  ).run(workspace.id, workspace.name, workspace.rootDir, null, workspace.createdAt, workspace.updatedAt);
+  ).run(
+    workspace.id,
+    workspace.name,
+    workspace.rootDir,
+    null,
+    workspace.createdAt,
+    workspace.updatedAt
+  );
   return workspace;
 }
 
@@ -103,7 +110,11 @@ export function listWorkspaces(db: Database.Database) {
 
 export function markWorkspaceOpened(db: Database.Database, id: string) {
   const timestamp = now();
-  db.prepare("update workspaces set last_opened_at = ?, updated_at = ? where id = ?").run(timestamp, timestamp, id);
+  db.prepare("update workspaces set last_opened_at = ?, updated_at = ? where id = ?").run(
+    timestamp,
+    timestamp,
+    id
+  );
   return getWorkspace(db, id);
 }
 
@@ -113,7 +124,11 @@ export function getWorkspace(db: Database.Database, id: string) {
 }
 
 export function getRecentWorkspace(db: Database.Database) {
-  const row = db.prepare("select * from workspaces where last_opened_at is not null order by last_opened_at desc limit 1").get();
+  const row = db
+    .prepare(
+      "select * from workspaces where last_opened_at is not null order by last_opened_at desc limit 1"
+    )
+    .get();
   return row ? mapWorkspace(row) : null;
 }
 
@@ -138,8 +153,23 @@ export function createSession(
       : "insert into sessions (id, workspace_id, title, origin, created_at, updated_at) values (?, ?, ?, ?, ?, ?)"
   ).run(
     ...(hasModel
-      ? [session.id, session.workspaceId, session.title, session.origin, session.model, session.createdAt, session.updatedAt]
-      : [session.id, session.workspaceId, session.title, session.origin, session.createdAt, session.updatedAt])
+      ? [
+          session.id,
+          session.workspaceId,
+          session.title,
+          session.origin,
+          session.model,
+          session.createdAt,
+          session.updatedAt
+        ]
+      : [
+          session.id,
+          session.workspaceId,
+          session.title,
+          session.origin,
+          session.createdAt,
+          session.updatedAt
+        ])
   );
   return session;
 }
@@ -158,7 +188,11 @@ export function getSession(db: Database.Database, id: string) {
 
 export function updateSession(db: Database.Database, id: string, patch: { model?: string | null }) {
   if (patch.model !== undefined) {
-    db.prepare("update sessions set model = ?, updated_at = ? where id = ?").run(patch.model, now(), id);
+    db.prepare("update sessions set model = ?, updated_at = ? where id = ?").run(
+      patch.model,
+      now(),
+      id
+    );
   }
   return getSession(db, id);
 }
@@ -184,13 +218,9 @@ export function createMessage(
     content: input.content,
     createdAt: timestamp
   } satisfies Message;
-  db.prepare("insert into messages (id, session_id, role, content, created_at) values (?, ?, ?, ?, ?)").run(
-    message.id,
-    message.sessionId,
-    message.role,
-    message.content,
-    message.createdAt
-  );
+  db.prepare(
+    "insert into messages (id, session_id, role, content, created_at) values (?, ?, ?, ?, ?)"
+  ).run(message.id, message.sessionId, message.role, message.content, message.createdAt);
   db.prepare("update sessions set updated_at = ? where id = ?").run(timestamp, message.sessionId);
   return message;
 }
@@ -227,7 +257,16 @@ export function createProvider(
   );
   db.prepare(
     "insert into providers (id, name, api_key_ref, base_url, default_model, enabled, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(provider.id, provider.name, provider.apiKeyRef, provider.baseUrl, provider.defaultModel, 1, timestamp, timestamp);
+  ).run(
+    provider.id,
+    provider.name,
+    provider.apiKeyRef,
+    provider.baseUrl,
+    provider.defaultModel,
+    1,
+    timestamp,
+    timestamp
+  );
   return provider;
 }
 
@@ -247,24 +286,46 @@ export function getProvider(db: Database.Database, id: string) {
   return row ? mapProvider(row) : null;
 }
 
-export function createRun(db: Database.Database, input: { sessionId: string; providerId: string; model: string }) {
+export function createRun(
+  db: Database.Database,
+  input: { sessionId: string; providerId: string; model: string }
+) {
   const timestamp = now();
   const id = randomUUID();
   db.prepare(
     "insert into runs (id, session_id, provider_id, model, status, created_at) values (?, ?, ?, ?, ?, ?)"
   ).run(id, input.sessionId, input.providerId, input.model, "running", timestamp);
-  return { id, sessionId: input.sessionId, providerId: input.providerId, model: input.model, status: "running", createdAt: timestamp };
+  return {
+    id,
+    sessionId: input.sessionId,
+    providerId: input.providerId,
+    model: input.model,
+    status: "running",
+    createdAt: timestamp
+  };
 }
 
-export function completeRun(db: Database.Database, id: string, status: "completed" | "failed", error?: string) {
-  db.prepare("update runs set status = ?, error = ?, completed_at = ? where id = ?").run(status, error ?? null, now(), id);
+export function completeRun(
+  db: Database.Database,
+  id: string,
+  status: "completed" | "failed",
+  error?: string
+) {
+  db.prepare("update runs set status = ?, error = ?, completed_at = ? where id = ?").run(
+    status,
+    error ?? null,
+    now(),
+    id
+  );
 }
 
 export function deleteWorkspace(db: Database.Database, id: string): boolean {
   const tx = db.transaction(() => {
     const existing = db.prepare("select id from workspaces where id = ?").get(id);
     if (!existing) return false;
-    const sessions = db.prepare("select id from sessions where workspace_id = ?").all(id) as { id: string }[];
+    const sessions = db.prepare("select id from sessions where workspace_id = ?").all(id) as {
+      id: string;
+    }[];
     const delMessages = db.prepare("delete from messages where session_id = ?");
     const delRuns = db.prepare("delete from runs where session_id = ?");
     const delSession = db.prepare("delete from sessions where id = ?");

@@ -27,7 +27,7 @@ describe("streamSse", () => {
   });
 
   it("ignores keep-alive empty data lines", async () => {
-    const stream = chunked(['data: \n\n', 'data: {"type":"x"}\n\n']);
+    const stream = chunked(["data: \n\n", 'data: {"type":"x"}\n\n']);
     const events: unknown[] = [];
     for await (const event of streamSse(stream)) events.push(event);
     expect(events).toEqual([{ type: "x" }]);

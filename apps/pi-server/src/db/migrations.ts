@@ -70,12 +70,18 @@ export function migrate(db: Database.Database) {
       FOREIGN KEY (provider_id) REFERENCES providers(id)
     );
   `);
-  const sessionColumns = db.prepare("pragma table_info(sessions)").all().map((row: any) => row.name);
+  const sessionColumns = db
+    .prepare("pragma table_info(sessions)")
+    .all()
+    .map((row: any) => row.name);
   if (!sessionColumns.includes("model")) {
     db.exec("ALTER TABLE sessions ADD COLUMN model TEXT");
   }
   if (!sessionColumns.includes("agent_session_path")) {
     db.exec("ALTER TABLE sessions ADD COLUMN agent_session_path TEXT");
   }
-  db.prepare("insert or ignore into schema_migrations (version, applied_at) values (?, ?)").run(1, Date.now());
+  db.prepare("insert or ignore into schema_migrations (version, applied_at) values (?, ?)").run(
+    1,
+    Date.now()
+  );
 }

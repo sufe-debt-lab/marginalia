@@ -132,7 +132,7 @@ export const useAppStore = create<AppState>()(
       setResumeLastSession: (v) => set({ resumeLastSession: v })
     }),
     {
-      name: "my-cowork-app",
+      name: "marginalia-app",
       version: 1,
       storage: createJSONStorage(() => localStorageAdapter),
       partialize: (s) => ({

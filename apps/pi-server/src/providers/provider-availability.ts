@@ -23,6 +23,9 @@ export class ModelAvailabilityChecker {
         message: `provider ${input.piProviderId} not available (missing API key?)`
       };
     }
-    return { ok: false, message: `model ${input.modelId} not registered under ${input.piProviderId}` };
+    return {
+      ok: false,
+      message: `model ${input.modelId} not registered under ${input.piProviderId}`
+    };
   }
 }

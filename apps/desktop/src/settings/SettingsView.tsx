@@ -31,6 +31,8 @@ import {
 
 type SettingsTab = "general" | "providers" | "mcp" | "skills";
 
+// TODO: 需要拆分组件，providers 现在的功能不全，参考 ../agent-harness/CodePilot/ 进行功能设计和补全
+// 比如现在的链接是在应用内打开，其实应该在浏览器中打开
 export function SettingsView({ api }: { api: ApiClient }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -315,13 +317,8 @@ function ProvidersPane({ api }: { api: ApiClient }) {
   const [addOpen, setAddOpen] = useState(false);
   const [seedPreset, setSeedPreset] = useState<string | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
-  const reasoning = useAppStore((s) => s.reasoning);
-  const setReasoning = useAppStore((s) => s.setReasoning);
-  const composerModel = useAppStore((s) => s.composerModel);
   const providers = [...loaded.data, ...extra];
   const others = unconfiguredPresets(providers);
-  const globalDefault = providers[0]?.defaultModel ?? t("settings.none");
-  const workspaceModel = composerModel || providers[0]?.defaultModel || t("settings.none");
 
   function openAddWith(presetKey: string | null) {
     setSeedPreset(presetKey);
@@ -400,40 +397,6 @@ function ProvidersPane({ api }: { api: ApiClient }) {
           </div>
         }
       />
-
-      {/* Defaults summary bar */}
-      <div className="mb-5 flex items-center gap-5 rounded-[10px] border border-border bg-surface px-4 py-3.5 text-[13px]">
-        <div className="flex-1">
-          <div className="mb-1 text-[11.5px] text-text-muted">
-            {t("settings.globalDefaultModel")}
-          </div>
-          <span className="mono font-medium">{globalDefault}</span>
-        </div>
-        <div className="h-7 w-px bg-border" />
-        <div className="flex-1">
-          <div className="mb-1 text-[11.5px] text-text-muted">{t("settings.thisWorkspace")}</div>
-          <span className="mono font-medium">{workspaceModel}</span>
-        </div>
-        <div className="h-7 w-px bg-border" />
-        <div className="flex-1">
-          <div className="mb-1 text-[11.5px] text-text-muted">{t("settings.reasoningBudget")}</div>
-          <div className="flex w-fit gap-0.5 rounded-md bg-surface-3 p-0.5">
-            {(["low", "medium", "high"] as const).map((b) => (
-              <button
-                key={b}
-                type="button"
-                onClick={() => setReasoning(b)}
-                className={cn(
-                  "rounded px-2 py-0.5 text-[11.5px]",
-                  reasoning === b ? "bg-surface text-foreground shadow-sm" : "text-text-muted"
-                )}
-              >
-                {b}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
 
       <SectionLabel>{t("settings.connected")}</SectionLabel>
       <SettingCard>
@@ -610,7 +573,6 @@ function ProviderPresetDialog({
   // When opened from an "Others" row, jump straight to that preset's form.
   useEffect(() => {
     if (open && seedPresetKey) choosePreset(seedPresetKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, seedPresetKey]);
 
   return (

@@ -90,7 +90,7 @@
    │  └─────────────────────────────────────────┘│
    └─────────────────────────────────────────────┘
 
-        📁 my-cowork ▾     🌿 main ▾
+        📁 marginalia ▾     🌿 main ▾
 ```
 
 - 标题 `text-2xl font-medium`
@@ -242,7 +242,7 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({ /* ... */ }),
     {
-      name: 'my-cowork-app',
+      name: 'marginalia-app',
       version: 1,
       partialize: (s) => ({
         activeWorkspaceId: s.activeWorkspaceId,

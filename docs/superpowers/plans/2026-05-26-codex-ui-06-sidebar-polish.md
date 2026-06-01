@@ -225,7 +225,7 @@ it("setLeftSidebarWidth clamps between 180 and 480 and persists", () => {
   expect(useAppStore.getState().leftSidebarWidth).toBe(480);
   setLeftSidebarWidth(300);
   expect(useAppStore.getState().leftSidebarWidth).toBe(300);
-  const stored = JSON.parse(localStorage.getItem("my-cowork-app") || "{}");
+  const stored = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
   expect(stored.state?.leftSidebarWidth).toBe(300);
   expect(stored.state?.pinnedWorkspaceIds).toBeDefined();
 });

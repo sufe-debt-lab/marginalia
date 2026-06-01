@@ -39,7 +39,9 @@ describe("createReadyLineParser", () => {
 
 describe("startPiServer", () => {
   it("resolves the pi-server build from the compiled electron directory", () => {
-    expect(resolvePiServerScriptPath("/repo/apps/desktop/dist-electron")).toBe("/repo/apps/pi-server/dist/index.js");
+    expect(resolvePiServerScriptPath("/repo/apps/desktop/dist-electron")).toBe(
+      "/repo/apps/pi-server/dist/index.js"
+    );
     expect(resolvePiServerCwd("/repo/apps/pi-server/dist/index.js")).toBe("/repo/apps/pi-server");
   });
 
@@ -64,7 +66,10 @@ describe("startPiServer", () => {
       cwd: "/repo/apps/pi-server"
     });
 
-    expect(selected).toEqual({ nodePath: "/node26", diagnostics: ["node preflight failed for /node24: wrong ABI"] });
+    expect(selected).toEqual({
+      nodePath: "/node26",
+      diagnostics: ["node preflight failed for /node24: wrong ABI"]
+    });
     expect(spawnSync).toHaveBeenCalledWith(
       "/node24",
       [
@@ -79,7 +84,13 @@ describe("startPiServer", () => {
     const child = new FakeChild();
     const spawn = vi.fn(() => child as never);
     const spawnSync = vi.fn(() => ({ status: 0, stderr: "", stdout: "" }) as never);
-    const promise = startPiServer({ spawn, spawnSync, scriptPath: "/tmp/dist/server.js", nodePath: "node", timeoutMs: 50 });
+    const promise = startPiServer({
+      spawn,
+      spawnSync,
+      scriptPath: "/tmp/dist/server.js",
+      nodePath: "node",
+      timeoutMs: 50
+    });
 
     child.stdout.emit("data", Buffer.from("booting\n"));
     child.stderr.emit("data", Buffer.from("missing config\n"));

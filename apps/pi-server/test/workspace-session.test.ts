@@ -35,14 +35,18 @@ describe("migrations", () => {
     const db = memoryDb();
     migrate(db);
 
-    const tables = db.prepare("select name from sqlite_master where type = 'table' order by name").all();
+    const tables = db
+      .prepare("select name from sqlite_master where type = 'table' order by name")
+      .all();
 
-    expect(tables).toEqual(expect.arrayContaining([
-      { name: "messages" },
-      { name: "schema_migrations" },
-      { name: "sessions" },
-      { name: "workspaces" }
-    ]));
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        { name: "messages" },
+        { name: "schema_migrations" },
+        { name: "sessions" },
+        { name: "workspaces" }
+      ])
+    );
     expect(db.prepare("select version from schema_migrations").all()).toEqual([{ version: 1 }]);
   });
 });
@@ -73,7 +77,11 @@ describe("workspace repositories", () => {
     migrate(db);
 
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs" });
-    const session = createSession(db, { workspaceId: workspace.id, title: "Read paper", origin: "desktop" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Read paper",
+      origin: "desktop"
+    });
     createMessage(db, { sessionId: session.id, role: "user", content: "hello" });
     db.close();
     dbs.pop();
@@ -82,7 +90,9 @@ describe("workspace repositories", () => {
     dbs.push(reopened);
 
     expect(listWorkspaces(reopened)).toMatchObject([{ id: workspace.id, name: "Docs" }]);
-    expect(listSessions(reopened, workspace.id)).toMatchObject([{ id: session.id, title: "Read paper" }]);
+    expect(listSessions(reopened, workspace.id)).toMatchObject([
+      { id: session.id, title: "Read paper" }
+    ]);
     expect(getMessages(reopened, session.id)).toMatchObject([{ role: "user", content: "hello" }]);
   });
 
@@ -90,13 +100,24 @@ describe("workspace repositories", () => {
     const db = memoryDb();
     migrate(db);
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs" });
-    const first = createSession(db, { workspaceId: workspace.id, title: "First", origin: "desktop" });
-    const second = createSession(db, { workspaceId: workspace.id, title: "Second", origin: "desktop" });
+    const first = createSession(db, {
+      workspaceId: workspace.id,
+      title: "First",
+      origin: "desktop"
+    });
+    const second = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Second",
+      origin: "desktop"
+    });
 
     createMessage(db, { sessionId: second.id, role: "user", content: "second bump" });
     createMessage(db, { sessionId: first.id, role: "user", content: "first bump" });
 
-    expect(listSessions(db, workspace.id).map((session) => session.id)).toEqual([first.id, second.id]);
+    expect(listSessions(db, workspace.id).map((session) => session.id)).toEqual([
+      first.id,
+      second.id
+    ]);
   });
 });
 
@@ -114,8 +135,12 @@ describe("workspace API", () => {
     const workspace = await workspaceResponse.json();
     expect(workspaceResponse.status).toBe(201);
 
-    expect(await (await app.request("/workspaces")).json()).toMatchObject([{ id: workspace.id, name: "Docs" }]);
-    expect((await app.request(`/workspaces/${workspace.id}/open`, { method: "PATCH" })).status).toBe(200);
+    expect(await (await app.request("/workspaces")).json()).toMatchObject([
+      { id: workspace.id, name: "Docs" }
+    ]);
+    expect(
+      (await app.request(`/workspaces/${workspace.id}/open`, { method: "PATCH" })).status
+    ).toBe(200);
 
     const sessionResponse = await app.request("/sessions", {
       method: "POST",
@@ -186,8 +211,12 @@ describe("workspace API", () => {
     const items = (await list.json()) as { id: string }[];
     expect(items.find((w) => w.id === ws.id)).toBeUndefined();
 
-    expect(db.prepare("select count(*) as c from sessions where workspace_id = ?").get(ws.id)).toEqual({ c: 0 });
-    expect(db.prepare("select count(*) as c from messages where session_id = ?").get(session.id)).toEqual({ c: 0 });
+    expect(
+      db.prepare("select count(*) as c from sessions where workspace_id = ?").get(ws.id)
+    ).toEqual({ c: 0 });
+    expect(
+      db.prepare("select count(*) as c from messages where session_id = ?").get(session.id)
+    ).toEqual({ c: 0 });
   });
 
   it("DELETE /workspaces/:id returns 404 for unknown id", async () => {

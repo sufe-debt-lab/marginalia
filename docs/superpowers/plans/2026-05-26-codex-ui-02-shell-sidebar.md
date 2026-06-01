@@ -962,7 +962,7 @@ describe("AppShell", () => {
   it("toggle persists to localStorage", async () => {
     render(<AppShell serverUrl="http://x" />);
     await userEvent.click(screen.getByRole("button", { name: /toggle left sidebar/i }));
-    const stored = JSON.parse(localStorage.getItem("my-cowork-app") || "{}");
+    const stored = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
     expect(stored.state?.leftSidebarCollapsed).toBe(true);
   });
 });

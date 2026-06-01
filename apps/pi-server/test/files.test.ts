@@ -83,9 +83,15 @@ describe("workspace files", () => {
     mkdirSync(path.join(root, "docs"), { recursive: true });
     writeFileSync(path.join(root, "docs/note.md"), "alpha beta");
 
-    await expect(searchWorkspaceFiles(root, "note")).resolves.toEqual([{ path: "docs/note.md", match: "name" }]);
-    await expect(searchWorkspaceFiles(root, "beta")).resolves.toEqual([{ path: "docs/note.md", match: "content" }]);
-    await expect(searchWorkspaceFiles(root, "")).resolves.toEqual([{ path: "docs/note.md", match: "name" }]);
+    await expect(searchWorkspaceFiles(root, "note")).resolves.toEqual([
+      { path: "docs/note.md", match: "name" }
+    ]);
+    await expect(searchWorkspaceFiles(root, "beta")).resolves.toEqual([
+      { path: "docs/note.md", match: "content" }
+    ]);
+    await expect(searchWorkspaceFiles(root, "")).resolves.toEqual([
+      { path: "docs/note.md", match: "name" }
+    ]);
   });
 });
 
@@ -153,13 +159,15 @@ describe("document reader routes and tools", () => {
     expect(await (await app.request(`/workspaces/${workspace.id}/files`)).json()).toEqual([
       { path: "note.md", name: "note.md", kind: "file" }
     ]);
-    expect(await (await app.request(`/workspaces/${workspace.id}/files/content?path=note.md`)).json()).toMatchObject({
+    expect(
+      await (await app.request(`/workspaces/${workspace.id}/files/content?path=note.md`)).json()
+    ).toMatchObject({
       path: "note.md",
       text: "# Title"
     });
-    expect(await (await app.request(`/workspaces/${workspace.id}/files/search?q=Title`)).json()).toEqual([
-      { path: "note.md", match: "content" }
-    ]);
+    expect(
+      await (await app.request(`/workspaces/${workspace.id}/files/search?q=Title`)).json()
+    ).toEqual([{ path: "note.md", match: "content" }]);
 
     const outside = await app.request(`/workspaces/${workspace.id}/files/content?path=../secret`);
     expect(outside.status).toBe(403);
@@ -202,8 +210,15 @@ describe("document reader routes and tools", () => {
     writeFileSync(path.join(root, "note.md"), "# Title");
     const tools = createDocumentTools(root);
 
-    await expect(tools.list_files()).resolves.toEqual([{ path: "note.md", name: "note.md", kind: "file" }]);
-    await expect(tools.read_document({ path: "note.md" })).resolves.toMatchObject({ path: "note.md", text: "# Title" });
-    await expect(tools.search_files({ q: "Title" })).resolves.toEqual([{ path: "note.md", match: "content" }]);
+    await expect(tools.list_files()).resolves.toEqual([
+      { path: "note.md", name: "note.md", kind: "file" }
+    ]);
+    await expect(tools.read_document({ path: "note.md" })).resolves.toMatchObject({
+      path: "note.md",
+      text: "# Title"
+    });
+    await expect(tools.search_files({ q: "Title" })).resolves.toEqual([
+      { path: "note.md", match: "content" }
+    ]);
   });
 });

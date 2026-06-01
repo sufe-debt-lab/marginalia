@@ -82,7 +82,9 @@ export function Sidebar({ api }: { api: ApiClient }) {
       </div>
       <ScrollArea className="flex-1 px-2 pb-2">
         <div className="space-y-0.5 pt-1">
-          {workspaces.loading && <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>}
+          {workspaces.loading && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>
+          )}
           {!workspaces.loading && workspaces.data.length === 0 && (
             <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noWorkspaces")}</p>
           )}
@@ -105,7 +107,10 @@ export function Sidebar({ api }: { api: ApiClient }) {
       <div className="border-t border-border-soft p-2">
         <Button
           variant="ghost"
-          className={cn("w-full justify-start gap-2 rounded-md active:scale-[0.99]", view === "settings" && "bg-accent")}
+          className={cn(
+            "w-full justify-start gap-2 rounded-md active:scale-[0.99]",
+            view === "settings" && "bg-accent"
+          )}
           onClick={() => setView("settings")}
           aria-label={t("common.settings")}
         >

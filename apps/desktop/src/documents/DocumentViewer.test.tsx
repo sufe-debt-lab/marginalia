@@ -89,7 +89,13 @@ describe("DocumentViewer", () => {
     render(
       <DocumentViewer
         path="image.png"
-        content={{ path: "image.png", mime: "image/png", text: "", truncated: false, rawOnly: true }}
+        content={{
+          path: "image.png",
+          mime: "image/png",
+          text: "",
+          truncated: false,
+          rawOnly: true
+        }}
         loading={false}
         error={null}
         fileUrl="http://127.0.0.1:3000/workspaces/w/files/raw?path=image.png"

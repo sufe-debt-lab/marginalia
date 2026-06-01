@@ -54,7 +54,7 @@
 
 Run:
 ```bash
-cd /Users/shixy/Desktop/curiosity/my-cowork
+cd /Users/shixy/Desktop/curiosity/marginalia
 pnpm --filter @marginalia/desktop add \
   zustand@^4.5 sonner@^1.5 lucide-react@^0.460 \
   clsx@^2 tailwind-merge@^2 class-variance-authority@^0.7 \
@@ -542,7 +542,7 @@ describe("useAppStore", () => {
     setPendingPrompt("draft");
     toggleLeftSidebar();
     // wait for persist middleware to flush
-    const stored = JSON.parse(localStorage.getItem("my-cowork-app") || "{}");
+    const stored = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
     const state = stored.state ?? {};
     expect(state.activeWorkspaceId).toBe("ws-1");
     expect(state.locale).toBe("zh");
@@ -618,7 +618,7 @@ export const useAppStore = create<AppState>()(
       toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed }))
     }),
     {
-      name: "my-cowork-app",
+      name: "marginalia-app",
       version: 1,
       partialize: (s) => ({
         activeWorkspaceId: s.activeWorkspaceId,

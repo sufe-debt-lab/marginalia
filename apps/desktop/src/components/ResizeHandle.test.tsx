@@ -6,9 +6,7 @@ afterEach(() => cleanup());
 
 describe("ResizeHandle", () => {
   it("renders a separator role", () => {
-    render(
-      <ResizeHandle side="right" getWidth={() => 240} onWidth={() => {}} />
-    );
+    render(<ResizeHandle side="right" getWidth={() => 240} onWidth={() => {}} />);
     const sep = screen.getByRole("separator");
     expect(sep).toBeInTheDocument();
     expect(sep).toHaveAttribute("aria-orientation", "vertical");
@@ -31,14 +29,7 @@ describe("ResizeHandle", () => {
   it("inverts delta for side=left and calls onCommit on pointer up", async () => {
     const onWidth = vi.fn();
     const onCommit = vi.fn();
-    render(
-      <ResizeHandle
-        side="left"
-        getWidth={() => 300}
-        onWidth={onWidth}
-        onCommit={onCommit}
-      />
-    );
+    render(<ResizeHandle side="left" getWidth={() => 300} onWidth={onWidth} onCommit={onCommit} />);
     const sep = screen.getByRole("separator");
 
     fireEvent.pointerDown(sep, { clientX: 200, pointerId: 1 });

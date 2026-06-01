@@ -15,17 +15,13 @@ describe("ModelPicker", () => {
   });
 
   it("shows current model on trigger", () => {
-    render(
-      <ModelPicker providers={providers} providerId="p1" model="M2.7" onChange={() => {}} />
-    );
+    render(<ModelPicker providers={providers} providerId="p1" model="M2.7" onChange={() => {}} />);
     expect(screen.getByRole("button", { name: /Minimax · M2.7/i })).toBeInTheDocument();
   });
 
   it("changing provider calls onChange with default model of new provider", async () => {
     const onChange = vi.fn();
-    render(
-      <ModelPicker providers={providers} providerId="p1" model="M2.7" onChange={onChange} />
-    );
+    render(<ModelPicker providers={providers} providerId="p1" model="M2.7" onChange={onChange} />);
     await userEvent.click(screen.getByRole("button", { name: /Minimax/i }));
     await waitFor(() => screen.getByText("OpenAI"));
     await userEvent.click(screen.getByText("OpenAI"));

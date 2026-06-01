@@ -27,6 +27,7 @@ function serializeStatus(status: PiServerStatus) {
   return status;
 }
 
+// TODO: 应用打包构建流程配置（maxos、windows）
 async function createWindow() {
   const isMac = process.platform === "darwin";
   windowRef = new BrowserWindow({

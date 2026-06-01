@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.75.5",
-    "@marginalia/chat-core": "workspace:*",
     "@hono/node-server": "^1.13.8",
+    "@marginalia/chat-core": "workspace:*",
     "better-sqlite3": "^12.10.0",
     "hono": "^4.6.0",
     "pdf-parse": "^1.1.1"
@@ -24,7 +24,7 @@
     "@types/node": "^22.10.0",
     "@types/pdf-parse": "^1.1.4",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "vitest": "^2.1.0"
   }
 }

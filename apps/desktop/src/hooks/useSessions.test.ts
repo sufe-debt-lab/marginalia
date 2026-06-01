@@ -20,7 +20,9 @@ describe("useSessions", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("loads sessions for workspaceId", async () => {
-    const api = fakeApi([{ id: "s1", workspaceId: "w", title: "first", origin: "ui", model: null }]);
+    const api = fakeApi([
+      { id: "s1", workspaceId: "w", title: "first", origin: "ui", model: null }
+    ]);
     const { result } = renderHook(() => useSessions(api, "w"));
     await waitFor(() => expect(result.current.data).toHaveLength(1));
   });
@@ -33,7 +35,9 @@ describe("useSessions", () => {
   });
 
   it("creates a session and prepends", async () => {
-    const api = fakeApi([{ id: "s1", workspaceId: "w", title: "first", origin: "ui", model: null }]);
+    const api = fakeApi([
+      { id: "s1", workspaceId: "w", title: "first", origin: "ui", model: null }
+    ]);
     const { result } = renderHook(() => useSessions(api, "w"));
     await waitFor(() => expect(result.current.data).toHaveLength(1));
     await act(async () => {

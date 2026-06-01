@@ -49,7 +49,11 @@ describe("AgentSessionRegistry", () => {
     const reg = new AgentSessionRegistry({ ...factoryDeps, maxEntries: 2 });
 
     await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null });
-    const beforeEvict = await reg.acquire({ sessionId: "s2", workspaceRoot: "/tmp", agentSessionPath: null });
+    const beforeEvict = await reg.acquire({
+      sessionId: "s2",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null
+    });
     await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null }); // touch s1
     await reg.acquire({ sessionId: "s3", workspaceRoot: "/tmp", agentSessionPath: null }); // pushes out s2
 
@@ -60,16 +64,24 @@ describe("AgentSessionRegistry", () => {
   it("evict() disposes and removes the specific session", async () => {
     const { factoryDeps } = deps();
     const reg = new AgentSessionRegistry({ ...factoryDeps, maxEntries: 5 });
-    const first = await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null });
+    const first = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null
+    });
     reg.evict("s1");
     expect((first.session as any).disposed).toBe(true);
-    const second = await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null });
+    const second = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null
+    });
     expect(second.session).not.toBe(first.session);
   });
 
   it("sessionManagerFor falls back to create when open throws", async () => {
     const { factoryDeps } = deps();
-    let calls: Array<[string, string | null]> = [];
+    const calls: Array<[string, string | null]> = [];
     const reg = new AgentSessionRegistry({
       ...factoryDeps,
       sessionManagerFor: (cwd, existing) => {

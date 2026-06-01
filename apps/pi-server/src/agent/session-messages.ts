@@ -1,10 +1,12 @@
 import fs from "node:fs";
-import { parseSessionEntries } from "@earendil-works/pi-coding-agent";
+import {  parseSessionEntries } from "@earendil-works/pi-coding-agent";
 import { stringifyContent, toolSubtitle } from "@marginalia/chat-core";
 import type { UiMessage, UiToolCall } from "@marginalia/chat-core";
 
 export type { UiMessage, UiToolCall } from "@marginalia/chat-core";
 
+// TODO: 函数中的类型应该遵守 FileEntry / SessionMessageEntry 的类型推导，不应该自己重新定义类型，role 不存在 system ，不要自己定义不存在的类型，包括 @marginalia/chat-core 尽量不要重复定义和 pi 中重复的类型和操作
+// UiMessage 应该参考 @earendil-works/pi-tui 中的类型定义，chat 交互也应该和 @earendil-works/pi-tui 保持一致，尽量减少自己重复定义的一些类型或者交互
 export function readMessagesFromSessionFile(filePath: string): UiMessage[] {
   if (!fs.existsSync(filePath)) return [];
   const raw = fs.readFileSync(filePath, "utf-8");
@@ -13,7 +15,7 @@ export function readMessagesFromSessionFile(filePath: string): UiMessage[] {
   const toolCalls = new Map<string, UiToolCall>();
   for (const entry of fileEntries) {
     if (!entry || typeof entry !== "object") continue;
-    if ((entry as { type?: string }).type !== "message") continue;
+    if (entry.type !== "message") continue;
     const msgEntry = entry as {
       id?: string;
       message?: {

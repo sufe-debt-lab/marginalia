@@ -8,12 +8,7 @@ afterEach(() => cleanup());
 describe("ConfirmDeleteDialog", () => {
   it("renders workspace name in description", () => {
     render(
-      <ConfirmDeleteDialog
-        open
-        workspaceName="alpha"
-        onConfirm={vi.fn()}
-        onClose={vi.fn()}
-      />
+      <ConfirmDeleteDialog open workspaceName="alpha" onConfirm={vi.fn()} onClose={vi.fn()} />
     );
     expect(screen.getByText(/alpha/i)).toBeInTheDocument();
   });
@@ -22,12 +17,7 @@ describe("ConfirmDeleteDialog", () => {
     const onConfirm = vi.fn();
     const onClose = vi.fn();
     render(
-      <ConfirmDeleteDialog
-        open
-        workspaceName="alpha"
-        onConfirm={onConfirm}
-        onClose={onClose}
-      />
+      <ConfirmDeleteDialog open workspaceName="alpha" onConfirm={onConfirm} onClose={onClose} />
     );
     await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     expect(onConfirm).toHaveBeenCalled();

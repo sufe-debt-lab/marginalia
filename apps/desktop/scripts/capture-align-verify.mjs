@@ -1,3 +1,5 @@
+// TODO: 需要规范化项目截图验证所需要的脚本，现在太随意了，@scripts 和 @apps/desktop/scripts 都有一些脚本
+
 // Alignment verification capture: seeds a workspace + sessions + messages via
 // the live pi-server (reached from the renderer), then screenshots the new
 // P0 features — RecentThreads on New thread, sidebar session timestamps,

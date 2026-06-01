@@ -9,11 +9,7 @@ describe("MessageItem", () => {
   });
 
   it("renders assistant content as markdown with label", () => {
-    render(
-      <MessageItem
-        message={{ id: "2", role: "assistant", content: "**bold**" }}
-      />
-    );
+    render(<MessageItem message={{ id: "2", role: "assistant", content: "**bold**" }} />);
     expect(screen.getByText("assistant")).toBeInTheDocument();
     expect(screen.getByText("bold").tagName).toBe("STRONG");
   });

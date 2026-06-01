@@ -8,9 +8,9 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "lint": "eslint apps",
-    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json}\"",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json}\""
+    "lint": "eslint apps packages",
+    "format": "prettier --write \"{apps,packages}/**/*.{ts,tsx,css,json}\"",
+    "format:check": "prettier --check \"{apps,packages}/**/*.{ts,tsx,css,json}\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
