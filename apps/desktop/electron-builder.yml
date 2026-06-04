@@ -1,0 +1,55 @@
+appId: works.marginalia.desktop
+productName: Marginalia
+directories:
+  output: release
+  buildResources: build
+
+# The renderer is bundled by Vite into dist/ and the main process has no third-party
+# runtime deps, so only the build outputs go into the asar — never the pnpm node_modules.
+files:
+  - "dist/**/*"
+  - "dist-electron/**/*"
+  - "package.json"
+
+# pi-server ships as a self-contained pnpm deploy (dist + node_modules, incl. the
+# Electron-ABI rebuilt better-sqlite3) outside the asar so its native .node loads.
+# Copy from the staging dir (not the bundle itself) so node_modules lands one level
+# deep as pi-server/node_modules — electron-builder filters a root-level node_modules.
+extraResources:
+  - from: "../pi-server/.deploy"
+    to: "."
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+# We rebuild native modules ourselves against Electron in the build:server script
+# (scripts/build-pi-server.mjs), so electron-builder must not try to rebuild them.
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+
+# Icons: a single build/icon.png (1024×1024, currently a placeholder) — electron-builder
+# derives the macOS .icns and Windows .ico from it at package time.
+#
+# native better-sqlite3 is rebuilt per host in scripts/build-pi-server.mjs, so each
+# target must be built on its own OS. Cross-platform builds run on the CI matrix in
+# .github/workflows/build-desktop.yml (macOS→dmg/zip, Windows→nsis); win/linux cannot
+# be cross-built from macOS as-is.
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+  # TODO(release): spike build is unsigned (identity: null). A customer-facing macOS
+  # build needs Developer ID signing + notarization (and hardenedRuntime entitlements
+  # with disable-library-validation for the unsigned better-sqlite3 .node).
+  identity: null
+
+win:
+  target:
+    - nsis
+
+linux:
+  target:
+    - AppImage

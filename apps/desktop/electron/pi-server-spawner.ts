@@ -1,68 +1,47 @@
-import {
-  spawn as nodeSpawn,
-  spawnSync as nodeSpawnSync,
-  type ChildProcess,
-  type SpawnSyncReturns
-} from "node:child_process";
 import path from "node:path";
+
+/** The subset of ChildProcess / Electron's UtilityProcess that the spawner uses. */
+export type PiServerProcess = {
+  stdout: NodeJS.ReadableStream | null;
+  stderr: NodeJS.ReadableStream | null;
+  once(event: "exit", listener: () => void): unknown;
+  kill(): unknown;
+};
 
 export type PiServerStatus =
   | { status: "starting" }
-  | { status: "ready"; url: string; process: ChildProcess }
+  | { status: "ready"; url: string; process: PiServerProcess }
   | { status: "failed"; error: string; logs: string[] };
 
 export type ReadyMessage = { type: "ready"; port: number };
 
-export function resolvePiServerScriptPath(electronDir = import.meta.dirname) {
-  return path.resolve(electronDir, "../../pi-server/dist/index.js");
+/** Creates the pi-server child process; the strategy differs dev vs packaged. */
+type LaunchFn = (scriptPath: string, cwd: string) => PiServerProcess;
+
+type ResolveScriptOptions = {
+  isPackaged: boolean;
+  /** Compiled electron dir (dist-electron) — used in development. */
+  electronDir?: string;
+  /** Electron's resourcesPath — used when packaged. */
+  resourcesPath?: string;
+};
+
+/**
+ * In development the pi-server build lives in the monorepo at apps/pi-server/dist;
+ * when packaged it ships under resources/pi-server (electron-builder extraResources).
+ */
+export function resolvePiServerScriptPath(options: ResolveScriptOptions) {
+  if (options.isPackaged) {
+    const resources = options.resourcesPath ?? process.resourcesPath;
+    return path.join(resources, "pi-server", "dist", "index.js");
+  }
+  return path.resolve(options.electronDir ?? import.meta.dirname, "../../pi-server/dist/index.js");
 }
 
 export function resolvePiServerCwd(scriptPath: string) {
+  // scriptPath is <root>/pi-server/dist/index.js → cwd is <root>/pi-server so the
+  // forked process resolves its sibling node_modules.
   return path.resolve(path.dirname(scriptPath), "..");
-}
-
-export function collectNodePathCandidates(env: NodeJS.ProcessEnv = process.env) {
-  const candidates = [env.MARGINALIA_NODE_PATH];
-  for (const dir of (env.PATH ?? "").split(path.delimiter)) {
-    if (dir) candidates.push(path.join(dir, "node"));
-  }
-  candidates.push("node");
-
-  return candidates.filter((candidate, index): candidate is string => {
-    return Boolean(candidate) && candidates.indexOf(candidate) === index;
-  });
-}
-
-type SelectNodePathOptions = {
-  candidates?: string[];
-  cwd: string;
-  spawnSync?: typeof nodeSpawnSync;
-};
-
-export function selectNodePath(options: SelectNodePathOptions) {
-  const candidates = options.candidates ?? collectNodePathCandidates();
-  const spawnSync = options.spawnSync ?? nodeSpawnSync;
-  const diagnostics: string[] = [];
-  const preflightScript =
-    "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close();";
-
-  for (const candidate of candidates) {
-    const result = spawnSync(candidate, ["-e", preflightScript], {
-      cwd: options.cwd,
-      encoding: "utf8"
-    }) as SpawnSyncReturns<string>;
-    if (result.status === 0) return { nodePath: candidate, diagnostics };
-
-    const detail = (
-      result.stderr ||
-      result.stdout ||
-      result.error?.message ||
-      `exit ${result.status}`
-    ).trim();
-    diagnostics.push(`node preflight failed for ${candidate}: ${detail}`);
-  }
-
-  return { nodePath: candidates[0] ?? "node", diagnostics };
 }
 
 export function createReadyLineParser() {
@@ -90,30 +69,44 @@ export function createReadyLineParser() {
   };
 }
 
+async function defaultLaunch(isPackaged: boolean): Promise<LaunchFn> {
+  if (isPackaged) {
+    // Packaged: run on Electron's bundled Node so the client needs no Node install, and
+    // better-sqlite3 only has to match Electron's ABI (rebuilt at packaging time).
+    const { utilityProcess } = await import("electron");
+    return (scriptPath, cwd) =>
+      utilityProcess.fork(scriptPath, [], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+  }
+  // Development: run on the system Node from PATH. Its ABI matches the better-sqlite3
+  // that `pnpm install` built; forking under Electron's different ABI would crash on
+  // boot. MARGINALIA_NODE_PATH overrides which node binary to use.
+  const { spawn } = await import("node:child_process");
+  const nodePath = process.env.MARGINALIA_NODE_PATH ?? "node";
+  return (scriptPath, cwd) =>
+    spawn(nodePath, [scriptPath], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+}
+
 type StartOptions = {
-  spawn?: typeof nodeSpawn;
-  spawnSync?: typeof nodeSpawnSync;
+  /** Inject the process launcher (a fake in tests). */
+  launch?: LaunchFn;
   scriptPath?: string;
-  nodePath?: string;
+  isPackaged?: boolean;
   timeoutMs?: number;
 };
 
-// TODO: 需要确定打包后能不能正常启动，现在的启动的方式感觉不太好，resolve 感觉不稳定，业界的最佳实践是怎么样的，需要进行调研比较
-// 如果客户机器（mac/windows/linux）没有 nodejs 环境怎么办，能内置统一的环境吗
-// 另外现在 better-sqlite3 、electron 需要的 nodejs 版本是什么，是统一的吗
+/**
+ * Launch pi-server and resolve once it prints its ready line. Packaged builds run on
+ * Electron's bundled Node (no client Node needed); dev runs on the system Node whose
+ * ABI matches the workspace install. See defaultLaunch.
+ */
 export async function startPiServer(options: StartOptions = {}): Promise<PiServerStatus> {
-  const spawn = options.spawn ?? nodeSpawn;
-  const scriptPath = options.scriptPath ?? resolvePiServerScriptPath();
+  const isPackaged = options.isPackaged ?? false;
+  const scriptPath = options.scriptPath ?? resolvePiServerScriptPath({ isPackaged });
   const cwd = resolvePiServerCwd(scriptPath);
-  const nodeSelection = options.nodePath
-    ? { nodePath: options.nodePath, diagnostics: [] }
-    : selectNodePath({ cwd, spawnSync: options.spawnSync });
-  const child = spawn(nodeSelection.nodePath, [scriptPath], {
-    cwd,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
+  const launch = options.launch ?? (await defaultLaunch(isPackaged));
+  const child = launch(scriptPath, cwd);
   const parser = createReadyLineParser();
-  const logs: string[] = [...nodeSelection.diagnostics.slice(-10)];
+  const logs: string[] = [];
   const pushLog = (source: "stdout" | "stderr", chunk: Buffer) => {
     const text = chunk.toString().trim();
     if (text) logs.push(`${source}: ${text}`);
@@ -136,10 +129,6 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
     });
 
     child.stderr?.on("data", (chunk: Buffer) => pushLog("stderr", chunk));
-    child.once("error", (error) => {
-      clearTimeout(timeout);
-      resolve({ status: "failed", error: error.message, logs });
-    });
     child.once("exit", () => {
       clearTimeout(timeout);
       resolve({ status: "failed", error: "pi-server exited before ready", logs });

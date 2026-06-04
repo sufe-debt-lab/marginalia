@@ -1,14 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
+
+if (process.env.MARGINALIA_USER_DATA_DIR) {
+  app.setPath("userData", process.env.MARGINALIA_USER_DATA_DIR);
+}
 
 let windowRef: BrowserWindow | null = null;
 let serverStatus: PiServerStatus = { status: "starting" };
 
 async function bootServer() {
   serverStatus = { status: "starting" };
-  serverStatus = await startPiServer();
+  serverStatus = await startPiServer({ isPackaged: app.isPackaged });
   return serializeStatus(serverStatus);
 }
 
@@ -27,7 +30,6 @@ function serializeStatus(status: PiServerStatus) {
   return status;
 }
 
-// TODO: 应用打包构建流程配置（maxos、windows）
 async function createWindow() {
   const isMac = process.platform === "darwin";
   windowRef = new BrowserWindow({
@@ -46,11 +48,8 @@ async function createWindow() {
     }
   });
 
-  // Boot pi-server only after the renderer has loaded. startPiServer() runs a
-  // synchronous spawnSync preflight before returning its promise, so calling
-  // bootServerInBackground() inline would block the Electron main process — and
-  // the splash paint — on a slow cold start, defeating the static splash. By
-  // did-finish-load the splash is already on screen, so the blocking is unseen.
+  // Boot pi-server only after the renderer has loaded, so the static splash is already
+  // painted before the (cold) server fork begins and the window stays responsive.
   windowRef.webContents.once("did-finish-load", () => bootServerInBackground());
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -73,18 +72,6 @@ ipcMain.handle("workspace:pick-directory", async () => {
     ? await dialog.showOpenDialog(windowRef, options)
     : await dialog.showOpenDialog(options);
   return result.canceled ? null : (result.filePaths[0] ?? null);
-});
-
-ipcMain.handle("marginalia:capture-screenshot", async (_event, label: string) => {
-  if (!windowRef) throw new Error("window not ready");
-  const image = await windowRef.webContents.capturePage();
-  const buffer = image.toPNG();
-  const outDir = path.resolve(process.cwd(), "output/verify-minimax");
-  await fs.mkdir(outDir, { recursive: true });
-  const safe = label.replace(/[^a-z0-9_-]+/gi, "-");
-  const file = path.join(outDir, `${Date.now()}-${safe}.png`);
-  await fs.writeFile(file, buffer);
-  return file;
 });
 
 app.on("before-quit", () => {

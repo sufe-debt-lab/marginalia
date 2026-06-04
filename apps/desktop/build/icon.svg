@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder app icon: emerald squircle + serif "M" for Marginalia.
+     Brand emerald approximates the locked design token oklch(0.5 0.13 158)
+     (src/styles.css). Replace with final artwork; build/icon.png is generated
+     from this source and electron-builder derives the macOS .icns / Windows
+     .ico from that PNG at package time. -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a9468"/>
+      <stop offset="1" stop-color="#11744d"/>
+    </linearGradient>
+  </defs>
+  <rect x="112" y="112" width="800" height="800" rx="184" ry="184" fill="url(#brand)"/>
+  <text x="512" y="540" fill="#ffffff" font-family="Georgia, 'Source Serif 4', 'Times New Roman', serif"
+        font-size="560" font-weight="600" text-anchor="middle" dominant-baseline="central">M</text>
+</svg>

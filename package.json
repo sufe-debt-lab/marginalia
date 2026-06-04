@@ -6,8 +6,12 @@
   "scripts": {
     "dev": "pnpm --filter @marginalia/pi-server build && concurrently -k -n server,desktop \"pnpm --filter @marginalia/pi-server build --watch\" \"pnpm --filter @marginalia/desktop dev\"",
     "build": "pnpm -r build",
+    "package": "pnpm --filter @marginalia/desktop package",
+    "dist": "pnpm --filter @marginalia/desktop dist",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "verify:screenshots": "pnpm --filter @marginalia/desktop verify:screenshots",
+    "verify:screenshots:live": "pnpm --filter @marginalia/desktop verify:screenshots:live",
     "lint": "eslint apps packages",
     "format": "prettier --write \"{apps,packages}/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"{apps,packages}/**/*.{ts,tsx,css,json}\""

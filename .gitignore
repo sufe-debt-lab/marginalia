@@ -7,3 +7,5 @@ dist-electron
 coverage
 .superpowers/
 output/
+.deploy/
+release/

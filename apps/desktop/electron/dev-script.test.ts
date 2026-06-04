@@ -31,14 +31,42 @@ describe("desktop dev script", () => {
   });
 
   it("defers pi-server boot until the renderer has loaded so the splash can paint", () => {
-    // startPiServer() runs a synchronous spawnSync preflight before returning its
-    // promise; calling bootServerInBackground() inline would block the Electron main
-    // process (and the splash paint) on a slow cold start. Wire it to did-finish-load
-    // so the static splash is already on screen before the blocking preflight runs.
+    // Boot pi-server from did-finish-load so the static splash is already painted before
+    // the (cold) server fork begins, keeping the window responsive during startup.
     const mainSource = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
 
     expect(mainSource).toMatch(
       /once\(\s*["']did-finish-load["'][\s\S]{0,80}bootServerInBackground/
     );
+  });
+
+  it("runs the packaged server on Electron's Node and the dev server on system Node", () => {
+    // Packaged: utilityProcess (Electron's own Node, no client Node install needed).
+    // Dev: system `node` from PATH, whose ABI matches the better-sqlite3 that pnpm
+    // install built — forking dev under Electron's different ABI would crash on boot.
+    // Either way the old PATH-scanning / ABI-probing selectNodePath helper is gone.
+    const spawnerSource = readFileSync(
+      path.resolve(process.cwd(), "electron/pi-server-spawner.ts"),
+      "utf8"
+    );
+    const mainSource = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
+
+    // Match specific tokens (not bare words) so an explanatory comment can't satisfy the
+    // guardrail after the real call site is removed.
+    expect(spawnerSource).not.toMatch(/selectNodePath/);
+    expect(spawnerSource).toMatch(/utilityProcess\.fork/);
+    expect(spawnerSource).toMatch(/import\("node:child_process"\)/);
+    expect(mainSource).toMatch(/isPackaged/);
+  });
+
+  it("builds workspace packages before bundling so their dist exists", () => {
+    // prepack:app feeds vite (desktop) and the pi-server deploy, both of which import
+    // workspace libs (e.g. @marginalia/chat-core) via their dist/ exports, so a
+    // topological `pnpm -r build` must run before bundling.
+    const packageJson = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), "package.json"), "utf8")
+    ) as { scripts: Record<string, string> };
+
+    expect(packageJson.scripts["prepack:app"]).toMatch(/-r build/);
   });
 });

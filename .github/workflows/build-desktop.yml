@@ -1,0 +1,69 @@
+name: Build Desktop
+
+# Cross-platform packaging matrix. better-sqlite3 is a native module that
+# scripts/build-pi-server.mjs rebuilds against Electron's ABI on the *host* OS,
+# so each installer must be produced on its own runner — Windows cannot be
+# cross-built from macOS. macOS runner → dmg + zip, Windows runner → nsis exe.
+#
+# Builds are unsigned for now (spike): macOS identity:null + Windows unsigned.
+# Wire in signing/notarization secrets here when moving to a release build.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: marginalia-macos
+          - os: windows-latest
+            artifact: marginalia-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `dist` = prepack:app (pnpm -r build + build:server) then electron-builder.
+      # --publish never keeps unsigned spike builds off any release channel;
+      # CSC_IDENTITY_AUTO_DISCOVERY=false stops macOS from auto-signing.
+      - name: Package desktop app
+        run: pnpm --filter @marginalia/desktop run dist -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 14

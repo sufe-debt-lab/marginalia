@@ -1,11 +1,9 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import {
-  collectNodePathCandidates,
   createReadyLineParser,
   resolvePiServerCwd,
   resolvePiServerScriptPath,
-  selectNodePath,
   startPiServer
 } from "./pi-server-spawner.js";
 
@@ -37,58 +35,57 @@ describe("createReadyLineParser", () => {
   });
 });
 
-describe("startPiServer", () => {
-  it("resolves the pi-server build from the compiled electron directory", () => {
-    expect(resolvePiServerScriptPath("/repo/apps/desktop/dist-electron")).toBe(
-      "/repo/apps/pi-server/dist/index.js"
-    );
+describe("resolvePiServerScriptPath", () => {
+  it("resolves the dev build relative to the compiled electron directory", () => {
+    expect(
+      resolvePiServerScriptPath({
+        isPackaged: false,
+        electronDir: "/repo/apps/desktop/dist-electron"
+      })
+    ).toBe("/repo/apps/pi-server/dist/index.js");
     expect(resolvePiServerCwd("/repo/apps/pi-server/dist/index.js")).toBe("/repo/apps/pi-server");
   });
 
-  it("deduplicates node candidates from explicit env and PATH order", () => {
+  it("resolves the packaged build from process.resourcesPath", () => {
     expect(
-      collectNodePathCandidates({
-        MARGINALIA_NODE_PATH: "/custom/node",
-        PATH: "/a/bin:/b/bin:/a/bin"
+      resolvePiServerScriptPath({
+        isPackaged: true,
+        resourcesPath: "/Applications/Marginalia.app/Contents/Resources"
       })
-    ).toEqual(["/custom/node", "/a/bin/node", "/b/bin/node", "node"]);
+    ).toBe("/Applications/Marginalia.app/Contents/Resources/pi-server/dist/index.js");
+    expect(
+      resolvePiServerCwd("/Applications/Marginalia.app/Contents/Resources/pi-server/dist/index.js")
+    ).toBe("/Applications/Marginalia.app/Contents/Resources/pi-server");
   });
+});
 
-  it("selects the first node candidate that can load pi-server native dependencies", () => {
-    const spawnSync = vi
-      .fn()
-      .mockReturnValueOnce({ status: 1, stderr: "wrong ABI", stdout: "" })
-      .mockReturnValueOnce({ status: 0, stderr: "", stdout: "" });
+describe("startPiServer", () => {
+  it("launches pi-server via the injected launcher and reports ready", async () => {
+    const child = new FakeChild();
+    const launch = vi.fn(() => child as never);
 
-    const selected = selectNodePath({
-      spawnSync,
-      candidates: ["/node24", "/node26"],
-      cwd: "/repo/apps/pi-server"
+    const promise = startPiServer({
+      launch,
+      scriptPath: "/res/pi-server/dist/index.js",
+      timeoutMs: 1000
     });
 
-    expect(selected).toEqual({
-      nodePath: "/node26",
-      diagnostics: ["node preflight failed for /node24: wrong ABI"]
-    });
-    expect(spawnSync).toHaveBeenCalledWith(
-      "/node24",
-      [
-        "-e",
-        "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close();"
-      ],
-      { cwd: "/repo/apps/pi-server", encoding: "utf8" }
-    );
+    child.stdout.emit("data", Buffer.from('{"type":"ready","port":4321}\n'));
+
+    expect(launch).toHaveBeenCalledWith("/res/pi-server/dist/index.js", "/res/pi-server");
+
+    const result = await promise;
+    expect(result).toMatchObject({ status: "ready", url: "http://127.0.0.1:4321" });
+    if (result.status === "ready") expect(result.process).toBe(child);
   });
 
   it("returns failed status with recent stdout and stderr when startup exits", async () => {
     const child = new FakeChild();
-    const spawn = vi.fn(() => child as never);
-    const spawnSync = vi.fn(() => ({ status: 0, stderr: "", stdout: "" }) as never);
+    const launch = vi.fn(() => child as never);
+
     const promise = startPiServer({
-      spawn,
-      spawnSync,
-      scriptPath: "/tmp/dist/server.js",
-      nodePath: "node",
+      launch,
+      scriptPath: "/tmp/pi-server/dist/server.js",
       timeoutMs: 50
     });
 
@@ -96,14 +93,17 @@ describe("startPiServer", () => {
     child.stderr.emit("data", Buffer.from("missing config\n"));
     child.emit("exit", 1);
 
-    expect(spawn).toHaveBeenCalledWith("node", ["/tmp/dist/server.js"], {
-      cwd: "/tmp",
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    expect(launch).toHaveBeenCalledWith("/tmp/pi-server/dist/server.js", "/tmp/pi-server");
     await expect(promise).resolves.toMatchObject({
       status: "failed",
       error: "pi-server exited before ready",
       logs: expect.arrayContaining(["stdout: booting", "stderr: missing config"])
     });
+  });
+
+  it("no longer exposes the external-node preflight helpers", async () => {
+    const mod = await import("./pi-server-spawner.js");
+    expect("selectNodePath" in mod).toBe(false);
+    expect("collectNodePathCandidates" in mod).toBe(false);
   });
 });
