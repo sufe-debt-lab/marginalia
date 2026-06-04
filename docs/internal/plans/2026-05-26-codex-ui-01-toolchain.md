@@ -8,7 +8,7 @@
 
 **Tech Stack:** Tailwind 3.4, PostCSS 8, shadcn/ui (vendored), Radix UI primitives, lucide-react, sonner, Zustand 4, react-markdown 9, remark-gfm 4, highlight.js 11, @pierre/trees beta。
 
-**Spec reference:** `docs/superpowers/specs/2026-05-26-codex-style-electron-gui-design.md` § 工具链 / 依赖, § 数据流（store 字段）, § i18n, § 测试策略。
+**Spec reference:** `docs/internal/specs/2026-05-26-codex-style-electron-gui-design.md` § 工具链 / 依赖, § 数据流（store 字段）, § i18n, § 测试策略。
 
 **Commit gate:** 每个 commit 前必须运行该任务相关测试并通过 `pnpm --filter @marginalia/desktop typecheck`。涉及 UI 的 commit 还要启动 Electron dev 窗口做截图验证；PR 1 只有 Electron smoke 截图，验证旧 UI 无视觉变化。浏览器打开 Vite 页面不能替代截图验收。提交前对照 spec 和本 plan，确认测试覆盖新增行为；如果 spec 或 plan 变更，测试同 commit 更新。
 
@@ -900,4 +900,4 @@ Ctrl+C 退出。
 - [ ] `git log` 显示约 8 个 commit
 - [ ] 工作树干净（`git status` 无未提交）
 
-下一 PR：`docs/superpowers/plans/2026-05-26-codex-ui-02-shell-sidebar.md`
+下一 PR：`docs/internal/plans/2026-05-26-codex-ui-02-shell-sidebar.md`

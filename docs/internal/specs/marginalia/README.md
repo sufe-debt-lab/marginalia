@@ -1,8 +1,10 @@
-# Marginalia 渐进式 Spec 索引
+# Marginalia 渐进式 Spec 索引（历史归档）
+
+这组文档是早期拆分产品闭环时的执行资料，保留作背景和路线图素材。它不再是当前开发入口；当前实现与协作规则以源码、顶层 `docs/`、根 `README.md` 和 `CLAUDE.md` 为准。
 
 这组文档把原始大 spec 拆成可独立交付的小闭环。开发时按编号推进，每个 spec 都应该能单独设计、实现、验收。
 
-原始总览保留在 `docs/superpowers/specs/2026-05-24-marginalia-design.md`，只作为 vision backlog 和上下文来源，不作为直接执行计划。
+原始总览保留在 `docs/internal/specs/2026-05-24-marginalia-design.md`，只作为 vision backlog 和上下文来源，不作为直接执行计划。
 
 ## 推进顺序
 
@@ -26,4 +28,3 @@
 - 后续 spec 可以依赖前面 spec 的稳定接口，但不能要求回头重写前面的大块设计。
 - 每个 spec 必须有可手动验证的验收清单。
 - 发现 scope 变大时，优先拆新 spec，不往当前 spec 继续塞功能。
-

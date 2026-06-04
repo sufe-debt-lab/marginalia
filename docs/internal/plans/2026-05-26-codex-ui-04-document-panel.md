@@ -984,4 +984,4 @@ Expected: pierre 文件树渲染、文件预览（markdown 与代码）、tab �
 - [ ] 文件树抽屉 + 多 tab + viewer + attach to chat 全部工作
 - [ ] `placeholders.tsx` 已删除
 
-下一 PR：`docs/superpowers/plans/2026-05-26-codex-ui-05-settings.md`
+下一 PR：`docs/internal/plans/2026-05-26-codex-ui-05-settings.md`

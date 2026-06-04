@@ -1,3 +1,9 @@
+# Archived Design Handoff
+
+This directory is an archived design handoff. Use it only when intentionally reviewing historical design intent or assets. Current implementation guidance lives in the repository root `README.md`, `CLAUDE.md`, and top-level `docs/`.
+
+The original handoff instructions below are kept verbatim enough to preserve context; paths may refer to the original export layout.
+
 # CODING AGENTS: READ THIS FIRST
 
 This is a **handoff bundle** from Claude Design (claude.ai/design).

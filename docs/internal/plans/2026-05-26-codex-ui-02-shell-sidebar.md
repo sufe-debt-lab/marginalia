@@ -1333,4 +1333,4 @@ Expected: 所有交互正常；视觉风格已经是 shadcn 灰白浅色调；�
 - [ ] 旧 `WorkspaceShell` / `ChatView` / `DocumentPanel` 文件已不存在
 - [ ] 创建 workspace 通过 pickDir + toast 流程工作
 
-下一 PR：`docs/superpowers/plans/2026-05-26-codex-ui-03-chat-composer.md`
+下一 PR：`docs/internal/plans/2026-05-26-codex-ui-03-chat-composer.md`

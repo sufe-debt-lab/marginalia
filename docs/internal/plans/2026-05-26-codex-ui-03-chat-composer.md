@@ -2236,4 +2236,4 @@ Ctrl+C 退出。
 - [ ] 模型选择器可切换 provider/model
 - [ ] 错误时 Retry 按钮工作
 
-下一 PR：`docs/superpowers/plans/2026-05-26-codex-ui-04-document-panel.md`
+下一 PR：`docs/internal/plans/2026-05-26-codex-ui-04-document-panel.md`

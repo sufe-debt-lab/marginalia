@@ -3,7 +3,7 @@
 - **作者**：shixy
 - **日期**：2026-05-24
 - **状态**：历史总览 / vision backlog
-- **执行方式**：本文件不再作为直接实现 spec。渐进式开发以 `docs/superpowers/specs/marginalia/` 下的闭环 spec 为准，每个 spec 独立设计、实现和验收。
+- **执行方式**：本文件不再作为直接实现 spec。渐进式开发以 `docs/internal/specs/marginalia/` 下的闭环 spec 为准，每个 spec 独立设计、实现和验收。
 - **参考实现**：
   - `agent-harness/CodePilot`（Electron + Next.js + Claude Agent SDK）
   - `agent-harness/open-cowork`（Electron + Vite + React + pi-coding-agent）

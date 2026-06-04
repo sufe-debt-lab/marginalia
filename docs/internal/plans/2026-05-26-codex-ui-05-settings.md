@@ -771,7 +771,7 @@ Expected: 全绿。
 
 - [ ] **Step 2: 对照 Codex 参考截图**
 
-打开 `docs/superpowers/specs/assets/codex-ui-reference/01-empty-state.png` 和 `02-chat-with-files.png`，把当前 dev 模式截图与之并排：
+打开 `docs/internal/specs/assets/codex-ui-reference/01-empty-state.png` 和 `02-chat-with-files.png`，把当前 dev 模式截图与之并排：
 
 - 字体（Inter）✓
 - 圆角（0.5rem / 8px）✓

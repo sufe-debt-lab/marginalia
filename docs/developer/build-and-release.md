@@ -1,0 +1,110 @@
+# 打包与发布
+
+本文说明如何把 Marginalia 打包成桌面安装包，以及打包流水线中最棘手的一环——原生模块 `better-sqlite3` 的 ABI 处理。面向需要出包或维护发布流程的贡献者。
+
+## 一句话上手
+
+```bash
+pnpm --filter @marginalia/desktop dist      # 在当前 OS 上出对应安装包
+pnpm --filter @marginalia/desktop package    # 只产出未打包目录（electron-builder --dir，调试用）
+```
+
+产物落在 `apps/desktop/release/`。
+
+> ⚠️ 打包期间**不要并行跑 `pnpm dev` 或 `pnpm test`**。原因见下文「ABI 处理」——打包过程会临时把共享 pnpm store 里的 better-sqlite3 切成 Electron ABI，并行的 dev/test 会撞上这个瞬时状态而崩溃。
+
+## 打包流水线
+
+desktop 的相关 scripts（`apps/desktop/package.json`）：
+
+| script                  | 内容                                                                |
+| ----------------------- | ------------------------------------------------------------------- |
+| `build:server`          | `node scripts/build-pi-server.mjs`——产出自包含的 pi-server bundle。 |
+| `rebuild:server-native` | 只把 workspace store 里的 `better-sqlite3` 恢复到当前 Node ABI。    |
+| `prepack:app`           | `pnpm -r build` + `pnpm run build:server`——打包前的全部构建。       |
+| `package`               | `prepack:app` + `electron-builder --dir`。                          |
+| `dist`                  | `prepack:app` + `electron-builder`（出安装包）。                    |
+
+流程：**构建所有包 → 构建并部署 pi-server bundle → electron-builder 组装安装包**。
+
+## pi-server bundle 与 better-sqlite3 ABI
+
+脚本：`apps/desktop/scripts/build-pi-server.mjs`。这是整个打包里最绕的部分，原因是 better-sqlite3 是原生模块，而 **Electron 用的 `NODE_MODULE_VERSION`（ABI）与系统 Node 不同**。
+
+- 系统 Node 装出来的 better-sqlite3 预编译包**无法**在 Electron 里加载；
+- 但开发和测试又跑在系统 Node 上，需要系统 Node ABI 的版本。
+
+脚本的做法：
+
+1. `pnpm --filter @marginalia/pi-server build`，再 `pnpm deploy --prod --config.node-linker=hoisted` 把 pi-server 连同依赖部署成一个**无符号链接、自包含**的目录 `apps/pi-server/.deploy/pi-server/`。
+   - 用 `node-linker=hoisted` 是因为 pnpm 默认的隔离布局是指向 `.pnpm` 的符号链接农场，electron-builder 不会复制；hoisted 给出真实的顶层包目录。之后删掉 `.bin` 和 `.pnpm` 残留。
+   - bundle 刻意嵌套在 `.deploy/pi-server/` 下：electron-builder 的 `extraResources` 复制器会硬排除 `from` 根目录下的 `node_modules`，但允许嵌套的——从 `.deploy` 复制就能得到 `pi-server/node_modules`。
+2. 用 `electron-rebuild` 把 **workspace store 里**的 better-sqlite3 按 Electron ABI 从源码编译，再把编译出的 `better_sqlite3.node` 拷进 deploy 目录。
+   - 之所以编译 store 副本而非 deploy 副本：`@electron/rebuild` 只能可靠地从源码编译 store 副本；指向新部署的副本时它会回退到 prebuild-install 并塞回系统 Node 的预编译包。
+3. 用 `node-gyp` 和当前脚本的 `process.execPath` / `process.versions.node` 把 store 还原成当前 Node ABI，并立即用同一个 Node 打开 `better-sqlite3` 的 `:memory:` 数据库做自检。
+4. 最后用 `process.dlopen` 校验 deploy 里的二进制**确实是 Electron ABI**（在系统 Node 下加载它必须抛 `NODE_MODULE_VERSION` 不匹配错误）——否则说明拷贝没生效，打出来的包会在启动时崩溃。
+
+> 已知问题：步骤 2、3 之间共享 store 的 better-sqlite3 短暂处于 Electron ABI。这就是「打包不可与 dev/test 并行」的根因。彻底隔离的重建（在 workspace store 之外编译）能消除它，目前尚未做。
+
+如果本地测试已经遇到 `NODE_MODULE_VERSION` mismatch，先运行：
+
+```bash
+pnpm --filter @marginalia/desktop run rebuild:server-native
+```
+
+这个问题在“打包后统一 Electron Node”之后仍可能出现，是因为 dev/test 仍运行在系统 Node 上，而打包流程会临时改写共享 pnpm store 里的 native 二进制。Electron ABI 只属于 packaged pi-server bundle，不应该泄漏回 dev/test store。
+
+## electron-builder 配置
+
+`apps/desktop/electron-builder.yml` 关键项：
+
+- `appId: works.marginalia.desktop`，`productName: Marginalia`，产物目录 `release/`。
+- **asar**：开启；`asarUnpack: "**/*.node"` 让原生 `.node` 解包到 asar 外才能被 `dlopen`。
+- **files**：只把 `dist/`、`dist-electron/`、`package.json` 装进 asar——renderer 由 Vite 打进 `dist/`，main 进程无第三方运行时依赖，所以**不打包 pnpm 的 `node_modules`**。
+- **extraResources**：把 `../pi-server/.deploy`（即上一步产出的 bundle）复制到 `resources/`，于是运行时得到 `resources/pi-server/`（含 dist + 含 Electron-ABI better-sqlite3 的 node_modules）。
+- `npmRebuild: false` / `nodeGypRebuild: false`：原生模块已由 `build:server` 自己重建，禁止 electron-builder 再插手。
+- **图标**：单个 `apps/desktop/build/icon.png`（1024×1024，当前为占位图），electron-builder 在打包时派生 macOS `.icns` 和 Windows `.ico`。
+
+## 平台与产物
+
+| 平台    | 目标         | 备注                                       |
+| ------- | ------------ | ------------------------------------------ |
+| macOS   | `dmg`、`zip` | 当前 `identity: null`，**未签名/未公证**。 |
+| Windows | `nsis`       | 未签名。                                   |
+| Linux   | `AppImage`   | electron-builder 配置了 target；当前 CI 尚未覆盖。 |
+
+**每个平台的安装包必须在对应 OS 上构建**：better-sqlite3 由 `build-pi-server.mjs` 在宿主机上按该平台重建，无法从 macOS 交叉构建 Windows/Linux 包。
+
+## CI
+
+`.github/workflows/build-desktop.yml`：
+
+- **触发**：推送 `v*` tag，或手动 `workflow_dispatch`。
+- **矩阵**：`macos-latest`（→ dmg + zip）、`windows-latest`（→ nsis exe）。`fail-fast: false`。
+- **环境**：Node 22、pnpm 9.15.4，`pnpm install --frozen-lockfile`。
+- **打包**：`pnpm --filter @marginalia/desktop run dist -- --publish never`，并设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 阻止 macOS 自动签名（当前是未签名 spike 构建）。
+- **产物**：上传 `release/` 下的 `*.dmg` / `*.zip` / `*.exe`，保留 14 天。
+
+CI 当前不产 Linux AppImage。
+
+## 打包后 smoke test
+
+打包命令通过不等于应用能在客户机器上启动。发布前至少做一次非破坏性 smoke test：
+
+1. 运行 `pnpm --filter @marginalia/desktop package`。
+2. 启动 `apps/desktop/release/` 下的 packaged 应用。
+3. 确认窗口不白屏，pi-server 状态变为 ready。
+4. 确认存在 Electron `utilityProcess.fork` 启动的 Node utility process。
+5. 找到本机监听端口并访问 `/health`，确认返回 `status: "ok"`。
+
+真实 provider 对话会写入用户数据库并可能消耗外部模型额度，不属于默认 smoke test。
+
+## 已知限制与待办
+
+- **macOS 未签名/未公证**：面向用户的正式版需要 Developer ID 签名 + 公证（并为未签名的 better-sqlite3 `.node` 配 `hardenedRuntime` + `disable-library-validation` 权限）。配置里以 `identity: null` 标记为 spike。
+- **打包不可与 dev/test 并行**：见上文 ABI 处理。
+
+## 相关文档
+
+- 进程模型与 dev/packaged 启动差异：[系统架构](./architecture.md)
+- 存储位置与环境变量：[配置](../user/configuration.md)

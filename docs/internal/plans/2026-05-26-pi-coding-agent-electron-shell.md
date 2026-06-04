@@ -8,7 +8,7 @@
 
 **Tech Stack:** `@earendil-works/pi-coding-agent@0.75.5`、Hono、better-sqlite3、Web Streams API、React、Vitest、Electron 33、`BrowserWindow.webContents.capturePage`、pnpm workspace。
 
-**Spec:** `docs/superpowers/specs/2026-05-26-pi-coding-agent-electron-shell-design.md`
+**Spec:** `docs/internal/specs/2026-05-26-pi-coding-agent-electron-shell-design.md`
 
 **Commit policy:** 仓库当前没有任何 commit。每个 Task 末尾的 commit step 仍保留，但执行者可以在跑完整条 plan 后用单个 commit 一次性归档（与本仓库 owner 约定保持一致）。所有 `git add` 命令仍按粒度写出，方便后续 `git restore --staged` 拣选。
 

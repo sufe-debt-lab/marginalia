@@ -3,7 +3,7 @@
 > 状态：草案（待 plan 展开）
 > 作者：Claude（与 shixy 协作）
 > 日期：2026-05-29
-> 设计稿 bundle：`docs/superpowers/specs/assets/pi-cowork-design/`（含 README + 6 个 JSX 原型 + styles.css + 两份聊天记录 chat1/chat2）
+> 设计稿 bundle：`docs/internal/specs/assets/pi-cowork-design/`（含 README + 6 个 JSX 原型 + styles.css + 两份聊天记录 chat1/chat2）
 
 ## 背景
 

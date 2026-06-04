@@ -1155,7 +1155,7 @@ output/codex-ui-pr6/
   03-collapsed-vs-expanded.png
 ```
 
-把这 3 张与 `docs/superpowers/specs/assets/codex-ui-reference/02-chat-with-files.png` 并排查看，"质感"应不输 Codex。
+把这 3 张与 `docs/internal/specs/assets/codex-ui-reference/02-chat-with-files.png` 并排查看，"质感"应不输 Codex。
 
 - [ ] **Step 3: Commit screenshots（可选）**
 
