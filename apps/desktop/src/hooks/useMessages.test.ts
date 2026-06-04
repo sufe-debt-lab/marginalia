@@ -133,9 +133,7 @@ describe("useMessages", () => {
   it("loads the next session after a session switch", async () => {
     const api = {
       listMessages: vi.fn(async (sessionId: string) =>
-        sessionId === "s1"
-          ? [user("s1-m", "one")]
-          : [user("s2-m", "two")]
+        sessionId === "s1" ? [user("s1-m", "one")] : [user("s2-m", "two")]
       )
     } as unknown as ApiClient;
     const { result, rerender } = renderHook(({ sessionId }) => useMessages(api, sessionId), {

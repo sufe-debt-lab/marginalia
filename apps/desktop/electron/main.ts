@@ -2,7 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "ele
 import path from "node:path";
 import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
 
-if (process.env.MARGINALIA_USER_DATA_DIR) {
+const isScreenshotVerify = process.env.MARGINALIA_SCREENSHOT_VERIFY === "1";
+
+if (!app.isPackaged && isScreenshotVerify && process.env.MARGINALIA_USER_DATA_DIR) {
   app.setPath("userData", process.env.MARGINALIA_USER_DATA_DIR);
 }
 
@@ -30,6 +32,17 @@ function serializeStatus(status: PiServerStatus) {
   return status;
 }
 
+function devServerUrl() {
+  if (app.isPackaged || !process.env.VITE_DEV_SERVER_URL) return null;
+  try {
+    const url = new URL(process.env.VITE_DEV_SERVER_URL);
+    const isLoopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
+    return isLoopback && ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 async function createWindow() {
   const isMac = process.platform === "darwin";
   windowRef = new BrowserWindow({
@@ -52,8 +65,9 @@ async function createWindow() {
   // painted before the (cold) server fork begins and the window stays responsive.
   windowRef.webContents.once("did-finish-load", () => bootServerInBackground());
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    await windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
+  const rendererUrl = devServerUrl();
+  if (rendererUrl) {
+    await windowRef.loadURL(rendererUrl);
   } else {
     await windowRef.loadFile(path.resolve(import.meta.dirname, "../dist/index.html"));
   }

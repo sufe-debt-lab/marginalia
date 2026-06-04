@@ -17,7 +17,8 @@
 //    falls back to prebuild-install and restores the system-Node prebuild. It also
 //    resolves the module to the pnpm store regardless of the deploy path.
 //  - So we let electron-rebuild build the store to Electron's ABI, copy that binary
-//    into the deploy, then restore the store to the system-Node ABI that dev/tests use.
+//    into the deploy, then restore the store to the *current script Node* ABI that
+//    dev/tests use.
 //
 // TODO(concurrency): between the rebuild and the restore below, the shared pnpm store's
 // better-sqlite3 is briefly Electron-ABI. Running `pnpm test`/`pnpm dev` concurrently
@@ -37,10 +38,35 @@ const stagingDir = path.join(piServerDir, ".deploy");
 const bundleDir = path.join(stagingDir, "pi-server");
 
 const run = (cmd) => execSync(cmd, { cwd: desktopDir, stdio: "inherit" });
+const runIn = (cmd, cwd) => execSync(cmd, { cwd, stdio: "inherit" });
+const quote = (value) => JSON.stringify(value);
+const desktopRequire = createRequire(path.join(desktopDir, "package.json"));
 
 const electronVersion = JSON.parse(
   readFileSync(path.join(desktopDir, "node_modules/electron/package.json"), "utf8")
 ).version;
+const nodeGypBin = desktopRequire.resolve("node-gyp/bin/node-gyp.js");
+const piRequire = createRequire(path.join(piServerDir, "package.json"));
+const storePackageDir = path.dirname(piRequire.resolve("better-sqlite3/package.json"));
+const storeNativeNode = path.join(storePackageDir, "build/Release/better_sqlite3.node");
+
+function restoreStoreForCurrentNode(moduleDir) {
+  runIn(
+    `${quote(process.execPath)} ${quote(nodeGypBin)} rebuild --release --target=${process.versions.node}`,
+    moduleDir
+  );
+  // Verify with the exact Node that will run dev/tests in this shell. This catches
+  // cases where pnpm itself is installed under a different Node version.
+  runIn(
+    `${quote(process.execPath)} -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close();"`,
+    piServerDir
+  );
+}
+
+if (process.argv.includes("--restore-node-abi")) {
+  restoreStoreForCurrentNode(storePackageDir);
+  process.exit(0);
+}
 
 // 1. Build pi-server and deploy a self-contained, symlink-free bundle.
 run("pnpm --filter @marginalia/pi-server build");
@@ -62,11 +88,6 @@ if (!existsSync(deployNativeNode)) {
 
 // 2. Build the workspace store copy of better-sqlite3 against Electron's ABI, then copy
 //    that binary into the deploy. (Resolve the store path so a version bump won't break.)
-const piRequire = createRequire(path.join(piServerDir, "package.json"));
-const storeNativeNode = path.join(
-  path.dirname(piRequire.resolve("better-sqlite3/package.json")),
-  "build/Release/better_sqlite3.node"
-);
 // The rebuild mutates the SHARED workspace store to Electron ABI. Wrap it in try/finally
 // so an interrupt or failure between here and the restore can't leave the store stuck on
 // Electron ABI — which would break every later dev/test/package run with a NODE_MODULE_VERSION
@@ -75,8 +96,8 @@ try {
   run(`pnpm exec electron-rebuild -v ${electronVersion} -m "${piServerDir}" -w better-sqlite3 -f`);
   copyFileSync(storeNativeNode, deployNativeNode);
 } finally {
-  // 3. Restore the store to the system-Node ABI so dev/tests keep working.
-  run("pnpm rebuild -r better-sqlite3");
+  // 3. Restore the store to this shell's Node ABI so dev/tests keep working.
+  restoreStoreForCurrentNode(storePackageDir);
 }
 
 // 4. Fail fast if the deploy binary is NOT Electron-ABI. This script runs on system

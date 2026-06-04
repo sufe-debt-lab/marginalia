@@ -10,6 +10,5 @@ interface Window {
     getPiServerStatus(): Promise<PiServerStatus>;
     restartPiServer(): Promise<PiServerStatus>;
     pickWorkspaceDirectory?: () => Promise<string | null>;
-    captureScreenshot?: (label: string) => Promise<string>;
   };
 }

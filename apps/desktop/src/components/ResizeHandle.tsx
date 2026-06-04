@@ -35,24 +35,27 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
     setRef.current(nextWidth.current);
   }
 
-  const endDrag = useCallback((pointerId?: number, target?: Element) => {
-    if (!dragging.current) return;
-    dragging.current = false;
-    if (pointerId !== undefined && target instanceof HTMLElement) {
-      try {
-        target.releasePointerCapture(pointerId);
-      } catch {
-        /* ignore */
+  const endDrag = useCallback(
+    (pointerId?: number, target?: Element) => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      if (pointerId !== undefined && target instanceof HTMLElement) {
+        try {
+          target.releasePointerCapture(pointerId);
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    if (frame.current !== null) {
-      cancelAnimationFrame(frame.current);
-      frame.current = null;
-      setRef.current(nextWidth.current);
-    }
-    commitRef.current?.(nextWidth.current);
-    clearGlobals();
-  }, [clearGlobals]);
+      if (frame.current !== null) {
+        cancelAnimationFrame(frame.current);
+        frame.current = null;
+        setRef.current(nextWidth.current);
+      }
+      commitRef.current?.(nextWidth.current);
+      clearGlobals();
+    },
+    [clearGlobals]
+  );
 
   useEffect(() => {
     const cancel = () => endDrag();

@@ -14,7 +14,9 @@ const usage = {
 
 describe("MessageItem", () => {
   it("renders user content right-aligned in a pill", () => {
-    render(<MessageItem entry={{ id: "1", message: { role: "user", content: "hello", timestamp: 1 } }} />);
+    render(
+      <MessageItem entry={{ id: "1", message: { role: "user", content: "hello", timestamp: 1 } }} />
+    );
     expect(screen.getByText("hello")).toBeInTheDocument();
   });
 

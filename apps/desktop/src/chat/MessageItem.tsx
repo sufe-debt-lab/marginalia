@@ -60,13 +60,7 @@ function MessageItemImpl({
               </div>
             );
           }
-          return (
-            <ToolCard
-              key={part.id}
-              call={part}
-              result={toolResultsByCallId?.get(part.id)}
-            />
-          );
+          return <ToolCard key={part.id} call={part} result={toolResultsByCallId?.get(part.id)} />;
         })}
         {streaming && <span className="caret" aria-hidden />}
       </div>

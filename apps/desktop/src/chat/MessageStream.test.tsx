@@ -54,12 +54,7 @@ describe("MessageStream", () => {
     const scrollSpy = vi.fn();
     Element.prototype.scrollIntoView = scrollSpy;
     const { rerender } = render(
-      <MessageStream
-        messages={[assistant("1", "a")]}
-        error={null}
-        onRetry={() => {}}
-        streaming
-      />
+      <MessageStream messages={[assistant("1", "a")]} error={null} onRetry={() => {}} streaming />
     );
     const before = scrollSpy.mock.calls.length;
     rerender(
@@ -89,13 +84,7 @@ describe("MessageStream", () => {
 
   it("renders error row + retry button", async () => {
     const onRetry = vi.fn();
-    render(
-      <MessageStream
-        messages={[user("1", "hi")]}
-        error="boom"
-        onRetry={onRetry}
-      />
-    );
+    render(<MessageStream messages={[user("1", "hi")]} error="boom" onRetry={onRetry} />);
     expect(screen.getByText(/boom/)).toBeInTheDocument();
     expect(screen.getByText("run_failed")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
