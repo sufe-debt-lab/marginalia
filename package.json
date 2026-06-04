@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "verify:screenshots": "pnpm --filter @marginalia/desktop verify:screenshots",
     "verify:screenshots:live": "pnpm --filter @marginalia/desktop verify:screenshots:live",
+    "verify:screenshots:shot": "pnpm --filter @marginalia/desktop verify:screenshots:shot",
     "lint": "eslint apps packages",
     "format": "prettier --write \"{apps,packages}/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"{apps,packages}/**/*.{ts,tsx,css,json}\""
@@ -21,6 +22,7 @@
     "concurrently": "^9.1.0",
     "eslint": "^10.4.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
     "playwright": "^1.60.0",
     "prettier": "^3.8.3",
     "typescript-eslint": "^8.60.0"
