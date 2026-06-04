@@ -15,6 +15,7 @@ pnpm workspace (`apps/*`, `packages/*`). Node ≥20.11, pnpm@9.15.4, ESM (`"type
 - All packages: `pnpm test` / `pnpm typecheck` / `pnpm build` (run `-r`).
 - One package: `pnpm --filter @marginalia/desktop <test|typecheck|build>` (or `@marginalia/pi-server`, `@marginalia/chat-core`).
 - Single test by name/pattern: `pnpm --filter @marginalia/desktop test -- <pattern>` (Vitest `run`).
+- Lint / format (repo-wide, not per-package): `pnpm lint` (`eslint apps packages`), `pnpm format:check` (Prettier check), `pnpm format` (Prettier write to auto-fix).
 - `pnpm --filter @marginalia/desktop dev` launches the **Electron app** (Vite + Electron together), not just a browser page.
 - Desktop `typecheck` runs two tsconfigs (`tsconfig.json` for src, `tsconfig.node.json` for vite/electron config) — both must pass.
 
@@ -24,6 +25,7 @@ pnpm workspace (`apps/*`, `packages/*`). Node ≥20.11, pnpm@9.15.4, ESM (`"type
 - **`@/` alias** → `apps/desktop/src/` (configured in tsconfig + vite). Prefer it for cross-directory imports.
 - **i18n is mandatory** in `apps/desktop`: every user-facing string (text, `aria-label`, placeholder, toast) goes through `t()` from `@/i18n/useTranslation.js`. Add keys to both `en` and `zh` in `src/i18n/messages.ts` — `zh` uses `satisfies` so a missing key fails typecheck. No hardcoded English in the UI.
 - Visual design tokens are locked to **mono + serif + emerald** (see `src/styles.css` + `tailwind.config.ts`); use the design tokens (`text-muted`, `border-soft`, `brand`, `.dot`, `.h-display`, etc.) rather than ad-hoc colors.
+- **Docs must track behavior**: when a change affects user-visible workflows, APIs, configuration/env vars, storage, packaging/runtime behavior, verification commands, or contributor rules, update the relevant docs in the same change. Start with `README.md` and `docs/README.md`, then the specific topic doc under `docs/`.
 
 ## Chat model conventions
 
@@ -36,9 +38,18 @@ pnpm workspace (`apps/*`, `packages/*`). Node ≥20.11, pnpm@9.15.4, ESM (`"type
 ## Commit gate (standing rule)
 
 Before every commit:
+
 1. **TDD** — write or adjust the test first; watch it fail, then implement to green.
 2. Run the touched package's `typecheck` + relevant `test` and confirm they pass.
-3. For UI changes, verify via an **Electron screenshot** (`pnpm --filter @marginalia/desktop dev`) — opening the Vite page in a browser does not count.
+3. Run repo-wide `pnpm lint` and `pnpm format:check`; both must be clean (use `pnpm format` to auto-fix style). Note `lint`/`format` are not per-package — they scan `apps`/`packages`, so even a script-only change must pass them.
+4. Update docs when behavior, commands, config, APIs, packaging, or contributor workflow changed.
+5. For UI changes, verify via an **Electron screenshot** (`pnpm verify:screenshots`) —
+   opening the Vite page in a browser does not count.
+
+## Native module / runtime notes
+
+- Dev/test pi-server runs on the system `node`; packaged pi-server runs on Electron's bundled Node via `utilityProcess.fork`. These ABIs are intentionally different.
+- Keep the `node` used for dev/test aligned with the Node that built native modules. If `better-sqlite3` reports a `NODE_MODULE_VERSION` mismatch, run `pnpm --filter @marginalia/desktop run rebuild:server-native` before trusting test results. The packaging script restores and self-checks this after Electron ABI rebuilds.
 
 ## Git conventions
 
