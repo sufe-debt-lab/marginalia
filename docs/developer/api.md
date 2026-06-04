@@ -30,7 +30,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 | PATCH  | `/workspaces/:id/open` | 标记为「最近打开」（更新 `last_opened_at`），用于 Quick chat 归属。 |
 | DELETE | `/workspaces/:id`      | 删除 workspace 及其级联的 session/message/run，返回 `204`。         |
 
-`Workspace` 形状（`repositories.ts:8`）：`{ id, name, rootDir, lastOpenedAt, createdAt, updatedAt }`。
+`Workspace` 形状（`apps/pi-server/src/db/repositories.ts#Workspace`）：`{ id, name, rootDir, lastOpenedAt, createdAt, updatedAt }`。
 
 ## 文件 / 文档
 
@@ -43,7 +43,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 | GET  | `/workspaces/:id/files/raw?path=<rel>`     | 原始字节流（PDF/图片预览用），带 `content-type` / `content-disposition`。 |
 | GET  | `/workspaces/:id/files/search?q=<query>`   | 搜索，返回 `{ path, match: "name" \| "content" }[]`。                     |
 
-`DocumentContent`（`files/document-reader.ts:6`）：`{ path, mime, text, language, lineCount, lineCountExact, truncated, bytesRead, bytesTotal, rawOnly? }`。读取限制（大小、行数 cap、二进制处理）见[配置](../user/configuration.md#文档读取限制)。预览失败按错误码返回对应状态：`not_found`(404)、`file_too_large`、`binary_not_previewable` 等。
+`DocumentContent`（`apps/pi-server/src/files/document-reader.ts#DocumentContent`）：`{ path, mime, text, language, lineCount, lineCountExact, truncated, bytesRead, bytesTotal, rawOnly? }`。读取限制（大小、行数 cap、二进制处理）见[配置](../user/configuration.md#文档读取限制)。预览失败按错误码返回对应状态：`not_found`(404)、`file_too_large`、`binary_not_previewable` 等。
 
 ## Sessions 与消息
 
@@ -58,7 +58,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 `Session` 形状：`{ id, workspaceId, title, origin, model?, agentSessionPath?, createdAt, updatedAt }`。
 
-历史消息有两个来源（`app.ts:168`）：若 session 已绑定 `agentSessionPath`（pi 落盘的 session 文件），从该文件读；否则从 SQLite `messages` 表读并转成 `ChatEntry`。`ChatEntry = { id, message }`，`message` 为 pi 原生形状（见 `@marginalia/chat-core`）。
+历史消息有两个来源（`apps/pi-server/src/app.ts#readMessagesFromSessionFile`）：若 session 已绑定 `agentSessionPath`（pi 落盘的 session 文件），从该文件读；否则从 SQLite `messages` 表读并转成 `ChatEntry`。`ChatEntry = { id, message }`，`message` 为 pi 原生形状（见 `@marginalia/chat-core`）。
 
 ## Providers
 
@@ -74,7 +74,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 ### `POST /sessions/:sessionId/runs`
 
-发起一次 agent run，以 **Server-Sent Events** 流式返回（`app.ts:215`）。
+发起一次 agent run，以 **Server-Sent Events** 流式返回（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）。
 
 请求 Body：
 

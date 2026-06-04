@@ -52,6 +52,7 @@ pnpm test
 - 面向用户的字符串走 `t()`，并同时补 `messages.ts` 的 `en` + `zh`。
 - 用设计 token（mono + serif + emerald），不写临时颜色。
 - 聊天消息保持 pi 原生形状，不引入扁平化 UI 类型。
+- 文档引用源码用 `path` 或 `path#符号`，不用 `path:line`（守卫测试会校验，详见[开发指南 · 代码约定](./development.md#代码约定)）。
 
 ## PR
 

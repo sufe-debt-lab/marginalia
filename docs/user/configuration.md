@@ -19,7 +19,7 @@ Marginalia 自带一套 provider 快捷预设（`apps/desktop/src/settings/provi
 
 ### name → pi provider id 映射
 
-创建 provider 时填的 `name` 会经 `piProviderId()`（`apps/pi-server/src/agent/provider-id.ts`）规范化，映射到 pi 运行时的 provider id：
+创建 provider 时填的 `name` 会经 `piProviderId()`（`apps/pi-server/src/agent/provider-id.ts#piProviderId`）规范化，映射到 pi 运行时的 provider id：
 
 - 大小写无关、空格/下划线转连字符；
 - `OpenAI` / `openai` / `open-ai` → `openai`；
@@ -34,26 +34,26 @@ Marginalia 自带一套 provider 快捷预设（`apps/desktop/src/settings/provi
 
 ## 存储位置
 
-| 内容 | 路径 | 说明 |
-| --- | --- | --- |
-| SQLite 数据库 | `~/.marginalia/db.sqlite` | workspace/session/message/provider/run 等（`apps/pi-server/src/db/connection.ts`）。 |
-| Provider API key | SQLite `env_vars` 表 | 创建 provider 时写入本地数据库，并在 pi-server 启动时注册到 pi 运行时。 |
-| AuthStorage | `~/.marginalia/auth.json` | pi 的 auth storage 路径（`apps/pi-server/src/app.ts:63`），与独立 pi CLI 默认目录隔离。 |
-| UI 偏好 | Electron localStorage `marginalia-app` | 语言、侧栏状态、权限、推理档位、上次模型等（`apps/desktop/src/store/app-store.ts`）。 |
+| 内容             | 路径                                   | 说明                                                                                                   |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| SQLite 数据库    | `~/.marginalia/db.sqlite`              | workspace/session/message/provider/run 等（`apps/pi-server/src/db/connection.ts`）。                   |
+| Provider API key | SQLite `env_vars` 表                   | 创建 provider 时写入本地数据库，并在 pi-server 启动时注册到 pi 运行时。                                |
+| AuthStorage      | `~/.marginalia/auth.json`              | pi 的 auth storage 路径（`apps/pi-server/src/app.ts#DEFAULT_AUTH_PATH`），与独立 pi CLI 默认目录隔离。 |
+| UI 偏好          | Electron localStorage `marginalia-app` | 语言、侧栏状态、权限、推理档位、上次模型等（`apps/desktop/src/store/app-store.ts`）。                  |
 
 `defaultDbPath()` 使用 `os.homedir()` 解析用户目录，避免在 Windows 上因 `HOME` 缺失而回退到 cwd。需要隔离测试或临时数据时，用 `MARGINALIA_DB_PATH` 覆盖。
 
 ## 环境变量
 
-| 变量                          | 作用域        | 说明                                                                                                                                          |
-| ----------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARGINALIA_DB_PATH`          | pi-server     | 覆盖 SQLite 文件路径（`db/connection.ts:13`）。                                                                                               |
-| `MARGINALIA_NODE_PATH`        | 桌面壳（dev） | 开发模式下指定用哪个 `node` 二进制启动 pi-server（`electron/pi-server-spawner.ts:84`）。                                                      |
-| `VITE_DEV_SERVER_URL`         | 桌面壳（dev） | 设置后 Electron 从该 URL 加载 renderer（Vite dev server），否则加载打包的 `dist/index.html`（`electron/main.ts` 的 `devServerUrl()`）。`pnpm dev` 会自动设置。 |
-| `MARGINALIA_SCREENSHOT_VERIFY` | 截图验证 | `verify:screenshots` 内部使用，显式启用截图验证隔离模式。 |
-| `MARGINALIA_USER_DATA_DIR` | 截图验证 | `verify:screenshots` 内部使用，覆盖 Electron `userData` 目录。 |
-| `MINIMAX_CN_API_KEY` / `MINIMAX_CN_BASE_URL` / `MINIMAX_CN_MODEL` | 截图验证（live） | `verify:screenshots:live` 的真实 MiniMax 场景使用；默认 gate 不需要。 |
-| `CSC_IDENTITY_AUTO_DISCOVERY` | 打包/CI       | 设为 `false` 阻止 macOS 自动签名（当前未签名 spike 构建用）。                                                                                 |
+| 变量                                                              | 作用域           | 说明                                                                                                                                                                 |
+| ----------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARGINALIA_DB_PATH`                                              | pi-server        | 覆盖 SQLite 文件路径（`apps/pi-server/src/db/connection.ts#openDatabase`）。                                                                                         |
+| `MARGINALIA_NODE_PATH`                                            | 桌面壳（dev）    | 开发模式下指定用哪个 `node` 二进制启动 pi-server（`apps/desktop/electron/pi-server-spawner.ts#MARGINALIA_NODE_PATH`）。                                              |
+| `VITE_DEV_SERVER_URL`                                             | 桌面壳（dev）    | 设置后 Electron 从该 URL 加载 renderer（Vite dev server），否则加载打包的 `dist/index.html`（`apps/desktop/electron/main.ts#devServerUrl`）。`pnpm dev` 会自动设置。 |
+| `MARGINALIA_SCREENSHOT_VERIFY`                                    | 截图验证         | `verify:screenshots` 内部使用，显式启用截图验证隔离模式。                                                                                                            |
+| `MARGINALIA_USER_DATA_DIR`                                        | 截图验证         | `verify:screenshots` 内部使用，覆盖 Electron `userData` 目录。                                                                                                       |
+| `MINIMAX_CN_API_KEY` / `MINIMAX_CN_BASE_URL` / `MINIMAX_CN_MODEL` | 截图验证（live） | `verify:screenshots:live` 的真实 MiniMax 场景使用；默认 gate 不需要。                                                                                                |
+| `CSC_IDENTITY_AUTO_DISCOVERY`                                     | 打包/CI          | 设为 `false` 阻止 macOS 自动签名（当前未签名 spike 构建用）。                                                                                                        |
 
 ## 文档读取限制
 
