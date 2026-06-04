@@ -78,6 +78,9 @@ export function createApp(options: AppOptions = {}) {
     options.agentClient ??
     new PiCodingAgentClient(registry, (provider, modelId) => {
       try {
+        // getModel's typed overloads only accept its literal provider/model unions;
+        // here provider/modelId are dynamic strings from the registry.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return getModel(provider as any, modelId as any) ?? null;
       } catch {
         return null;
