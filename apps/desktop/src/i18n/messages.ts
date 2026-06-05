@@ -94,7 +94,20 @@ export const en = {
     custom: "Custom",
     none: "—",
     diagnosticsOk: "All connected providers reachable",
-    diagnosticsRunning: "Running diagnostics…"
+    diagnosticsRunning: "Running diagnostics…",
+    editProvider: "Edit provider",
+    getApiKey: "Get API key",
+    back: "Back",
+    delete: "Delete",
+    deleteConfirmTitle: "Delete provider?",
+    deleteConfirmDesc:
+      "This removes the provider and its stored API key. This action cannot be undone.",
+    enabled: "Enabled",
+    apiKeyKeepHint: "Leave blank to keep the current key",
+    providerUpdated: "Provider updated",
+    providerUpdateFailed: "Failed to update provider",
+    providerDeleted: "Provider deleted",
+    providerDeleteFailed: "Failed to delete provider"
   },
   firstRun: {
     title: "Welcome to pi-cowork",
@@ -241,7 +254,19 @@ export const zh = {
     custom: "自定义",
     none: "—",
     diagnosticsOk: "已连接的服务商均可达",
-    diagnosticsRunning: "正在诊断…"
+    diagnosticsRunning: "正在诊断…",
+    editProvider: "编辑服务商",
+    getApiKey: "获取 API 密钥",
+    back: "返回",
+    delete: "删除",
+    deleteConfirmTitle: "删除服务商？",
+    deleteConfirmDesc: "这将删除该服务商及其保存的 API 密钥，且无法撤销。",
+    enabled: "已启用",
+    apiKeyKeepHint: "留空则保持当前密钥不变",
+    providerUpdated: "服务商已更新",
+    providerUpdateFailed: "更新服务商失败",
+    providerDeleted: "服务商已删除",
+    providerDeleteFailed: "删除服务商失败"
   },
   firstRun: {
     title: "欢迎使用 pi-cowork",

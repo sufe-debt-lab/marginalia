@@ -9,6 +9,7 @@
 - [API 参考](./api.md) — pi-server HTTP 路由、SSE 事件格式和数据模型。
 - [打包与发布](./build-and-release.md) — 打包流水线、原生模块 ABI 处理、CI、平台产物。
 - [贡献指南](./contributing.md) — 分支、提交、PR 规范。
+- [Issue notes](./issues/) — 当前 review/backlog 问题记录。
 
 ## 推荐阅读顺序
 

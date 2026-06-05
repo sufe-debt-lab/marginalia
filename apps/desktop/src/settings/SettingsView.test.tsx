@@ -8,11 +8,18 @@ import { SettingsView } from "./SettingsView.js";
 function fakeApi(): ApiClient {
   return {
     listProviders: vi.fn(async () => [
-      { id: "anthropic", name: "Anthropic", defaultModel: "claude-sonnet-4.6" }
+      { id: "anthropic", name: "Anthropic", defaultModel: "claude-sonnet-4.6", enabled: true }
     ]),
     createProvider: vi.fn(async (input) => ({ id: "new", ...input })),
-    testProvider: vi.fn(async () => ({ ok: true, message: "ok" }))
+    testProvider: vi.fn(async () => ({ ok: true, message: "ok" })),
+    updateProvider: vi.fn(async (id, input) => ({ id, name: "Anthropic", ...input })),
+    deleteProvider: vi.fn(async () => undefined)
   } as unknown as ApiClient;
+}
+
+async function openProvidersPane() {
+  await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+  await waitFor(() => expect(screen.getByText("Anthropic")).toBeInTheDocument());
 }
 
 describe("SettingsView", () => {
@@ -61,5 +68,50 @@ describe("SettingsView", () => {
     await userEvent.click(screen.getByRole("button", { name: /providers/i }));
     await waitFor(() => expect(screen.getByText("claude-sonnet-4.6")).toBeInTheDocument());
     expect(screen.getByText(/^default$/i)).toBeInTheDocument();
+  });
+
+  it("edits a provider and patches via the api", async () => {
+    const api = fakeApi();
+    render(<SettingsView api={api} />);
+    await openProvidersPane();
+
+    await userEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect((within(dialog).getByLabelText(/^name$/i) as HTMLInputElement).value).toBe("Anthropic");
+
+    const modelInput = within(dialog).getByLabelText(/default model/i);
+    await userEvent.clear(modelInput);
+    await userEvent.type(modelInput, "claude-opus-4.8");
+    await userEvent.click(within(dialog).getByRole("button", { name: /save/i }));
+
+    expect(api.updateProvider).toHaveBeenCalledWith(
+      "anthropic",
+      expect.objectContaining({ defaultModel: "claude-opus-4.8" })
+    );
+    // an empty key field must not overwrite the stored key
+    const patch = (api.updateProvider as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? {};
+    expect(patch.apiKey).toBeUndefined();
+  });
+
+  it("deletes a provider after confirmation", async () => {
+    const api = fakeApi();
+    render(<SettingsView api={api} />);
+    await openProvidersPane();
+
+    await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    const confirm = await screen.findByRole("alertdialog");
+    await userEvent.click(within(confirm).getByRole("button", { name: /delete/i }));
+
+    expect(api.deleteProvider).toHaveBeenCalledWith("anthropic");
+  });
+
+  it("toggles a provider enabled state via the api", async () => {
+    const api = fakeApi();
+    render(<SettingsView api={api} />);
+    await openProvidersPane();
+
+    await userEvent.click(screen.getByRole("switch", { name: /anthropic/i }));
+
+    expect(api.updateProvider).toHaveBeenCalledWith("anthropic", { enabled: false });
   });
 });

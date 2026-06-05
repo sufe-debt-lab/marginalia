@@ -89,6 +89,16 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   }
 ];
 
+/** Locale-aware preset display name. */
+export function presetLabel(preset: ProviderPreset, locale: "en" | "zh"): string {
+  return locale === "zh" ? preset.labelZh : preset.label;
+}
+
+/** Locale-aware preset description. */
+export function presetDescription(preset: ProviderPreset, locale: "en" | "zh"): string {
+  return locale === "zh" ? preset.descriptionZh : preset.description;
+}
+
 /** Brand accent colours for provider avatars (design: settings.jsx ProviderRow). */
 const BRAND_COLORS: { match: string; color: string }[] = [
   { match: "openai", color: "#10a37f" },

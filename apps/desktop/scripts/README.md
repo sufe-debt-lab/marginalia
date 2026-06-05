@@ -48,3 +48,7 @@ Screenshots and reports are written to `output/desktop-screenshots/`:
 The runner sets `MARGINALIA_DB_PATH`, `HOME`, and `MARGINALIA_USER_DATA_DIR` so
 it does not use the developer's real `~/.marginalia` state or previous Electron
 localStorage.
+
+Before launching Electron, the runner calls `pnpm --filter @marginalia/pi-server
+run ensure:native` to verify the pi-server `better-sqlite3` native binary matches
+the current dev/test Node ABI. It intentionally does not use broad pnpm rebuilds.

@@ -287,6 +287,57 @@ export function getProvider(db: Database.Database, id: string) {
   return row ? mapProvider(row) : null;
 }
 
+export function updateProvider(
+  db: Database.Database,
+  id: string,
+  input: {
+    name?: string;
+    apiKey?: string;
+    baseUrl?: string | null;
+    defaultModel?: string;
+    enabled?: boolean;
+  }
+) {
+  const existing = getProvider(db, id);
+  if (!existing) return null;
+  const name = input.name ?? existing.name;
+  const baseUrl = input.baseUrl === undefined ? existing.baseUrl : (input.baseUrl ?? null);
+  const defaultModel = input.defaultModel ?? existing.defaultModel;
+  const enabled = input.enabled === undefined ? existing.enabled : input.enabled;
+  const timestamp = now();
+  db.prepare(
+    "update providers set name = ?, base_url = ?, default_model = ?, enabled = ?, updated_at = ? where id = ?"
+  ).run(name, baseUrl, defaultModel, enabled ? 1 : 0, timestamp, id);
+  const renamed = name !== existing.name;
+  if (input.apiKey !== undefined) {
+    db.prepare("update env_vars set key = ?, value = ? where id = ?").run(
+      `${name.toUpperCase()}_API_KEY`,
+      input.apiKey,
+      existing.apiKeyRef
+    );
+  } else if (renamed) {
+    db.prepare("update env_vars set key = ? where id = ?").run(
+      `${name.toUpperCase()}_API_KEY`,
+      existing.apiKeyRef
+    );
+  }
+  return getProvider(db, id);
+}
+
+export function deleteProvider(db: Database.Database, id: string) {
+  const existing = getProvider(db, id);
+  if (!existing) return null;
+  const tx = db.transaction(() => {
+    // runs.provider_id is a NOT NULL FK with no ON DELETE, so clear the provider's
+    // run history first (mirrors deleteWorkspace) to avoid a constraint failure.
+    db.prepare("delete from runs where provider_id = ?").run(id);
+    db.prepare("delete from providers where id = ?").run(id);
+    db.prepare("delete from env_vars where id = ?").run(existing.apiKeyRef);
+  });
+  tx();
+  return existing;
+}
+
 export function createRun(
   db: Database.Database,
   input: { sessionId: string; providerId: string; model: string }

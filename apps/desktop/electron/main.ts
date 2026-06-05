@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from "electron";
 import path from "node:path";
+import { isExternalUrl } from "./external-url.js";
 import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
 
 const isScreenshotVerify = process.env.MARGINALIA_SCREENSHOT_VERIFY === "1";
@@ -61,6 +62,17 @@ async function createWindow() {
     }
   });
 
+  // External links open in the system browser, never inside the app window.
+  windowRef.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalUrl(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  windowRef.webContents.on("will-navigate", (event, url) => {
+    if (url === windowRef?.webContents.getURL()) return;
+    event.preventDefault();
+    if (isExternalUrl(url)) void shell.openExternal(url);
+  });
+
   // Boot pi-server only after the renderer has loaded, so the static splash is already
   // painted before the (cold) server fork begins and the window stays responsive.
   windowRef.webContents.once("did-finish-load", () => bootServerInBackground());
@@ -86,6 +98,9 @@ ipcMain.handle("workspace:pick-directory", async () => {
     ? await dialog.showOpenDialog(windowRef, options)
     : await dialog.showOpenDialog(options);
   return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+ipcMain.handle("marginalia:open-external", async (_event, url: unknown) => {
+  if (typeof url === "string" && isExternalUrl(url)) await shell.openExternal(url);
 });
 
 app.on("before-quit", () => {

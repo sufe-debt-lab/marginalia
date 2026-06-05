@@ -6,6 +6,8 @@
 
 Marginalia 自带一套 provider 快捷预设（`apps/desktop/src/settings/provider-catalog.ts`）。在设置页选择预设后填入 API key 即可；预设决定了 `baseUrl`、可选模型和默认模型。
 
+设置页 → 服务商可以对每个已配置 provider：**测试**连接、**编辑**（改名称/Base URL/默认模型，或重置 API key —— 编辑时 API key 留空表示保留原值）、**删除**（删除前需确认，会一并清除本地保存的 key）、用开关**启用/禁用**。表单里的「申请 API key」链接会在系统默认浏览器中打开，而非应用内窗口。
+
 ### Provider 预设
 
 | 预设               | provider.name | Base URL                                         | 默认模型        | 计费       |

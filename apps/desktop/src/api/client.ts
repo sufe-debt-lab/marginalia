@@ -26,6 +26,7 @@ export type Provider = {
   name: string;
   baseUrl?: string | null;
   defaultModel: string;
+  enabled?: boolean;
 };
 
 export type RunEvent = {
@@ -103,6 +104,26 @@ export class ApiClient {
     });
   }
 
+  updateProvider(
+    providerId: string,
+    input: {
+      name?: string;
+      apiKey?: string;
+      baseUrl?: string | null;
+      defaultModel?: string;
+      enabled?: boolean;
+    }
+  ) {
+    return this.request<Provider>(`/providers/${providerId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  }
+
+  deleteProvider(providerId: string): Promise<void> {
+    return this.requestNoContent(`/providers/${providerId}`, "DELETE");
+  }
+
   listFiles(workspaceId: string) {
     return this.request<FileEntry[]>(`/workspaces/${workspaceId}/files`);
   }
@@ -157,8 +178,13 @@ export class ApiClient {
     return streamSse<RunEvent>(response.body);
   }
 
-  async deleteWorkspace(id: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/workspaces/${id}`, { method: "DELETE" });
+  deleteWorkspace(id: string): Promise<void> {
+    return this.requestNoContent(`/workspaces/${id}`, "DELETE");
+  }
+
+  /** Like request(), but for endpoints that answer 204 No Content. */
+  async requestNoContent(path: string, method: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}${path}`, { method });
     if (response.status === 204) return;
     const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
       error?: string;

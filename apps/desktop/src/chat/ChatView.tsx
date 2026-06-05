@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ApiClient } from "@/api/client.js";
 import { useMessages } from "@/hooks/useMessages.js";
 import { useProviders } from "@/hooks/useProviders.js";
+import { resolveComposerSelection } from "@/lib/provider-selection.js";
 import { useStreamingChat } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
@@ -28,9 +29,14 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const setPermission = useAppStore((s) => s.setPermission);
   const setReasoning = useAppStore((s) => s.setReasoning);
 
-  const firstProvider = providers.data[0];
-  const actualProviderId = composerProviderId || firstProvider?.id || "";
-  const actualModel = composerModel || firstProvider?.defaultModel || "";
+  const enabledProviders = providers.enabled;
+  // Honour the stored selection only while it's still enabled; otherwise fall back
+  // so a disabled/deleted provider id is never sent to the run endpoint.
+  const { providerId: actualProviderId, model: actualModel } = resolveComposerSelection(
+    enabledProviders,
+    composerProviderId,
+    composerModel
+  );
   const [error, setError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<{ text: string; contextFiles: string[] } | null>(null);
   // Ids of the most recent optimistic pair, so a retry can drop them before resending.
@@ -118,7 +124,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           <Composer
             api={api}
             workspaceId={activeWorkspaceId}
-            providers={providers.data}
+            providers={enabledProviders}
             providerId={actualProviderId}
             model={actualModel}
             onModelChange={({ providerId: p, model: m }) => setComposerModel(p, m)}

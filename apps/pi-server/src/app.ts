@@ -24,6 +24,7 @@ import {
   createRun,
   createSession,
   createWorkspace,
+  deleteProvider,
   deleteWorkspace,
   getMessages,
   getSession,
@@ -36,6 +37,7 @@ import {
   type Message,
   markWorkspaceOpened,
   setAgentSessionPath,
+  updateProvider,
   updateSession
 } from "./db/repositories.js";
 import {
@@ -214,6 +216,42 @@ export function createApp(options: AppOptions = {}) {
       })
     );
   });
+  app.patch("/providers/:id", async (c) => {
+    const before = getProvider(db, c.req.param("id"));
+    if (!before) return c.json({ error: "provider not found" }, 404);
+    const body = await c.req.json<{
+      name?: string;
+      apiKey?: string;
+      baseUrl?: string | null;
+      defaultModel?: string;
+      enabled?: boolean;
+    }>();
+    const after = updateProvider(db, before.id, body);
+    if (!after) return c.json({ error: "provider not found" }, 404);
+
+    // Keep the pi runtime key in sync: drop the old provider id on rename, then
+    // set/clear the new one based on whether the provider is enabled.
+    const oldPiId = piProviderId(before.name);
+    const newPiId = piProviderId(after.name);
+    const apiKey = body.apiKey ?? before.apiKey;
+    if (oldPiId && oldPiId !== newPiId) authStorage.removeRuntimeApiKey(oldPiId);
+    if (newPiId) {
+      // Set when enabled with a non-empty key; otherwise drop any stale override
+      // (disabled, or the key was explicitly blanked).
+      if (after.enabled && apiKey) authStorage.setRuntimeApiKey(newPiId, apiKey);
+      else authStorage.removeRuntimeApiKey(newPiId);
+    }
+
+    const { apiKey: _omit, ...safe } = after;
+    return c.json(safe);
+  });
+  app.delete("/providers/:id", async (c) => {
+    const removed = deleteProvider(db, c.req.param("id"));
+    if (!removed) return c.json({ error: "provider not found" }, 404);
+    const piId = piProviderId(removed.name);
+    if (piId) authStorage.removeRuntimeApiKey(piId);
+    return c.body(null, 204);
+  });
 
   app.post("/sessions/:sessionId/runs", async (c) => {
     const sessionId = c.req.param("sessionId");
@@ -232,6 +270,7 @@ export function createApp(options: AppOptions = {}) {
     }>();
     const provider = getProvider(db, body.providerId);
     if (!provider) return c.json({ error: "provider not found" }, 404);
+    if (!provider.enabled) return c.json({ error: "provider disabled" }, 409);
 
     const modelId = body.model ?? provider.defaultModel;
     const run = createRun(db, { sessionId, providerId: provider.id, model: modelId });

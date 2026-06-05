@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "ensure:native": "pnpm --filter @marginalia/pi-server run ensure:native",
+    "predev": "pnpm run ensure:native",
     "dev": "pnpm --filter @marginalia/pi-server build && concurrently -k -n server,desktop \"pnpm --filter @marginalia/pi-server build --watch\" \"pnpm --filter @marginalia/desktop dev\"",
     "build": "pnpm -r build",
     "package": "pnpm --filter @marginalia/desktop package",
     "dist": "pnpm --filter @marginalia/desktop dist",
+    "pretest": "pnpm run ensure:native",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "verify:screenshots": "pnpm --filter @marginalia/desktop verify:screenshots",

@@ -15,7 +15,7 @@ pnpm --filter @marginalia/desktop package    # 只产出未打包目录（electr
 
 ## 打包流水线
 
-desktop 的相关 scripts（`apps/desktop/package.json`）：
+desktop 的打包 scripts（`apps/desktop/package.json`）：
 
 | script                  | 内容                                                                |
 | ----------------------- | ------------------------------------------------------------------- |
@@ -24,6 +24,13 @@ desktop 的相关 scripts（`apps/desktop/package.json`）：
 | `prepack:app`           | `pnpm -r build` + `pnpm run build:server`——打包前的全部构建。       |
 | `package`               | `prepack:app` + `electron-builder --dir`。                          |
 | `dist`                  | `prepack:app` + `electron-builder`（出安装包）。                    |
+
+root/pi-server 的 ABI 恢复 scripts：
+
+| script          | 内容                                                                              |
+| --------------- | --------------------------------------------------------------------------------- |
+| `ensure:native` | 验证 pi-server 实际加载路径，只有 ABI mismatch 时才调用 `rebuild:server-native`。 |
+| `check:native`  | 只验证 pi-server 实际加载路径；与 `pi-server start` 的 check-only 模式一致。      |
 
 流程：**构建所有包 → 构建并部署 pi-server bundle → electron-builder 组装安装包**。
 
@@ -49,10 +56,12 @@ desktop 的相关 scripts（`apps/desktop/package.json`）：
 如果本地测试已经遇到 `NODE_MODULE_VERSION` mismatch，先运行：
 
 ```bash
-pnpm --filter @marginalia/desktop run rebuild:server-native
+pnpm --filter @marginalia/pi-server run ensure:native
 ```
 
-这个问题在“打包后统一 Electron Node”之后仍可能出现，是因为 dev/test 仍运行在系统 Node 上，而打包流程会临时改写共享 pnpm store 里的 native 二进制。Electron ABI 只属于 packaged pi-server bundle，不应该泄漏回 dev/test store。
+`ensure:native` 是常规入口：它只检查 pi-server 自己会加载的 `apps/pi-server/node_modules/better-sqlite3` 路径，并且只在 ABI mismatch 时调用 `rebuild:server-native`。如果 `ensure:native` 本身无法恢复，再手动运行 `pnpm --filter @marginalia/desktop run rebuild:server-native` 作为 fallback。
+
+这个问题在“打包后统一 Electron Node”之后仍可能出现，是因为 dev/test 仍运行在系统 Node 上，而打包流程会临时改写共享 pnpm store 里的 native 二进制。Electron ABI 只属于 packaged pi-server bundle，不应该泄漏回 dev/test store。`pi-server start` 直接用 `node` 做 check-only load 检查，避免生产式启动依赖 workspace、pnpm 和本地 native build tooling。
 
 ## electron-builder 配置
 
@@ -67,10 +76,10 @@ pnpm --filter @marginalia/desktop run rebuild:server-native
 
 ## 平台与产物
 
-| 平台    | 目标         | 备注                                       |
-| ------- | ------------ | ------------------------------------------ |
-| macOS   | `dmg`、`zip` | 当前 `identity: null`，**未签名/未公证**。 |
-| Windows | `nsis`       | 未签名。                                   |
+| 平台    | 目标         | 备注                                               |
+| ------- | ------------ | -------------------------------------------------- |
+| macOS   | `dmg`、`zip` | 当前 `identity: null`，**未签名/未公证**。         |
+| Windows | `nsis`       | 未签名。                                           |
 | Linux   | `AppImage`   | electron-builder 配置了 target；当前 CI 尚未覆盖。 |
 
 **每个平台的安装包必须在对应 OS 上构建**：better-sqlite3 由 `build-pi-server.mjs` 在宿主机上按该平台重建，无法从 macOS 交叉构建 Windows/Linux 包。

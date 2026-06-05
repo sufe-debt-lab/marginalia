@@ -62,13 +62,15 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 ## Providers
 
-| 方法 | 路径                  | 说明                                                                                                                                              |
-| ---- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET  | `/providers`          | 列出已配置的 provider。                                                                                                                           |
-| POST | `/providers`          | 创建。Body `{ name, apiKey, baseUrl?, defaultModel }`，返回 `201`。API key 存入 `env_vars` 并注册到 pi 运行时（`authStorage.setRuntimeApiKey`）。 |
-| POST | `/providers/:id/test` | 测试可用性，返回可用性检查结果。                                                                                                                  |
+| 方法   | 路径                  | 说明                                                                                                                                                                                                                                                              |
+| ------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/providers`          | 列出已配置的 provider（不含 API key）。                                                                                                                                                                                                                           |
+| POST   | `/providers`          | 创建。Body `{ name, apiKey, baseUrl?, defaultModel }`，返回 `201`。API key 存入 `env_vars` 并注册到 pi 运行时（`authStorage.setRuntimeApiKey`）。                                                                                                                 |
+| PATCH  | `/providers/:id`      | 更新。Body 任意子集 `{ name?, apiKey?, baseUrl?, defaultModel?, enabled? }`，返回更新后的 provider（不含 API key）。省略 `apiKey` 则保留原 key；改名会同步重命名 `env_vars` 键并把 pi 运行时 key 从旧 `piProviderId` 迁到新的；`enabled:false` 会移除运行时 key。 |
+| DELETE | `/providers/:id`      | 删除 provider 及其 `env_vars` 记录，并清除 pi 运行时 key，返回 `204`。                                                                                                                                                                                            |
+| POST   | `/providers/:id/test` | 测试可用性，返回可用性检查结果。                                                                                                                                                                                                                                  |
 
-`Provider`（对客户端）：`{ id, name, baseUrl?, defaultModel }`。`name` 会经 `piProviderId()`（`agent/provider-id.ts`）映射到 pi 运行时的 provider id，例如 `"MiniMax"` → `"minimax-cn"`、`"OpenAI"` → `"openai"`。预设列表见[配置](../user/configuration.md#provider-预设)。
+`Provider`（对客户端）：`{ id, name, baseUrl?, defaultModel, enabled? }`。`name` 会经 `piProviderId()`（`agent/provider-id.ts`）映射到 pi 运行时的 provider id，例如 `"MiniMax"` → `"minimax-cn"`、`"OpenAI"` → `"openai"`。预设列表见[配置](../user/configuration.md#provider-预设)。
 
 ## 运行对话（SSE 流式）
 

@@ -43,13 +43,20 @@ Before every commit:
 2. Run the touched package's `typecheck` + relevant `test` and confirm they pass.
 3. Run repo-wide `pnpm lint` and `pnpm format:check`; both must be clean (use `pnpm format` to auto-fix style). Note `lint`/`format` are not per-package — they scan `apps`/`packages`, so even a script-only change must pass them.
 4. Update docs when behavior, commands, config, APIs, packaging, or contributor workflow changed.
-5. For UI changes, verify via an **Electron screenshot** (`pnpm verify:screenshots`) —
-   opening the Vite page in a browser does not count.
+5. For any change that affects the UI — visual edits **and** behavior changes that alter what the
+   interface shows (e.g. backend changes that add/remove a control, filter a list, or change a
+   flow) — verify via an **Electron screenshot** (`pnpm verify:screenshots`) and inspect the
+   captured shots against the intended design before claiming it works. Opening the Vite page in a
+   browser does not count. When a new UI state isn't reachable by the default screenshot fixtures,
+   extend the relevant scenario in `apps/desktop/scripts/verify-screenshots.mjs` so it is covered.
 
 ## Native module / runtime notes
 
 - Dev/test pi-server runs on the system `node`; packaged pi-server runs on Electron's bundled Node via `utilityProcess.fork`. These ABIs are intentionally different.
-- Keep the `node` used for dev/test aligned with the Node that built native modules. If `better-sqlite3` reports a `NODE_MODULE_VERSION` mismatch, run `pnpm --filter @marginalia/desktop run rebuild:server-native` before trusting test results. The packaging script restores and self-checks this after Electron ABI rebuilds.
+- Before dev/test commands that may load pi-server SQLite, run or rely on `pnpm --filter @marginalia/pi-server run ensure:native`; root `pnpm test`, pi-server `pretest`, desktop `dev`, and screenshot verification already do this. It verifies the **pi-server package path**, not the root `node_modules` copy.
+- `pnpm --filter @marginalia/pi-server start` runs the same check-only native load check directly with `node`: it fails with instructions on ABI mismatch and must not auto-run workspace rebuilds.
+- If `better-sqlite3` reports a `NODE_MODULE_VERSION` mismatch, do not use root-level `require("better-sqlite3")` probes and do not use broad `pnpm rebuild -r better-sqlite3`. Use `pnpm --filter @marginalia/pi-server run ensure:native` as the default recovery path; use `pnpm --filter @marginalia/desktop run rebuild:server-native` only as a manual fallback if the guard itself cannot recover. Verify with `pnpm --filter @marginalia/pi-server exec node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.close();"`.
+- Keep the `node` used for dev/test aligned with the Node that built native modules. The packaging script restores and self-checks this after Electron ABI rebuilds.
 
 ## Git conventions
 

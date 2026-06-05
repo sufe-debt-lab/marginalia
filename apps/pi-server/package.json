@@ -5,12 +5,16 @@
   "type": "module",
   "main": "dist/index.js",
   "files": [
-    "dist"
+    "dist",
+    "scripts/ensure-native-abi.mjs"
   ],
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "ensure:native": "node scripts/ensure-native-abi.mjs",
+    "check:native": "node scripts/ensure-native-abi.mjs --check-only",
+    "dev": "pnpm run ensure:native && tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node scripts/ensure-native-abi.mjs --check-only && node dist/index.js",
+    "pretest": "pnpm run ensure:native",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -27,6 +27,11 @@ const SCENARIOS = {
       "settings-general",
       "settings-providers",
       "provider-preset-picker",
+      "provider-add-form",
+      "settings-providers-connected",
+      "provider-edit-dialog",
+      "settings-providers-disabled",
+      "provider-delete-confirm",
       "settings-general-zh",
       "sidebar-collapsed"
     ],
@@ -230,7 +235,12 @@ async function waitForPiServerUrl(page) {
 }
 
 async function startHarness() {
-  await runCommand("rebuild:native", "pnpm", ["rebuild", "-r", "better-sqlite3"], repoRoot);
+  await runCommand(
+    "ensure:native",
+    "pnpm",
+    ["--filter", "@marginalia/pi-server", "run", "ensure:native"],
+    repoRoot
+  );
   // pi-server and electron builds are independent of each other (electron's main
   // only spawns pi-server at runtime, it doesn't import its build output).
   await Promise.all([
@@ -470,7 +480,50 @@ async function scenarioCoreUi(ctx) {
     .getByText(/choose a provider/i)
     .first()
     .waitFor({ timeout: 5000 });
+  await ctx.page.waitForTimeout(350); // let the dialog open animation settle
   await capture(ctx, "core-ui", "provider-preset-picker");
+
+  // Walk the whole add flow and the connected-row management UI so each new state
+  // (quick-add form, connected row, edit, disabled, delete confirm) is captured.
+  const addDialog = ctx.page.getByRole("dialog");
+  await addDialog.getByText("OpenAI", { exact: true }).first().click({ timeout: 5000 });
+  const apiKeyField = addDialog.getByLabel(/api key/i);
+  await apiKeyField.waitFor({ timeout: 5000 });
+  await ctx.page.waitForTimeout(250); // settle the picker→form transition
+  await capture(ctx, "core-ui", "provider-add-form");
+  await apiKeyField.fill("sk-screenshot-fixture");
+  await addDialog.getByRole("button", { name: /save|保存/i }).click({ timeout: 5000 });
+
+  const deleteButton = ctx.page.getByRole("button", { name: /^(delete|删除)$/i }).first();
+  await deleteButton.waitFor({ timeout: 5000 });
+  await capture(ctx, "core-ui", "settings-providers-connected");
+
+  // Edit dialog: fields prefilled, API key blank with the keep-current hint.
+  await ctx.page
+    .getByRole("button", { name: /^(edit|编辑)$/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/edit provider|编辑服务商/i)
+    .first()
+    .waitFor({ timeout: 5000 });
+  await ctx.page.waitForTimeout(350); // let the dialog open animation settle
+  await capture(ctx, "core-ui", "provider-edit-dialog");
+  await ctx.page.keyboard.press("Escape");
+
+  // Disabled state: toggling the switch off greys the row and drops its runtime key.
+  const enableToggle = ctx.page.getByRole("switch", { name: /openai/i }).first();
+  await enableToggle.click({ timeout: 5000 });
+  await ctx.page.waitForTimeout(400);
+  await capture(ctx, "core-ui", "settings-providers-disabled");
+  await enableToggle.click({ timeout: 5000 });
+  await ctx.page.waitForTimeout(400);
+
+  // Delete confirmation (cancelled afterwards so the fixture state is preserved).
+  await deleteButton.click({ timeout: 5000 });
+  await ctx.page.getByRole("alertdialog").waitFor({ timeout: 5000 });
+  await ctx.page.waitForTimeout(350); // let the dialog open animation settle
+  await capture(ctx, "core-ui", "provider-delete-confirm");
   await ctx.page.keyboard.press("Escape");
 
   await ctx.page

@@ -1,5 +1,6 @@
 import type { Components } from "react-markdown";
 import { highlightCode } from "./highlight.js";
+import { isWebUrl, openExternal } from "./open-external.js";
 
 export const markdownComponents: Components = {
   code({ className, children, ...props }) {
@@ -26,7 +27,20 @@ export const markdownComponents: Components = {
   },
   a({ children, href, ...rest }) {
     return (
-      <a className="text-primary underline" href={href} target="_blank" rel="noreferrer" {...rest}>
+      <a
+        className="text-primary underline"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(event) => {
+          // Only redirect real web links to the system browser; let anchors,
+          // mailto:, and relative paths keep their default behavior.
+          if (!href || !isWebUrl(href)) return;
+          event.preventDefault();
+          openExternal(href);
+        }}
+        {...rest}
+      >
         {children}
       </a>
     );

@@ -10,5 +10,6 @@ interface Window {
     getPiServerStatus(): Promise<PiServerStatus>;
     restartPiServer(): Promise<PiServerStatus>;
     pickWorkspaceDirectory?: () => Promise<string | null>;
+    openExternal?: (url: string) => Promise<void>;
   };
 }

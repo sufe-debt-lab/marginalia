@@ -35,9 +35,13 @@ pnpm exec node -p "process.version + ' modules=' + process.versions.modules"
 如果测试报 `NODE_MODULE_VERSION` mismatch，先恢复 pi-server 依赖到当前 Node ABI：
 
 ```bash
-pnpm --filter @marginalia/desktop run rebuild:server-native
+pnpm --filter @marginalia/pi-server run ensure:native
 pnpm --filter @marginalia/pi-server test
 ```
+
+`ensure:native` 会从 pi-server package path 打开 `better-sqlite3` 的 `:memory:` 数据库；只有遇到 native ABI mismatch 时才调用精确恢复命令。`pnpm --filter @marginalia/pi-server start` 直接用 `node` 运行同一个 check-only 脚本，遇到 mismatch 会失败并提示先回到 workspace 执行 `ensure:native`，不会在生产式启动里触发 rebuild。
+
+不要用根目录的 `require("better-sqlite3")` 做判断，根 `node_modules` 可能存在另一份 native copy；也不要用宽泛的 `pnpm rebuild -r better-sqlite3`，它在这个 workspace/store 布局下容易留下错误或模糊的 ABI 状态。如果 `ensure:native` 本身无法恢复，再手动运行 `pnpm --filter @marginalia/desktop run rebuild:server-native` 作为 fallback，然后重新执行 pi-server 检查或测试。
 
 ## 启动开发环境
 
@@ -58,7 +62,7 @@ pnpm dev
 
 ```bash
 pnpm build        # 构建所有包
-pnpm test         # 测试所有包
+pnpm test         # 测试所有包；pretest 会先跑 ensure:native
 pnpm typecheck    # 类型检查所有包
 pnpm lint         # eslint apps packages
 pnpm format       # prettier 写入
@@ -69,6 +73,7 @@ pnpm format:check # prettier 校验
 
 ```bash
 pnpm --filter @marginalia/desktop test
+pnpm --filter @marginalia/pi-server test # pretest 会先跑 ensure:native
 pnpm --filter @marginalia/pi-server typecheck
 pnpm --filter @marginalia/chat-core build
 ```
