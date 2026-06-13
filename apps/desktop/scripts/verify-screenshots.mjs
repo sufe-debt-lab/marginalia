@@ -331,13 +331,18 @@ const STABLE_RETRY_DELAY_MS = 150;
 async function captureStablePng(page) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   let previous = await page.screenshot({ fullPage: false, scale: "css" });
+  let last = previous;
   for (let attempt = 0; attempt < STABLE_RETRY_LIMIT; attempt += 1) {
     await page.waitForTimeout(STABLE_RETRY_DELAY_MS);
-    const next = await page.screenshot({ fullPage: false, scale: "css" });
-    if (next.equals(previous)) return next;
-    previous = next;
+    last = await page.screenshot({ fullPage: false, scale: "css" });
+    if (last.equals(previous)) return last;
+    previous = last;
   }
-  throw new Error(`screenshot did not become stable after ${STABLE_RETRY_LIMIT} retries`);
+  throw new Error(
+    `screenshot did not become stable after ${STABLE_RETRY_LIMIT} retries ` +
+      `(last two frames: ${previous.length}B vs ${last.length}B); ` +
+      "check for animation or async content not covered by data-motion=off"
+  );
 }
 
 async function capture(ctx, scenarioId, label) {
