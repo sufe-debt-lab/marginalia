@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 // @ts-expect-error -- plain ESM script without type declarations
-import { assertScreenshotMotionOff, parseArgs } from "./verify-screenshots.mjs";
+import { assertScreenshotMotionOff, parseArgs, SCENARIOS } from "./verify-screenshots.mjs";
 
 const DEFAULTS = ["core-ui", "seeded-workspace"];
 
@@ -95,5 +95,14 @@ describe("verify-screenshots parseArgs", () => {
     expect(source.indexOf("waitForDocumentPanelReady(ctx.page)")).toBeLessThan(
       source.indexOf('capture(ctx, "seeded-workspace", "chat-seeded-session")')
     );
+  });
+});
+
+describe("SCENARIOS registry export", () => {
+  it("exposes scenario metadata for the compare tool", () => {
+    expect(Object.keys(SCENARIOS)).toEqual(["core-ui", "seeded-workspace", "minimax-live"]);
+    expect(SCENARIOS["minimax-live"].live).toBe(true);
+    expect(SCENARIOS["core-ui"].expected).toContain("first-run");
+    expect(SCENARIOS["seeded-workspace"].expected).toContain("recent-threads");
   });
 });

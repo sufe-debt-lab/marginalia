@@ -936,4 +936,4 @@ if (invokedDirectly) {
     });
 }
 
-export { assertScreenshotMotionOff, parseArgs };
+export { assertScreenshotMotionOff, parseArgs, SCENARIOS };
