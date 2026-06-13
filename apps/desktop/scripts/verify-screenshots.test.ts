@@ -98,6 +98,18 @@ describe("verify-screenshots parseArgs", () => {
   });
 });
 
+describe("screenshot determinism injection (electron main)", () => {
+  const mainSource = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
+
+  it("freezes the renderer clock in screenshot mode", () => {
+    expect(mainSource).toContain("__MARGINALIA_FROZEN_NOW__");
+  });
+
+  it("hides the text caret in screenshot mode", () => {
+    expect(mainSource).toContain("caret-color: transparent");
+  });
+});
+
 describe("SCENARIOS registry export", () => {
   it("exposes scenario metadata for the compare tool", () => {
     expect(Object.keys(SCENARIOS)).toEqual(["core-ui", "seeded-workspace", "minimax-live"]);

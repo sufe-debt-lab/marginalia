@@ -52,9 +52,11 @@ function installScreenshotMotionGate(window: BrowserWindow) {
   if (!isScreenshotVerify) return;
   window.webContents.on("dom-ready", () => {
     void window.webContents.executeJavaScript(
-      'document.documentElement.setAttribute("data-motion", "off");',
+      'document.documentElement.setAttribute("data-motion", "off");' +
+        "window.__MARGINALIA_FROZEN_NOW__ = Date.now();",
       true
     );
+    void window.webContents.insertCSS("* { caret-color: transparent !important; }");
   });
 }
 

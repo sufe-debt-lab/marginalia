@@ -1,10 +1,20 @@
 import type { Locale } from "@/i18n/messages.js";
 
+function frozenNow(): number | null {
+  if (typeof window === "undefined") return null;
+  const value = (window as { __MARGINALIA_FROZEN_NOW__?: unknown }).__MARGINALIA_FROZEN_NOW__;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 /**
  * Compact relative timestamp for session lists — mirrors the design's
  * `现在 / 2h / 昨天 / 3d / 1w` meta tokens. `ts` is epoch milliseconds.
  */
-export function relativeTime(ts: number, locale: Locale, now: number = Date.now()): string {
+export function relativeTime(
+  ts: number,
+  locale: Locale,
+  now: number = frozenNow() ?? Date.now()
+): string {
   const diff = Math.max(0, now - ts);
   const minute = 60_000;
   const hour = 60 * minute;

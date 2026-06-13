@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { relativeTime } from "./relative-time.js";
 
 const NOW = 1_700_000_000_000;
@@ -26,5 +26,21 @@ describe("relativeTime", () => {
 
   it("clamps future timestamps to 'now'", () => {
     expect(relativeTime(NOW + 10_000, "en", NOW)).toBe("now");
+  });
+});
+
+describe("frozen clock for screenshot verification", () => {
+  afterEach(() => {
+    delete (window as { __MARGINALIA_FROZEN_NOW__?: number }).__MARGINALIA_FROZEN_NOW__;
+  });
+
+  it("uses window.__MARGINALIA_FROZEN_NOW__ as the default now when present", () => {
+    (window as { __MARGINALIA_FROZEN_NOW__?: number }).__MARGINALIA_FROZEN_NOW__ = NOW;
+    expect(relativeTime(NOW - 5_000, "en")).toBe("now");
+    expect(relativeTime(NOW - 3 * MIN, "zh")).toBe("3分钟");
+  });
+
+  it("falls back to Date.now() when the frozen clock is absent", () => {
+    expect(relativeTime(Date.now() - 1_000, "en")).toBe("now");
   });
 });
