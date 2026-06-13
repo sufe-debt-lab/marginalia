@@ -325,6 +325,21 @@ async function startHarness() {
   }
 }
 
+const STABLE_RETRY_LIMIT = 5;
+const STABLE_RETRY_DELAY_MS = 150;
+
+async function captureStablePng(page) {
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  let previous = await page.screenshot({ fullPage: false, scale: "css" });
+  for (let attempt = 0; attempt < STABLE_RETRY_LIMIT; attempt += 1) {
+    await page.waitForTimeout(STABLE_RETRY_DELAY_MS);
+    const next = await page.screenshot({ fullPage: false, scale: "css" });
+    if (next.equals(previous)) return next;
+    previous = next;
+  }
+  throw new Error(`screenshot did not become stable after ${STABLE_RETRY_LIMIT} retries`);
+}
+
 async function capture(ctx, scenarioId, label) {
   await assertScreenshotMotionOff(ctx.page);
   const scenarioDir = path.join(outRoot, scenarioId);
@@ -332,7 +347,8 @@ async function capture(ctx, scenarioId, label) {
   const next = (ctx.captureCounts.get(scenarioId) ?? 0) + 1;
   ctx.captureCounts.set(scenarioId, next);
   const file = path.join(scenarioDir, `${String(next).padStart(2, "0")}-${slug(label)}.png`);
-  await ctx.page.screenshot({ path: file, fullPage: false, scale: "css" });
+  const buffer = await captureStablePng(ctx.page);
+  await writeFile(file, buffer);
   const relative = path.relative(repoRoot, file);
   ctx.manifest.screenshots.push({ scenario: scenarioId, label, path: relative });
   console.log(`[shot] ${relative}`);

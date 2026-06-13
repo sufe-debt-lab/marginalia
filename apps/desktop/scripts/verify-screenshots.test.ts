@@ -83,6 +83,15 @@ describe("verify-screenshots parseArgs", () => {
     expect(source).toContain('scale: "css"');
   });
 
+  it("waits for fonts and takes burst-stable screenshots", () => {
+    const source = readFileSync(
+      path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
+      "utf8"
+    );
+    expect(source).toContain("document.fonts.ready");
+    expect(source).toContain("captureStablePng");
+  });
+
   it("waits for the document panel before seeded chat screenshots", () => {
     const source = readFileSync(
       path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
