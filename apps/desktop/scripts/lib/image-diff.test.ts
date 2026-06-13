@@ -36,6 +36,7 @@ describe("diffPngBuffers", () => {
     const result = diffPngBuffers(solidPng(4, 4, WHITE), solidPng(4, 4, BLACK));
     expect(result.diffPixels).toBe(16);
     expect(result.diffRatio).toBe(1);
+    expect(PNG.sync.read(result.diffPngBuffer).width).toBe(4);
   });
 
   it("throws a hard error on size mismatch instead of resizing", () => {
@@ -67,5 +68,9 @@ describe("composeTriptych", () => {
     expect(() => composeTriptych([solidPng(4, 4, WHITE), solidPng(4, 8, WHITE)])).toThrow(
       /share dimensions/
     );
+  });
+
+  it("rejects an empty panel list with a clear error", () => {
+    expect(() => composeTriptych([])).toThrow(/at least one panel/);
   });
 });

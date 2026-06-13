@@ -29,6 +29,9 @@ export function diffPngBuffers(aBuffer, bBuffer, { threshold = 0.1 } = {}) {
 
 export function composeTriptych(buffers) {
   const images = buffers.map((buffer) => PNG.sync.read(buffer));
+  if (images.length === 0) {
+    throw new Error("composeTriptych requires at least one panel");
+  }
   const [first, ...rest] = images;
   if (rest.some((image) => image.width !== first.width || image.height !== first.height)) {
     throw new Error("triptych panels must share dimensions");
