@@ -21,18 +21,21 @@ const SCENARIOS = {
     expected: [
       "first-run",
       "new-thread-empty",
-      "new-thread-typed",
       "model-menu",
-      "permission-menu",
+      "new-thread-typed",
       "settings-general",
       "settings-providers",
       "provider-preset-picker",
       "provider-add-form",
+      "provider-toast",
       "settings-providers-connected",
       "provider-edit-dialog",
       "settings-providers-disabled",
       "provider-delete-confirm",
       "settings-general-zh",
+      "home-connected",
+      "model-dropdown",
+      "permission-menu",
       "sidebar-collapsed"
     ],
     run: scenarioCoreUi
@@ -44,6 +47,7 @@ const SCENARIOS = {
     expected: [
       "recent-threads",
       "sidebar-session-timestamps",
+      "sidebar-show-more-expanded",
       "chat-seeded-session",
       "attach-picker",
       "attachment-card",
@@ -217,7 +221,22 @@ async function apiJson(baseUrl, endpoint, init = {}) {
 async function waitForMain(page) {
   await page.waitForLoadState("domcontentloaded");
   await page.getByRole("main").waitFor({ timeout: 30000 });
-  await page.waitForTimeout(500);
+}
+
+async function assertScreenshotMotionOff(page) {
+  // Real Playwright pages poll; unit tests stub a bare { evaluate } page.
+  if (typeof page.waitForFunction === "function") {
+    await page.waitForFunction(() => document.documentElement.dataset.motion === "off", null, {
+      timeout: 5000
+    });
+    return;
+  }
+  const motion = await page.evaluate(() => document.documentElement.dataset.motion);
+  if (motion !== "off") {
+    throw new Error(
+      `expected <html data-motion="off"> during screenshot verification, got ${motion}`
+    );
+  }
 }
 
 async function waitForPiServerUrl(page) {
@@ -292,6 +311,7 @@ async function startHarness() {
     });
     page.on("pageerror", (error) => console.log(`[renderer:pageerror] ${error.message}`));
     await page.waitForLoadState("domcontentloaded");
+    await assertScreenshotMotionOff(page);
     apiBase = await waitForPiServerUrl(page);
     await waitForMain(page);
     return { app, page, vite, viteUrl, apiBase };
@@ -306,24 +326,27 @@ async function startHarness() {
 }
 
 async function capture(ctx, scenarioId, label) {
+  await assertScreenshotMotionOff(ctx.page);
   const scenarioDir = path.join(outRoot, scenarioId);
   await mkdir(scenarioDir, { recursive: true });
   const next = (ctx.captureCounts.get(scenarioId) ?? 0) + 1;
   ctx.captureCounts.set(scenarioId, next);
   const file = path.join(scenarioDir, `${String(next).padStart(2, "0")}-${slug(label)}.png`);
-  await ctx.page.screenshot({ path: file, fullPage: false });
+  await ctx.page.screenshot({ path: file, fullPage: false, scale: "css" });
   const relative = path.relative(repoRoot, file);
   ctx.manifest.screenshots.push({ scenario: scenarioId, label, path: relative });
   console.log(`[shot] ${relative}`);
 }
 
 async function ensureSidebarOpen(page) {
-  if ((await page.locator("aside[aria-label='Sidebar']").count()) > 0) return;
+  // The sidebar stays mounted when collapsed (width animates to 0 + hidden).
+  const sidebar = page.locator("aside[aria-label='Sidebar']");
+  if (await sidebar.isVisible()) return;
   await page
     .getByRole("button", { name: /toggle left sidebar|切换左侧边栏/i })
     .first()
     .click({ timeout: 5000 });
-  await page.locator("aside[aria-label='Sidebar']").waitFor({ timeout: 5000 });
+  await sidebar.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function goNewChat(page) {
@@ -336,6 +359,20 @@ async function goNewChat(page) {
     .getByRole("textbox", { name: /message|消息/i })
     .first()
     .waitFor({ timeout: 10000 });
+}
+
+async function waitForDocumentPanelReady(page) {
+  await page.locator("aside[aria-label='Document panel']").waitFor({ timeout: 10000 });
+  await page.waitForFunction(
+    () => {
+      const panel = document.querySelector("aside[aria-label='Document panel']");
+      const text = panel?.textContent ?? "";
+      const hasNonZeroFileCount = /[1-9]\d*\s+files\b/.test(text) || /[1-9]\d*\s*个文件/.test(text);
+      return hasNonZeroFileCount && !/Loading|加载中/.test(text);
+    },
+    null,
+    { timeout: 15000 }
+  );
 }
 
 function fileMenuOption(page, name) {
@@ -375,7 +412,16 @@ async function ensureSeededWorkspace(ctx) {
   });
   await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/open`, { method: "PATCH" });
 
-  const titles = ["Design review thread", "pi-server spec review", "i18n dictionary cleanup"];
+  // Seven sessions so the sidebar's five-row fold ("Show more") is exercised.
+  const titles = [
+    "Design review thread",
+    "pi-server spec review",
+    "i18n dictionary cleanup",
+    "Screenshot harness notes",
+    "Provider onboarding copy",
+    "Release checklist draft",
+    "Composer focus styles"
+  ];
   const sessions = [];
   for (const title of titles) {
     const session = await apiJson(ctx.apiBase, "/sessions", {
@@ -425,6 +471,18 @@ async function scenarioCoreUi(ctx) {
     .waitFor({ timeout: 10000 });
   await capture(ctx, "core-ui", "new-thread-empty");
 
+  await ctx.page
+    .getByRole("button", { name: /select model/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page.getByText("Reasoning").first().waitFor({ timeout: 5000 });
+  await ctx.page
+    .getByText(/no providers configured/i)
+    .first()
+    .waitFor({ timeout: 5000 });
+  await capture(ctx, "core-ui", "model-menu");
+  await ctx.page.keyboard.press("Escape");
+
   const box = ctx.page.getByRole("textbox", { name: /message|消息/i }).first();
   await box.fill("Rewrite the PR schedule as a weekly checklist with verification commands.");
   await ctx.page.waitForFunction(
@@ -433,24 +491,6 @@ async function scenarioCoreUi(ctx) {
     { timeout: 5000 }
   );
   await capture(ctx, "core-ui", "new-thread-typed");
-
-  await ctx.page
-    .getByRole("button", { name: /select model/i })
-    .first()
-    .click({ timeout: 5000 });
-  await ctx.page.getByText("Reasoning").first().waitFor({ timeout: 5000 });
-  await capture(ctx, "core-ui", "model-menu");
-  await ctx.page.keyboard.press("Escape");
-
-  await ctx.page
-    .getByRole("button", { name: /tool permission|工具权限/i })
-    .first()
-    .click({ timeout: 5000 });
-  await ctx.page.getByRole("menuitem", { name: /ask each time|每次询问/i }).waitFor({
-    timeout: 5000
-  });
-  await capture(ctx, "core-ui", "permission-menu");
-  await ctx.page.keyboard.press("Escape");
 
   await ctx.page
     .getByRole("button", { name: /^(settings|设置)$/i })
@@ -480,7 +520,6 @@ async function scenarioCoreUi(ctx) {
     .getByText(/choose a provider/i)
     .first()
     .waitFor({ timeout: 5000 });
-  await ctx.page.waitForTimeout(350); // let the dialog open animation settle
   await capture(ctx, "core-ui", "provider-preset-picker");
 
   // Walk the whole add flow and the connected-row management UI so each new state
@@ -489,10 +528,18 @@ async function scenarioCoreUi(ctx) {
   await addDialog.getByText("OpenAI", { exact: true }).first().click({ timeout: 5000 });
   const apiKeyField = addDialog.getByLabel(/api key/i);
   await apiKeyField.waitFor({ timeout: 5000 });
-  await ctx.page.waitForTimeout(250); // settle the picker→form transition
   await capture(ctx, "core-ui", "provider-add-form");
   await apiKeyField.fill("sk-screenshot-fixture");
   await addDialog.getByRole("button", { name: /save|保存/i }).click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/Provider added|服务商已添加/i)
+    .first()
+    .waitFor({ timeout: 5000 });
+  await capture(ctx, "core-ui", "provider-toast");
+  await ctx.page
+    .getByText(/Provider added|服务商已添加/i)
+    .first()
+    .waitFor({ state: "detached", timeout: 5000 });
 
   const deleteButton = ctx.page.getByRole("button", { name: /^(delete|删除)$/i }).first();
   await deleteButton.waitFor({ timeout: 5000 });
@@ -507,22 +554,28 @@ async function scenarioCoreUi(ctx) {
     .getByText(/edit provider|编辑服务商/i)
     .first()
     .waitFor({ timeout: 5000 });
-  await ctx.page.waitForTimeout(350); // let the dialog open animation settle
   await capture(ctx, "core-ui", "provider-edit-dialog");
   await ctx.page.keyboard.press("Escape");
 
   // Disabled state: toggling the switch off greys the row and drops its runtime key.
   const enableToggle = ctx.page.getByRole("switch", { name: /openai/i }).first();
   await enableToggle.click({ timeout: 5000 });
-  await ctx.page.waitForTimeout(400);
+  await ctx.page.waitForFunction(
+    () => document.querySelector("[role='switch']")?.getAttribute("aria-checked") === "false",
+    null,
+    { timeout: 5000 }
+  );
   await capture(ctx, "core-ui", "settings-providers-disabled");
   await enableToggle.click({ timeout: 5000 });
-  await ctx.page.waitForTimeout(400);
+  await ctx.page.waitForFunction(
+    () => document.querySelector("[role='switch']")?.getAttribute("aria-checked") === "true",
+    null,
+    { timeout: 5000 }
+  );
 
   // Delete confirmation (cancelled afterwards so the fixture state is preserved).
   await deleteButton.click({ timeout: 5000 });
   await ctx.page.getByRole("alertdialog").waitFor({ timeout: 5000 });
-  await ctx.page.waitForTimeout(350); // let the dialog open animation settle
   await capture(ctx, "core-ui", "provider-delete-confirm");
   await ctx.page.keyboard.press("Escape");
 
@@ -530,39 +583,70 @@ async function scenarioCoreUi(ctx) {
     .getByRole("button", { name: /general|通用/i })
     .first()
     .click({ timeout: 5000 });
-  await ctx.page.waitForTimeout(250);
   await ctx.page.getByRole("button", { name: "中文" }).first().click({ timeout: 5000 });
   await ctx.page.getByText("通用").first().waitFor({ timeout: 5000 });
   await capture(ctx, "core-ui", "settings-general-zh");
+  await ctx.page.getByRole("button", { name: "English" }).first().click({ timeout: 5000 });
+  await ctx.page.getByText("General").first().waitFor({ timeout: 5000 });
 
   await goNewChat(ctx.page);
+  await ctx.page
+    .getByRole("button", { name: /OpenAI.*gpt-5\.1.*Medium/i })
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "core-ui", "home-connected");
+
+  await ctx.page
+    .getByRole("button", { name: /OpenAI.*gpt-5\.1.*Medium/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page.getByText("Reasoning").first().waitFor({ timeout: 5000 });
+  await capture(ctx, "core-ui", "model-dropdown");
+  await ctx.page.keyboard.press("Escape");
+
+  await ctx.page
+    .getByRole("button", { name: /tool permission|工具权限/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page.getByRole("menuitem", { name: /ask each time|每次询问/i }).waitFor({
+    timeout: 5000
+  });
+  await capture(ctx, "core-ui", "permission-menu");
+  await ctx.page.keyboard.press("Escape");
+
   await ctx.page
     .getByRole("button", { name: /toggle left sidebar|切换左侧边栏/i })
     .first()
     .click({ timeout: 5000 });
-  await ctx.page
-    .locator("aside[aria-label='Sidebar']")
-    .waitFor({ state: "detached", timeout: 5000 });
+  await ctx.page.locator("aside[aria-label='Sidebar']").waitFor({ state: "hidden", timeout: 5000 });
   await capture(ctx, "core-ui", "sidebar-collapsed");
 }
 
 async function scenarioSeededWorkspace(ctx) {
-  const seed = await ensureSeededWorkspace(ctx);
+  await ensureSeededWorkspace(ctx);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
   await ctx.page.getByText("Design review thread").first().waitFor({ timeout: 10000 });
   await capture(ctx, "seeded-workspace", "recent-threads");
 
-  const folder = ctx.page.locator("aside[aria-label='Sidebar'] button", {
-    hasText: seed.workspace.name
-  });
-  await folder.first().click({ timeout: 5000 });
+  // Sessions are visible under the workspace by default (no expand click needed).
   await ctx.page
-    .locator("aside[aria-label='Sidebar'] button", { hasText: "pi-server spec review" })
+    .locator("aside[aria-label='Sidebar'] button", { hasText: "Design review thread" })
     .first()
     .waitFor({ timeout: 10000 });
   await capture(ctx, "seeded-workspace", "sidebar-session-timestamps");
+
+  // The five-row fold: reveal the remaining sessions via Show more.
+  await ctx.page
+    .locator("aside[aria-label='Sidebar'] button", { hasText: /show more|显示更多/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .locator("aside[aria-label='Sidebar'] button", { hasText: "Composer focus styles" })
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "seeded-workspace", "sidebar-show-more-expanded");
 
   await ctx.page
     .locator("aside[aria-label='Sidebar'] button", { hasText: "Design review thread" })
@@ -571,6 +655,7 @@ async function scenarioSeededWorkspace(ctx) {
   await ctx.page.getByText(/implementation, verification and release notes/i).waitFor({
     timeout: 10000
   });
+  await waitForDocumentPanelReady(ctx.page);
   await capture(ctx, "seeded-workspace", "chat-seeded-session");
 
   await ctx.page
@@ -851,4 +936,4 @@ if (invokedDirectly) {
     });
 }
 
-export { parseArgs };
+export { assertScreenshotMotionOff, parseArgs };

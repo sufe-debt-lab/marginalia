@@ -3,16 +3,10 @@ import { Check, ChevronDown } from "lucide-react";
 import type { Provider } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh";
-
-const REASONING_LABELS: Record<Reasoning, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra High"
-};
 
 interface Props {
   providers: readonly Provider[];
@@ -31,16 +25,31 @@ export function ModelPicker({
   reasoning,
   onReasoningChange
 }: Props) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const active = providers.find((p) => p.id === providerId);
-  const base = active ? `${active.name} · ${model || active.defaultModel}` : "Select model";
-  const label = reasoning ? `${base} · ${REASONING_LABELS[reasoning]}` : base;
+  const reasoningLabels: Record<Reasoning, string> = {
+    low: t("composer.reasoningLow"),
+    medium: t("composer.reasoningMedium"),
+    high: t("composer.reasoningHigh"),
+    xhigh: t("composer.reasoningExtraHigh")
+  };
+  const base = active
+    ? `${active.name} · ${model || active.defaultModel}`
+    : t("composer.selectModel");
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1 text-xs font-normal">
-          {label}
+          {reasoning ? (
+            <>
+              <span className="text-text-subtle">{base} ·</span>
+              <span className="font-medium">{reasoningLabels[reasoning]}</span>
+            </>
+          ) : (
+            base
+          )}
           <ChevronDown className="h-3 w-3 text-text-muted" />
         </Button>
       </PopoverTrigger>
@@ -52,48 +61,48 @@ export function ModelPicker({
       >
         {reasoning && onReasoningChange && (
           <div className="shrink-0">
-            <div className="px-2 py-1.5 text-[11px] text-text-muted">Reasoning</div>
-            {(Object.keys(REASONING_LABELS) as Reasoning[]).map((r) => (
+            <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+              {t("composer.reasoning")}
+            </div>
+            {(Object.keys(reasoningLabels) as Reasoning[]).map((r) => (
               <button
                 key={r}
                 type="button"
                 onClick={() => onReasoningChange(r)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent",
-                  r === reasoning && "bg-accent"
-                )}
+                className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
               >
-                <span>{REASONING_LABELS[r]}</span>
-                {r === reasoning && <Check className="h-3 w-3" />}
+                <span>{reasoningLabels[r]}</span>
+                {r === reasoning && <Check className="h-3 w-3 text-brand" />}
               </button>
             ))}
-            <div className="my-1 border-t border-border-soft" />
+            {providers.length !== 1 && <div className="my-1 border-t border-border-soft" />}
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {providers.length === 0 && (
-            <p className="p-2 text-xs text-muted-foreground">No providers configured</p>
+            <p className="p-2 text-xs text-muted-foreground">{t("settings.noProviders")}</p>
           )}
-          {providers.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                onChange({ providerId: p.id, model: p.defaultModel });
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent",
-                p.id === providerId && "bg-accent"
-              )}
-            >
-              <span className="flex flex-col">
-                <span className="font-medium">{p.name}</span>
-                <span className="text-muted-foreground">{p.defaultModel}</span>
-              </span>
-              {p.id === providerId && <Check className="h-3 w-3" />}
-            </button>
-          ))}
+          {providers.length > 1 &&
+            providers.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  onChange({ providerId: p.id, model: p.defaultModel });
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-accent",
+                  p.id === providerId && "bg-accent"
+                )}
+              >
+                <span className="flex flex-col">
+                  <span className="font-medium">{p.name}</span>
+                  <span className="text-muted-foreground">{p.defaultModel}</span>
+                </span>
+                {p.id === providerId && <Check className="h-3 w-3 text-brand" />}
+              </button>
+            ))}
         </div>
       </PopoverContent>
     </Popover>

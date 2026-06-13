@@ -7,6 +7,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from "@/components/ui/context-menu.js";
+import { useTranslation } from "@/i18n/useTranslation.js";
 
 interface Props {
   workspace: Workspace;
@@ -17,13 +18,14 @@ interface Props {
 }
 
 export function WorkspaceActions({ workspace, pinned, onPin, onDelete, children }: Props) {
+  const { t } = useTranslation();
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-44">
         <ContextMenuItem onSelect={() => onPin(workspace.id)}>
           {pinned ? <PinOff className="mr-2 h-3.5 w-3.5" /> : <Pin className="mr-2 h-3.5 w-3.5" />}
-          {pinned ? "Unpin" : "Pin"}
+          {pinned ? t("common.unpin") : t("common.pin")}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
@@ -31,7 +33,7 @@ export function WorkspaceActions({ workspace, pinned, onPin, onDelete, children 
           className="text-destructive focus:bg-destructive/10 focus:text-destructive"
         >
           <Trash2 className="mr-2 h-3.5 w-3.5" />
-          Delete
+          {t("common.delete")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

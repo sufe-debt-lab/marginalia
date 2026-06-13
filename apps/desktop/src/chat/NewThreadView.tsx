@@ -76,8 +76,8 @@ export function NewThreadView({ api }: { api: ApiClient }) {
 
   return (
     <div className="flex h-full flex-col overflow-auto">
-      <div className="mx-auto flex w-full max-w-[660px] flex-1 flex-col justify-center px-4 py-12">
-        <h1 className="h-display mb-8 text-center text-[30px] font-normal tracking-tight">
+      <div className="mx-auto w-full max-w-[640px] px-6 pb-12 pt-[clamp(52px,16vh,112px)]">
+        <h1 className="h-display mb-[26px] text-balance text-center text-[34px] font-medium leading-[1.18] tracking-[-0.025em]">
           {t("newThread.title")}
         </h1>
         <Composer

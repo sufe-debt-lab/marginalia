@@ -77,8 +77,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     key: "xiaomi-mimo-token-plan",
     name: "Xiaomi MiMo",
-    label: "Xiaomi MiMo Token Plan",
-    labelZh: "小米 MiMo Token 套餐",
+    label: "Xiaomi MiMo",
+    labelZh: "小米 MiMo",
     description: "Xiaomi MiMo Token Plan subscription",
     descriptionZh: "小米 MiMo Token Plan 订阅套餐",
     baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic",
@@ -97,26 +97,6 @@ export function presetLabel(preset: ProviderPreset, locale: "en" | "zh"): string
 /** Locale-aware preset description. */
 export function presetDescription(preset: ProviderPreset, locale: "en" | "zh"): string {
   return locale === "zh" ? preset.descriptionZh : preset.description;
-}
-
-/** Brand accent colours for provider avatars (design: settings.jsx ProviderRow). */
-const BRAND_COLORS: { match: string; color: string }[] = [
-  { match: "openai", color: "#10a37f" },
-  { match: "anthropic", color: "#d97757" },
-  { match: "zhipu", color: "#4d6bfe" },
-  { match: "glm", color: "#4d6bfe" },
-  { match: "minimax", color: "#ff5a5f" },
-  { match: "xiaomi", color: "#ff6900" },
-  { match: "mimo", color: "#ff6900" },
-  { match: "deepseek", color: "#4d6bfe" },
-  { match: "gemini", color: "#4285f4" },
-  { match: "google", color: "#4285f4" }
-];
-
-/** A brand colour for a provider name, or null to fall back to a neutral swatch. */
-export function brandColorFor(name: string): string | null {
-  const n = name.toLowerCase();
-  return BRAND_COLORS.find((b) => n.includes(b.match))?.color ?? null;
 }
 
 /** Presets the user hasn't configured yet — rendered in the "Others" group. */

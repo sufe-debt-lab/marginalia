@@ -45,6 +45,16 @@ describe("SettingsView", () => {
     expect(useAppStore.getState().locale).toBe("zh");
   });
 
+  it("does not animate the initial pane but animates user-triggered tab changes", async () => {
+    const { container } = render(<SettingsView api={fakeApi()} />);
+    expect(container.querySelector(".motion-tab-panel")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+
+    await waitFor(() => expect(screen.getByText("Anthropic")).toBeInTheDocument());
+    expect(container.querySelector(".motion-tab-panel")).not.toBeNull();
+  });
+
   it("switches to the Providers pane and lists providers", async () => {
     render(<SettingsView api={fakeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: /providers/i }));

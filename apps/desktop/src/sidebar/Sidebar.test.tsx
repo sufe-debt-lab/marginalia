@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar.js";
 function fakeApi(): ApiClient {
   return {
     listWorkspaces: vi.fn(async () => [{ id: "w1", name: "alpha", rootDir: "/a" }]),
+    listSessions: vi.fn(async () => []),
     createWorkspace: vi.fn(async (input) => ({ id: "new", ...input })),
     deleteWorkspace: vi.fn(async () => {})
   } as unknown as ApiClient;
@@ -32,6 +33,13 @@ describe("Sidebar", () => {
       restartPiServer: vi.fn(),
       pickWorkspaceDirectory: vi.fn(async () => "/picked/path")
     };
+  });
+
+  it("uses the strong structural divider (border, not border-soft) on its right edge", () => {
+    render(<Sidebar api={fakeApi()} />);
+    const aside = screen.getByRole("complementary");
+    expect(aside).toHaveClass("border-r", "border-border");
+    expect(aside).not.toHaveClass("border-border-soft");
   });
 
   it("clicking New chat sets view to new-thread", async () => {
@@ -84,6 +92,7 @@ describe("Sidebar", () => {
         { id: "w1", name: "alpha", rootDir: "/a" },
         { id: "w2", name: "beta", rootDir: "/b" }
       ]),
+      listSessions: vi.fn(async () => []),
       createWorkspace: vi.fn(),
       deleteWorkspace: vi.fn(async () => {})
     } as unknown as ApiClient;

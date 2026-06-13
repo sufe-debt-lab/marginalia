@@ -16,9 +16,14 @@ export const en = {
     language: "Language",
     english: "English",
     chinese: "中文",
+    close: "Close",
     retry: "Retry",
     selectWorkspace: "Select workspace…",
-    newWorkspaceEllipsis: "New workspace…"
+    newWorkspaceEllipsis: "New workspace…",
+    showMore: "Show more",
+    pin: "Pin",
+    unpin: "Unpin",
+    delete: "Delete"
   },
   newThread: {
     title: "What should we build?",
@@ -39,7 +44,13 @@ export const en = {
     permission: "Tool permission",
     permFull: "Full access",
     permAsk: "Ask each time",
-    permReadonly: "Read-only"
+    permReadonly: "Read-only",
+    selectModel: "Select model",
+    reasoning: "Reasoning",
+    reasoningLow: "Low",
+    reasoningMedium: "Medium",
+    reasoningHigh: "High",
+    reasoningExtraHigh: "Extra High"
   },
   chat: {
     noMessages: "No messages yet",
@@ -90,7 +101,7 @@ export const en = {
     thisWorkspace: "This workspace",
     reasoningBudget: "Reasoning budget",
     runDiagnostics: "Run diagnostics",
-    chooseProvider: "Choose a provider",
+    chooseProvider: "Choose a provider to get started",
     custom: "Custom",
     none: "—",
     diagnosticsOk: "All connected providers reachable",
@@ -124,6 +135,8 @@ export const en = {
   docPanel: {
     files: "Files",
     filterFiles: "Filter files…",
+    noFiles: "No files",
+    refresh: "Refresh",
     filesSuffix: "files · local index only",
     toggleTree: "Toggle file tree",
     addTab: "Add tab",
@@ -176,9 +189,14 @@ export const zh = {
     language: "语言",
     english: "English",
     chinese: "中文",
+    close: "关闭",
     retry: "重试",
     selectWorkspace: "选择工作区…",
-    newWorkspaceEllipsis: "新建工作区…"
+    newWorkspaceEllipsis: "新建工作区…",
+    showMore: "显示更多",
+    pin: "置顶",
+    unpin: "取消置顶",
+    delete: "删除"
   },
   newThread: {
     title: "我们要做点什么？",
@@ -199,7 +217,13 @@ export const zh = {
     permission: "工具权限",
     permFull: "完全访问",
     permAsk: "每次询问",
-    permReadonly: "只读"
+    permReadonly: "只读",
+    selectModel: "选择模型",
+    reasoning: "推理",
+    reasoningLow: "低",
+    reasoningMedium: "中",
+    reasoningHigh: "高",
+    reasoningExtraHigh: "超高"
   },
   chat: {
     noMessages: "还没有消息",
@@ -250,7 +274,7 @@ export const zh = {
     thisWorkspace: "当前工作区",
     reasoningBudget: "推理预算",
     runDiagnostics: "连接诊断",
-    chooseProvider: "选择服务商",
+    chooseProvider: "选择一个服务商开始配置",
     custom: "自定义",
     none: "—",
     diagnosticsOk: "已连接的服务商均可达",
@@ -282,6 +306,8 @@ export const zh = {
   docPanel: {
     files: "文件",
     filterFiles: "过滤文件…",
+    noFiles: "没有文件",
+    refresh: "刷新",
     filesSuffix: "个文件 · 仅本地索引",
     toggleTree: "切换文件树",
     addTab: "添加标签",

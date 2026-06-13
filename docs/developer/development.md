@@ -122,6 +122,16 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 - `apps/desktop`：Vitest + jsdom + Testing Library。
 - `apps/pi-server`、`packages/chat-core`：Vitest。
 
+### 测试有效性准则
+
+原则：**测行为，不复述实现；不为了测试而测试。** 一个测试若只是把实现里的常量/类名抄一遍再断言相等，或者测的是第三方库自身的行为，它不会捕获任何真实回归，应当删除或改写（2026-06 审计中已据此删除 `button.smoke.test.tsx`、`cn.test.ts`）。
+
+仓库里有几类**模式特殊但有效**的测试，遇到时不要误删：
+
+- **源码守卫测试**（`vite-base.test.ts`、`electron/dev-script.test.ts`、`scripts/verify-screenshots.test.ts`、`scripts/docs-references.test.ts`、pi-server `package-surface.test.ts`）：用读源码 + 正则的方式锁定打包 / file:// 加载 / 脚本契约等**无法在 jsdom 里运行**的行为。它们守护的是真实事故（如打包后白屏挂起），注释里写明了原因。
+- **设计规格锁**（如 `SettingsPrimitives.test.tsx` 对 Toggle 尺寸 class 的断言）：jsdom 拿不到真实几何，class 断言只用于锁定设计稿明确给出的规格值；真正的视觉验证以 Electron 截图 gate 为准，不要把 class 断言当成 UI 测试的常规手段。
+- **Live 冒烟测试**（`minimax-smoke.test.ts`）：用 `describe.runIf(环境变量)` 门控，默认跳过，只在显式提供 API key 时跑真实链路。
+
 ## 截图验证
 
 默认 UI gate：

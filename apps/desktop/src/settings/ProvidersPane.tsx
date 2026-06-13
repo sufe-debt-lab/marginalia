@@ -134,7 +134,7 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
         action={
           <div className="flex gap-2">
             <Button
-              variant="secondary"
+              variant="outline"
               size="sm"
               onClick={() => void runDiagnostics()}
               disabled={diagnosing}
@@ -151,27 +151,32 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       />
 
       <SectionLabel>{t("settings.connected")}</SectionLabel>
-      <SettingCard>
-        {providers.length === 0 && (
-          <div className="px-4 py-6 text-sm text-text-muted">{t("settings.noProviders")}</div>
-        )}
-        {providers.map((p, i) => (
-          <ProviderRow
-            key={p.id}
-            provider={p}
-            divider={i < providers.length - 1}
-            onTest={() => void handleTest(p.id)}
-            onEdit={() => setEditing(p)}
-            onDelete={() => setDeleting(p)}
-            onToggleEnabled={(next) => void handleToggleEnabled(p, next)}
-          />
-        ))}
-      </SettingCard>
+      {providers.length === 0 ? (
+        <SettingCard>
+          <div className="rounded-[10px] border border-dashed border-border bg-background px-5 py-5 text-center text-[13px] text-text-subtle">
+            {t("settings.noProviders")}
+          </div>
+        </SettingCard>
+      ) : (
+        <SettingCard card className="shadow-sm">
+          {providers.map((p, i) => (
+            <ProviderRow
+              key={p.id}
+              provider={p}
+              divider={i < providers.length - 1}
+              onTest={() => void handleTest(p.id)}
+              onEdit={() => setEditing(p)}
+              onDelete={() => setDeleting(p)}
+              onToggleEnabled={(next) => void handleToggleEnabled(p, next)}
+            />
+          ))}
+        </SettingCard>
+      )}
 
       {others.length > 0 && (
         <>
           <SectionLabel>{t("settings.others")}</SectionLabel>
-          <SettingCard>
+          <SettingCard card className="mb-0">
             {others.map((preset, i) => (
               <div
                 key={preset.key}
@@ -183,12 +188,12 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
                 <ProviderAvatar name={preset.name} />
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">{presetLabel(preset, locale)}</div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-text-muted">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-text-subtle">
                     <span className="dot idle" />
                     <span>{t("settings.notConfigured")}</span>
                   </div>
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => openAddWith(preset.key)}>
+                <Button variant="outline" size="sm" onClick={() => openAddWith(preset.key)}>
                   <Plus className="mr-1 h-3 w-3" />
                   {t("settings.add")}
                 </Button>
@@ -229,10 +234,10 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       />
 
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
-        <AlertDialogContent className="max-w-[420px] gap-3 rounded-[14px] border-border shadow-lg">
+        <AlertDialogContent className="max-w-[420px] gap-3 border-border shadow-lg">
           <AlertDialogHeader>
             <div className="flex items-center gap-3">
-              {deleting && <ProviderAvatar name={deleting.name} size={34} />}
+              {deleting && <ProviderAvatar name={deleting.name} size={40} />}
               <AlertDialogTitle className="h-display text-[17px] font-medium tracking-tight">
                 {t("settings.deleteConfirmTitle")}
               </AlertDialogTitle>

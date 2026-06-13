@@ -37,20 +37,25 @@ export function FirstRunView({ api }: { api: ApiClient }) {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-8 p-10">
-      <div className="relative h-24 w-24 overflow-hidden rounded-[22px] border border-border bg-surface shadow-md">
-        <span className="absolute left-[22px] top-[22px] h-9 w-9 rounded-[9px] bg-brand opacity-85" />
-        <span className="absolute bottom-[22px] right-[22px] h-9 w-9 rounded-[9px] bg-foreground opacity-90" />
+    <div className="flex h-full flex-col items-center justify-center px-8 py-[60px]">
+      <div
+        data-testid="first-run-logo"
+        className="relative mb-6 h-[70px] w-[70px] overflow-hidden rounded-[18px] border border-border bg-surface shadow-md"
+      >
+        <span className="absolute left-[15px] top-[15px] h-[26px] w-[26px] rounded-[5px] bg-brand opacity-90" />
+        <span className="absolute bottom-[15px] right-[15px] h-[26px] w-[26px] rounded-[5px] bg-foreground opacity-95" />
       </div>
 
       <div className="max-w-[460px] text-center">
-        <h1 className="h-display mb-2.5 text-[26px] font-normal tracking-tight">
+        <h1 className="h-display mb-2 text-[28px] font-medium tracking-[-0.02em]">
           {t("firstRun.title")}
         </h1>
-        <p className="text-sm leading-relaxed text-text-muted">{t("firstRun.subtitle")}</p>
+        <p className="mx-auto max-w-[312px] text-[13.5px] leading-[1.65] text-text-muted">
+          {t("firstRun.subtitle")}
+        </p>
       </div>
 
-      <div className="flex w-[460px] flex-col gap-2">
+      <div className="mt-9 flex w-full max-w-[460px] flex-col gap-[9px]">
         <SetupRow
           done={hasWorkspace}
           icon={<FolderPlus className="h-3.5 w-3.5" />}
@@ -68,7 +73,7 @@ export function FirstRunView({ api }: { api: ApiClient }) {
           title={t("firstRun.step2Title")}
           desc={t("firstRun.step2Desc")}
           action={
-            <Button variant="secondary" size="sm" onClick={() => setView("settings")}>
+            <Button variant="outline" size="sm" onClick={() => setView("settings")}>
               {t("firstRun.step2Action")}
             </Button>
           }
@@ -93,10 +98,10 @@ function SetupRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-start gap-3 rounded-[10px] border border-border bg-surface p-3.5">
+    <div className="flex items-center gap-3.5 rounded-card border border-border bg-surface px-[18px] py-[15px] shadow-sm">
       <span
         className={cn(
-          "flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px]",
+          "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[7px] border border-border-soft",
           done ? "bg-ok-soft text-ok" : "bg-surface-3 text-text-muted"
         )}
       >
@@ -104,7 +109,7 @@ function SetupRow({
       </span>
       <div className="flex-1">
         <div className="text-[13.5px] font-medium">{title}</div>
-        <p className="mt-0.5 text-[12.5px] text-text-muted">{desc}</p>
+        <p className="mt-0.5 text-[12.5px] leading-relaxed text-text-muted">{desc}</p>
       </div>
       {done ? (
         <span className="mono self-center text-[11.5px] text-ok">{t("firstRun.done")}</span>

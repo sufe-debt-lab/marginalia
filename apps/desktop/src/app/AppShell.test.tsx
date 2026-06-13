@@ -17,7 +17,7 @@ describe("AppShell", () => {
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
-      leftSidebarWidth: 240
+      leftSidebarWidth: 238
     });
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url =
@@ -48,10 +48,20 @@ describe("AppShell", () => {
     expect(screen.getByRole("complementary", { name: /document panel/i })).toBeInTheDocument();
   });
 
-  it("hides sidebar when leftSidebarCollapsed", () => {
+  it("collapses sidebar to zero width but keeps it mounted for the slide animation", () => {
+    useAppStore.setState({ leftSidebarCollapsed: true });
+    const { container } = render(<AppShell serverUrl="http://x" />);
+    expect(screen.queryByRole("complementary", { name: /sidebar/i })).toBeNull();
+    const aside = container.querySelector('aside[aria-label="Sidebar"]');
+    expect(aside).not.toBeNull();
+    expect(aside).toHaveStyle({ width: "0px" });
+    expect(aside).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("does not mount sidebar content while collapsed at startup (no eager fetching)", () => {
     useAppStore.setState({ leftSidebarCollapsed: true });
     render(<AppShell serverUrl="http://x" />);
-    expect(screen.queryByRole("complementary", { name: /sidebar/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /new chat/i, hidden: true })).toBeNull();
   });
 
   it("toggle persists to localStorage", async () => {

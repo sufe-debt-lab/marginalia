@@ -5,6 +5,10 @@ import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
 
 const isScreenshotVerify = process.env.MARGINALIA_SCREENSHOT_VERIFY === "1";
 
+if (isScreenshotVerify) {
+  app.commandLine.appendSwitch("force-device-scale-factor", "1");
+}
+
 if (!app.isPackaged && isScreenshotVerify && process.env.MARGINALIA_USER_DATA_DIR) {
   app.setPath("userData", process.env.MARGINALIA_USER_DATA_DIR);
 }
@@ -44,6 +48,16 @@ function devServerUrl() {
   }
 }
 
+function installScreenshotMotionGate(window: BrowserWindow) {
+  if (!isScreenshotVerify) return;
+  window.webContents.on("dom-ready", () => {
+    void window.webContents.executeJavaScript(
+      'document.documentElement.setAttribute("data-motion", "off");',
+      true
+    );
+  });
+}
+
 async function createWindow() {
   const isMac = process.platform === "darwin";
   windowRef = new BrowserWindow({
@@ -61,6 +75,7 @@ async function createWindow() {
       sandbox: false
     }
   });
+  installScreenshotMotionGate(windowRef);
 
   // External links open in the system browser, never inside the app window.
   windowRef.webContents.setWindowOpenHandler(({ url }) => {

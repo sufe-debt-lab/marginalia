@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
 // @ts-expect-error -- plain ESM script without type declarations
-import { parseArgs } from "./verify-screenshots.mjs";
+import { assertScreenshotMotionOff, parseArgs } from "./verify-screenshots.mjs";
 
 const DEFAULTS = ["core-ui", "seeded-workspace"];
 
@@ -53,5 +55,45 @@ describe("verify-screenshots parseArgs", () => {
     expect(opts.adhoc).toBe(true);
     expect(opts.shotName).toBeNull();
     expect(opts.clean).toBe(false);
+  });
+
+  it("fails fast when screenshot motion is not disabled", async () => {
+    await expect(
+      assertScreenshotMotionOff({
+        evaluate: vi.fn(async () => undefined)
+      })
+    ).rejects.toThrow(/data-motion="off"/);
+  });
+
+  it("does not use animation settle timeouts in fixed screenshot scenarios", () => {
+    const source = readFileSync(
+      path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
+      "utf8"
+    );
+
+    expect(source).not.toMatch(/settle/);
+  });
+
+  it("captures screenshots in CSS pixels for design comparisons", () => {
+    const source = readFileSync(
+      path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
+      "utf8"
+    );
+
+    expect(source).toContain('scale: "css"');
+  });
+
+  it("waits for the document panel before seeded chat screenshots", () => {
+    const source = readFileSync(
+      path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
+      "utf8"
+    );
+
+    expect(source).toContain("waitForDocumentPanelReady");
+    expect(source).toContain("hasNonZeroFileCount");
+    expect(source).toContain("!/Loading|加载中/");
+    expect(source.indexOf("waitForDocumentPanelReady(ctx.page)")).toBeLessThan(
+      source.indexOf('capture(ctx, "seeded-workspace", "chat-seeded-session")')
+    );
   });
 });

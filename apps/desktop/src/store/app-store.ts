@@ -80,7 +80,7 @@ export const useAppStore = create<AppState>()(
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
-      leftSidebarWidth: 240,
+      leftSidebarWidth: 238,
       rightPanelWidth: 388,
       composerProviderId: null,
       composerModel: null,

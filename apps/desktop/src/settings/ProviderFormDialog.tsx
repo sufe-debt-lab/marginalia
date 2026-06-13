@@ -87,7 +87,7 @@ export function ProviderFormDialog({
   const preset = PROVIDER_PRESETS.find((p) => p.key === presetKey) ?? null;
   const resolvedApiKeyUrl = preset?.apiKeyUrl ?? apiKeyUrl;
   const showForm = mode === "edit" || presetKey !== null;
-  const canSubmit = !!name.trim() && !!defaultModel.trim() && (mode === "edit" || !!apiKey.trim());
+  const canSubmit = !!name.trim() && !!defaultModel.trim();
   const fid = (field: string) => `pf-${mode}-${field}`;
 
   function reset() {
@@ -133,10 +133,10 @@ export function ProviderFormDialog({
         }
       }}
     >
-      <DialogContent className="max-w-[460px] gap-0 overflow-hidden rounded-[14px] border-border p-0 shadow-lg">
+      <DialogContent className="max-w-[480px] gap-0 overflow-hidden border-border p-0 shadow-lg">
         {!showForm ? (
           <>
-            <div className="px-6 pb-1 pt-6">
+            <div className="border-b border-border-soft px-6 pb-[18px] pt-[22px]">
               <DialogTitle className="h-display text-[19px] font-medium tracking-tight">
                 {t("settings.addProvider")}
               </DialogTitle>
@@ -144,20 +144,20 @@ export function ProviderFormDialog({
                 {t("settings.chooseProvider")}
               </DialogDescription>
             </div>
-            <div className="grid grid-cols-2 gap-2 px-6 pb-6 pt-4">
+            <div className="grid grid-cols-2 gap-2 px-6 py-5">
               {PROVIDER_PRESETS.map((p) => (
                 <button
                   key={p.key}
                   type="button"
                   onClick={() => choosePreset(p.key)}
-                  className="group flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left transition-all hover:border-border-strong hover:shadow-sm"
+                  className="group flex min-h-[64px] items-center gap-3 rounded-[10px] border border-border bg-transparent px-3 py-3 text-left transition-[background-color,border-color] motion-fast hover:border-text-subtle hover:bg-background"
                 >
-                  <ProviderAvatar name={p.name} size={32} />
+                  <ProviderAvatar name={p.name} size={38} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">
+                    <span className="block truncate text-[13.5px] font-semibold">
                       {presetLabel(p, locale)}
                     </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-text-muted">
+                    <span className="mt-px block truncate text-xs text-text-muted">
                       {presetDescription(p, locale)}
                     </span>
                   </span>
@@ -167,7 +167,7 @@ export function ProviderFormDialog({
               <button
                 type="button"
                 onClick={() => choosePreset("custom")}
-                className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border-strong px-3 py-2.5 text-[12.5px] font-medium text-text-muted transition-colors hover:border-text-faint hover:text-foreground"
+                className="col-span-2 flex items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-border-strong px-3 py-[13px] text-[13.5px] text-text-muted transition-colors hover:bg-background hover:text-foreground"
               >
                 <Plus className="h-3.5 w-3.5" />
                 {t("settings.custom")}
@@ -176,13 +176,13 @@ export function ProviderFormDialog({
           </>
         ) : (
           <>
-            <div className="flex items-center gap-3.5 border-b border-border-soft px-6 py-5">
+            <div className="flex items-center gap-3.5 border-b border-border-soft px-6 pb-[18px] pt-[22px]">
               <ProviderAvatar name={name} size={40} />
               <div className="min-w-0">
                 <DialogTitle className="text-[10.5px] font-semibold uppercase tracking-wider text-text-muted">
                   {mode === "edit" ? t("settings.editProvider") : t("settings.addProvider")}
                 </DialogTitle>
-                <div className="h-display truncate text-[18px] font-medium leading-snug">
+                <div className="truncate text-[17px] font-semibold leading-snug">
                   {name.trim() || t("settings.custom")}
                 </div>
                 <DialogDescription className="sr-only">

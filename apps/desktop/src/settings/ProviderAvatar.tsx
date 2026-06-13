@@ -1,17 +1,17 @@
-import { brandColorFor } from "./provider-catalog.js";
-
-export function ProviderAvatar({ name, size = 30 }: { name: string; size?: number }) {
-  const color = brandColorFor(name);
+/**
+ * Neutral provider tile — light grey with an ink initial. The locked
+ * mono + emerald system deliberately avoids brand colours here so the
+ * emerald status accents stay the only colour on the page.
+ */
+export function ProviderAvatar({ name, size = 34 }: { name: string; size?: number }) {
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-[9px] font-mono font-semibold"
+      className="flex shrink-0 items-center justify-center border border-border bg-surface-3 font-mono font-semibold text-text"
       style={{
         width: size,
         height: size,
         fontSize: Math.round(size * 0.42),
-        ...(color
-          ? { background: color, color: "#fff" }
-          : { background: "var(--surface-3)", color: "var(--text-muted)" })
+        borderRadius: Math.round(size * 0.24)
       }}
     >
       {name.slice(0, 1).toUpperCase()}

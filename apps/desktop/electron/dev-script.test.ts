@@ -20,6 +20,19 @@ describe("desktop dev script", () => {
     expect(mainSource).toContain("preload.cjs");
   });
 
+  it("disables renderer motion in screenshot verification mode", () => {
+    const mainSource = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
+
+    expect(mainSource).toContain("MARGINALIA_SCREENSHOT_VERIFY");
+    expect(mainSource).toContain('setAttribute("data-motion", "off")');
+  });
+
+  it("forces a 1x device scale factor for screenshot verification", () => {
+    const mainSource = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
+
+    expect(mainSource).toContain('appendSwitch("force-device-scale-factor", "1")');
+  });
+
   it("loads the built renderer (dist/index.html), not the source HTML, in production", () => {
     // main.js runs from dist-electron/, so the built renderer is at ../dist/index.html.
     // Loading "../index.html" (the source) under file:// would serve the dev HTML whose

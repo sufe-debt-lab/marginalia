@@ -11,6 +11,12 @@ type SettingsTab = "general" | "providers" | "mcp" | "skills";
 export function SettingsView({ api }: { api: ApiClient }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<SettingsTab>("general");
+  const [animateTab, setAnimateTab] = useState(false);
+
+  function selectTab(next: SettingsTab) {
+    if (next !== tab) setAnimateTab(true);
+    setTab(next);
+  }
 
   const nav: { id: SettingsTab; label: string; icon: ReactNode; disabled?: boolean }[] = [
     {
@@ -39,7 +45,7 @@ export function SettingsView({ api }: { api: ApiClient }) {
 
   return (
     <div className="flex h-full min-h-0">
-      <nav className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-border-soft p-3">
+      <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border-soft px-2.5 py-3.5">
         <div className="px-2.5 pb-2 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-text-faint">
           {t("settings.title")}
         </div>
@@ -48,11 +54,11 @@ export function SettingsView({ api }: { api: ApiClient }) {
             key={it.id}
             type="button"
             disabled={it.disabled}
-            onClick={() => setTab(it.id)}
+            onClick={() => selectTab(it.id)}
             className={cn(
               "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-muted",
               "disabled:cursor-not-allowed disabled:opacity-40",
-              tab === it.id && "bg-surface-3 text-foreground",
+              tab === it.id && "bg-select font-medium text-foreground",
               !it.disabled && tab !== it.id && "hover:bg-accent"
             )}
             title={it.disabled ? t("settings.notImplemented") : undefined}
@@ -62,9 +68,17 @@ export function SettingsView({ api }: { api: ApiClient }) {
           </button>
         ))}
       </nav>
-      <div className="min-w-0 flex-1 overflow-auto px-9 py-7">
-        {tab === "general" && <GeneralPane />}
-        {tab === "providers" && <ProvidersPane api={api} />}
+      <div
+        key={tab}
+        className={cn(
+          "min-w-0 flex-1 overflow-auto px-8 pb-14 pt-[26px]",
+          animateTab && "motion-tab-panel"
+        )}
+      >
+        <div className="w-full max-w-[440px]">
+          {tab === "general" && <GeneralPane />}
+          {tab === "providers" && <ProvidersPane api={api} />}
+        </div>
       </div>
     </div>
   );

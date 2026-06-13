@@ -44,7 +44,13 @@ export function MessageStream({ messages, error, onRetry, model, streaming, reas
   const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
-      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      // data-motion="off" covers both screenshot mode and the OS reduced-motion
+      // preference (mirrored onto the attribute in main.tsx).
+      const reduceMotion = document.documentElement.dataset.motion === "off";
+      bottomRef.current.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "end"
+      });
     }
   }, [tail]);
 

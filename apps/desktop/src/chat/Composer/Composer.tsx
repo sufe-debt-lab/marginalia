@@ -90,6 +90,8 @@ export function Composer(props: Props) {
   // Which UI opened the file menu: an inline `@` mention vs the `+` attachment picker.
   const [pickerMode, setPickerMode] = useState<"mention" | "attach">("mention");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Attachment cards present at mount don't animate; later additions do.
+  const initialContextFiles = useRef<ReadonlySet<string>>(new Set(props.contextFiles)).current;
   const canSubmit = !props.disabled && (draft.trim().length > 0 || props.contextFiles.length > 0);
 
   function autoSize() {
@@ -194,7 +196,7 @@ export function Composer(props: Props) {
           onClose={() => setMentionSuggestions([])}
         />
       )}
-      <div className="rounded-[14px] border border-border bg-surface px-3.5 pt-3 pb-2 shadow-sm">
+      <div className="rounded-[14px] border border-border bg-surface px-3.5 pt-3 pb-2 shadow-composer transition-[border-color,box-shadow] motion-standard focus-within:border-border-strong focus-within:shadow-composer-focus">
         {/* attachment cards */}
         {props.contextFiles.length > 0 && (
           <div className="mb-2.5 flex flex-wrap gap-2">
@@ -203,7 +205,10 @@ export function Composer(props: Props) {
               return (
                 <div
                   key={p}
-                  className="relative flex min-w-0 max-w-[240px] items-center gap-2.5 rounded-[10px] border border-border bg-surface-2 py-1.5 pl-1.5 pr-3"
+                  className={cn(
+                    "relative flex min-w-0 max-w-[240px] items-center gap-2.5 rounded-[10px] border border-border bg-surface-2 py-1.5 pl-1.5 pr-3",
+                    !initialContextFiles.has(p) && "motion-menu"
+                  )}
                 >
                   <span
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-mono text-[11px] font-bold tracking-tight"
@@ -221,7 +226,7 @@ export function Composer(props: Props) {
                     type="button"
                     aria-label={`${t("composer.remove")} ${p}`}
                     onClick={() => props.onRemoveContextFile(p)}
-                    className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black/80 text-white shadow-sm active:scale-90"
+                    className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black/80 text-white shadow-sm transition-transform motion-fast active:scale-90"
                   >
                     <X className="h-2.5 w-2.5" strokeWidth={2.2} />
                   </button>
@@ -251,7 +256,7 @@ export function Composer(props: Props) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-text-muted"
+            className="h-7 w-7 text-text-muted transition-[background-color,color,transform] motion-fast active:scale-95"
             aria-label={t("composer.addAttachment")}
             disabled={!props.workspaceId}
             onClick={() => void openAttachPicker()}
@@ -274,7 +279,7 @@ export function Composer(props: Props) {
           {props.sending ? (
             <Button
               size="icon"
-              className="ml-1 h-7 w-7 rounded-full"
+              className="ml-1 h-7 w-7 rounded-full transition-transform motion-fast hover:scale-[1.06] active:scale-95"
               onClick={props.onStop}
               aria-label={t("composer.stop")}
             >
@@ -283,7 +288,7 @@ export function Composer(props: Props) {
           ) : (
             <Button
               size="icon"
-              className="ml-1 h-7 w-7 rounded-full"
+              className="ml-1 h-7 w-7 rounded-full transition-transform motion-fast hover:scale-[1.06] active:scale-95"
               disabled={!canSubmit}
               onClick={submit}
               aria-label={t("composer.send")}

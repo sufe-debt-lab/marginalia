@@ -57,15 +57,15 @@ export function GeneralPane() {
           title={t("common.language")}
           desc={t("settings.languageDesc")}
           control={
-            <div className="flex gap-1 rounded-md bg-surface-3 p-0.5">
+            <div className="flex overflow-hidden rounded-md border border-border bg-surface">
               {(["zh", "en"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
                   onClick={() => setLocale(v)}
                   className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium",
-                    locale === v ? "bg-surface text-foreground shadow-sm" : "text-text-muted"
+                    "px-3 py-1 text-[12.5px]",
+                    locale === v ? "bg-foreground text-background" : "text-text-muted"
                   )}
                 >
                   {v === "zh" ? "中文" : "English"}
@@ -98,7 +98,7 @@ export function GeneralPane() {
             </span>
           }
           control={
-            <Button variant="secondary" size="sm" onClick={restart} disabled={restarting}>
+            <Button variant="outline" size="sm" onClick={restart} disabled={restarting}>
               <RotateCw className={cn("mr-1 h-3 w-3", restarting && "animate-spin")} />
               {t("settings.restart")}
             </Button>
@@ -117,10 +117,10 @@ export function GeneralPane() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="flex gap-1.5">
-                    <Button variant="secondary" size="sm" disabled>
+                    <Button variant="outline" size="sm" disabled>
                       {t("settings.export")}
                     </Button>
-                    <Button variant="secondary" size="sm" disabled>
+                    <Button variant="outline" size="sm" disabled>
                       {t("settings.import")}
                     </Button>
                   </span>

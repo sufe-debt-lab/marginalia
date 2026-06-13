@@ -14,4 +14,13 @@ describe("SlashMenu", () => {
     await userEvent.click(screen.getByText("/clear"));
     expect(onSelect).toHaveBeenCalledWith("clear");
   });
+
+  it("selects commands with arrow keys and Enter", async () => {
+    const onSelect = vi.fn();
+    render(<SlashMenu query="" onSelect={onSelect} onClose={() => {}} />);
+
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(onSelect).toHaveBeenCalledWith("help");
+  });
 });

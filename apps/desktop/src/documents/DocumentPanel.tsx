@@ -206,7 +206,11 @@ export function DocumentPanel({
           >
             <FolderTree className="h-3.5 w-3.5" />
           </button>
-          <button type="button" aria-label="Refresh" className="rounded p-1 hover:bg-accent">
+          <button
+            type="button"
+            aria-label={t("docPanel.refresh")}
+            className="rounded p-1 hover:bg-accent"
+          >
             <RotateCw className="h-3 w-3" />
           </button>
         </div>

@@ -71,7 +71,16 @@
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
-    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.05);
+    --shadow-pop: 0 6px 28px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06);
+    --shadow-composer: 0 1px 4px rgba(0, 0, 0, 0.05), 0 4px 20px rgba(0, 0, 0, 0.04);
+    --shadow-composer-focus: 0 1px 5px rgba(0, 0, 0, 0.07), 0 6px 26px rgba(0, 0, 0, 0.06);
+
+    --motion-fast: 120ms;
+    --motion-standard: 160ms;
+    --motion-panel: 220ms;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
 
     --font-sans:
       "Geist Sans", "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -120,7 +129,96 @@
 
 @layer components {
   .pane-width-transition {
-    transition: width 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+    transition: width var(--motion-panel) var(--ease-out);
+  }
+
+  /* Collapsible sidebar column: slides to width 0, then drops out of the
+     a11y/tab order via delayed visibility (kept in the DOM for the animation). */
+  .sidebar-pane {
+    transition:
+      width var(--motion-panel) var(--ease-out),
+      visibility 0s linear;
+  }
+  .sidebar-pane[data-collapsed="true"] {
+    visibility: hidden;
+    transition:
+      width var(--motion-panel) var(--ease-in),
+      visibility 0s linear var(--motion-panel);
+  }
+
+  .motion-fast {
+    transition-duration: var(--motion-fast);
+    animation-duration: var(--motion-fast);
+    transition-timing-function: var(--ease-out);
+    animation-timing-function: var(--ease-out);
+  }
+
+  .motion-standard {
+    transition-duration: var(--motion-standard);
+    animation-duration: var(--motion-standard);
+    transition-timing-function: var(--ease-out);
+    animation-timing-function: var(--ease-out);
+  }
+
+  .motion-fast[data-state="closed"],
+  .motion-standard[data-state="closed"] {
+    transition-duration: var(--motion-fast);
+    animation-duration: var(--motion-fast);
+    transition-timing-function: var(--ease-in);
+    animation-timing-function: var(--ease-in);
+  }
+
+  .motion-menu {
+    animation: motion-menu-in var(--motion-fast) var(--ease-out);
+    transform-origin: var(--radix-popover-content-transform-origin, bottom left);
+  }
+
+  @keyframes motion-menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .motion-tab-panel {
+    animation: motion-tab-panel-in var(--motion-standard) var(--ease-out);
+  }
+
+  @keyframes motion-tab-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows var(--motion-standard) var(--ease-in),
+      opacity var(--motion-fast) var(--ease-in);
+  }
+
+  .reveal[data-open="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition:
+      grid-template-rows var(--motion-panel) var(--ease-out),
+      opacity var(--motion-fast) var(--ease-out);
+  }
+
+  .reveal > * {
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* Serif display headings */
@@ -156,6 +254,9 @@
   }
   .dot.idle {
     background: var(--text-faint);
+  }
+  .dot.brand {
+    background: var(--brand);
   }
   .dot.pulse {
     position: relative;
@@ -251,16 +352,14 @@
       transform: translateY(-2px);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .splash-mark {
-      animation: none;
-      color: var(--text-muted);
-      -webkit-text-fill-color: currentColor;
-    }
-    .splash-dot {
-      animation: none;
-      opacity: 0.5;
-    }
+  html[data-motion="off"] .splash-mark {
+    animation: none;
+    color: var(--text-muted);
+    -webkit-text-fill-color: currentColor;
+  }
+  html[data-motion="off"] .splash-dot {
+    animation: none;
+    opacity: 0.5;
   }
 
   /* Streaming caret */
@@ -280,22 +379,34 @@
   }
 }
 
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+
 html[data-resizing-panels] * {
   transition: none !important;
   animation-duration: 0ms !important;
 }
 
-/* Scrollbar polish */
+/* Scrollbar polish — thin, borderless, per the locked design */
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
-  border-radius: 4px;
-  border: 2px solid var(--bg);
-  background-clip: padding-box;
 }

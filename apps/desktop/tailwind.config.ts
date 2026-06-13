@@ -52,6 +52,7 @@ const config: Config = {
         },
         "border-soft": "var(--border-soft)",
         "border-strong": "var(--border-strong)",
+        select: "var(--select)",
         text: {
           DEFAULT: "var(--text)",
           muted: "var(--text-muted)",
@@ -81,12 +82,18 @@ const config: Config = {
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)"
+        sm: "calc(var(--radius) - 4px)",
+        // locked design radii: 13px cards/menus, 20px modals
+        card: "13px",
+        modal: "20px"
       },
       boxShadow: {
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
-        lg: "var(--shadow-lg)"
+        pop: "var(--shadow-pop)",
+        lg: "var(--shadow-lg)",
+        composer: "var(--shadow-composer)",
+        "composer-focus": "var(--shadow-composer-focus)"
       },
       fontFamily: {
         sans: [

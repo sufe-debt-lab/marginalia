@@ -57,7 +57,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
   }
 
   return (
-    <aside className="flex h-full flex-col border-r border-border-soft bg-background">
+    <aside className="flex h-full flex-col border-r border-border bg-surface-2">
       <div className="space-y-1 p-2">
         <Button
           variant="ghost"
@@ -109,7 +109,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
           variant="ghost"
           className={cn(
             "w-full justify-start gap-2 rounded-md active:scale-[0.99]",
-            view === "settings" && "bg-accent"
+            view === "settings" && "bg-select text-foreground"
           )}
           onClick={() => setView("settings")}
           aria-label={t("common.settings")}

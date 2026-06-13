@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "@/api/client.js";
@@ -178,6 +178,54 @@ describe("Composer", () => {
     expect(send).toBeEnabled();
     await userEvent.click(send);
     expect(onSubmit).toHaveBeenCalledWith("");
+  });
+
+  it("grows the send button on hover (matches design micro-interaction)", () => {
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    expect(screen.getByRole("button", { name: /send/i })).toHaveClass("hover:scale-[1.06]");
+  });
+
+  it("does not animate initial attachment cards but animates newly added cards", async () => {
+    const initialProps = {
+      api: api(),
+      workspaceId: "w",
+      providers,
+      providerId: "p1",
+      model: "M2.7",
+      onModelChange: vi.fn(),
+      onAddContextFile: vi.fn(),
+      onRemoveContextFile: vi.fn(),
+      sending: false,
+      onSubmit: vi.fn(),
+      placeholder: ""
+    };
+    const { rerender } = render(<Composer {...initialProps} contextFiles={["src/x.ts"]} />);
+    expect(
+      screen.getByRole("button", { name: /remove src\/x\.ts/i }).parentElement
+    ).not.toHaveClass("motion-menu");
+
+    rerender(<Composer {...initialProps} contextFiles={["src/x.ts", "src/y.ts"]} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /remove src\/y\.ts/i }).parentElement).toHaveClass(
+        "motion-menu"
+      )
+    );
   });
 
   it("disables send when the disabled prop is set, even with attachments", () => {

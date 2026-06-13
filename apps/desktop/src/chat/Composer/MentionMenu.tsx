@@ -1,5 +1,6 @@
-import { useEffect } from "react";
 import { FileText } from "lucide-react";
+import { cn } from "@/lib/cn.js";
+import { COMPOSER_MENU_CLS, useMenuNav } from "./useMenuNav.js";
 
 interface Props {
   suggestions: readonly { path: string }[];
@@ -8,25 +9,30 @@ interface Props {
 }
 
 export function MentionMenu({ suggestions, onSelect, onClose }: Props) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const { activeIndex, setActiveIndex } = useMenuNav(
+    suggestions,
+    (s) => onSelect(s.path),
+    onClose,
+    suggestions
+  );
 
   if (suggestions.length === 0) return null;
   return (
-    <div className="absolute bottom-full left-0 mb-2 max-h-64 w-72 overflow-auto rounded-md border border-border bg-popover shadow-md">
-      {suggestions.map((s) => (
+    <div role="listbox" className={cn(COMPOSER_MENU_CLS, "max-h-[264px] w-80 overflow-auto")}>
+      {suggestions.map((s, index) => (
         <button
           key={s.path}
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent"
+          role="option"
+          aria-selected={index === activeIndex}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12.5px] transition-colors hover:bg-accent",
+            index === activeIndex && "bg-accent text-accent-foreground"
+          )}
           onClick={() => onSelect(s.path)}
+          onMouseEnter={() => setActiveIndex(index)}
         >
-          <FileText className="h-3 w-3 text-muted-foreground" />
+          <FileText className="h-3.5 w-3.5 shrink-0 text-text-muted" />
           <span className="truncate">{s.path}</span>
         </button>
       ))}

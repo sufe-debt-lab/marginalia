@@ -25,4 +25,27 @@ describe("MentionMenu", () => {
     await userEvent.click(screen.getByText("src/App.tsx"));
     expect(onSelect).toHaveBeenCalledWith("src/App.tsx");
   });
+
+  it("uses the design menu surface", () => {
+    render(
+      <MentionMenu suggestions={[{ path: "src/App.tsx" }]} onSelect={() => {}} onClose={() => {}} />
+    );
+
+    expect(screen.getByRole("listbox")).toHaveClass("w-80", "rounded-card");
+  });
+
+  it("selects suggestions with arrow keys and Enter", async () => {
+    const onSelect = vi.fn();
+    render(
+      <MentionMenu
+        suggestions={[{ path: "src/App.tsx" }, { path: "README.md" }]}
+        onSelect={onSelect}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(onSelect).toHaveBeenCalledWith("README.md");
+  });
 });

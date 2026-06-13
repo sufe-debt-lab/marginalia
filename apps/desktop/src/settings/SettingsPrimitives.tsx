@@ -11,27 +11,47 @@ export function PaneHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-end gap-4 border-b border-border-soft pb-4">
-      <div className="flex-1">
-        <h1 className="h-display text-[22px] font-medium tracking-tight">{title}</h1>
-        <p className="mt-1 text-[13px] text-text-muted">{subtitle}</p>
+    <div className="mb-6">
+      <div>
+        <h1 className="h-display text-2xl font-medium tracking-[-0.018em]">{title}</h1>
+        <p className="mt-1 text-[13.5px] text-text-muted">{subtitle}</p>
       </div>
-      {action}
+      {action && <div className="mt-8">{action}</div>}
     </div>
   );
 }
 
-export function SectionLabel({ children }: { children: ReactNode }) {
+export function SectionLabel({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <h2 className="mb-2.5 mt-6 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+    <h2
+      className={cn(
+        "mb-2.5 mt-[22px] text-[10px] font-bold uppercase tracking-[0.08em] text-text-subtle",
+        className
+      )}
+    >
       {children}
     </h2>
   );
 }
 
-export function SettingCard({ children }: { children: ReactNode }) {
+/** Section wrapper; `card` adds the locked card chrome (13px radius, border, surface). */
+export function SettingCard({
+  card,
+  className,
+  children
+}: {
+  card?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="mb-5 overflow-hidden rounded-[10px] border border-border bg-surface">
+    <div
+      className={cn(
+        "mb-5",
+        card && "overflow-hidden rounded-card border border-border bg-surface",
+        className
+      )}
+    >
       {children}
     </div>
   );
@@ -49,12 +69,10 @@ export function SettingRow({
   last?: boolean;
 }) {
   return (
-    <div
-      className={cn("flex items-center gap-4 px-4 py-3.5", !last && "border-b border-border-soft")}
-    >
+    <div className={cn("flex items-center gap-4 py-4", !last && "border-b border-border-soft")}>
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium">{title}</div>
-        <div className="mt-1 text-xs leading-relaxed text-text-muted">{desc}</div>
+        <div className="text-[13.5px] font-medium">{title}</div>
+        <div className="mt-0.5 text-[12.5px] leading-relaxed text-text-muted">{desc}</div>
       </div>
       <div className="shrink-0">{control}</div>
     </div>
@@ -78,14 +96,14 @@ export function Toggle({
       aria-label={label}
       onClick={() => onChange(!on)}
       className={cn(
-        "relative h-[18px] w-8 shrink-0 rounded-full transition-colors",
+        "relative h-[21px] w-[38px] shrink-0 rounded-full transition-colors motion-standard",
         on ? "bg-foreground" : "bg-border-strong"
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-all",
-          on ? "left-4" : "left-0.5"
+          "absolute left-[1.5px] top-[1.5px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform motion-standard",
+          on ? "translate-x-[17px]" : "translate-x-0"
         )}
       />
     </button>

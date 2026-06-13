@@ -33,11 +33,44 @@ describe("WorkspaceTree", () => {
     }));
   });
 
-  it("renders workspace name and expands to show sessions on click", async () => {
+  it("shows recent sessions by default without clicking", async () => {
     render(<WorkspaceTree api={fakeApi()} workspace={workspace} onDelete={async () => {}} />);
-    await userEvent.click(screen.getByRole("button", { name: /demo/i }));
     await waitFor(() => expect(screen.getByText("first")).toBeInTheDocument());
     expect(screen.getByText("second")).toBeInTheDocument();
+  });
+
+  it("collapses and re-expands the session list when the workspace row is clicked", async () => {
+    render(<WorkspaceTree api={fakeApi()} workspace={workspace} onDelete={async () => {}} />);
+    await waitFor(() => screen.getByText("first"));
+    await userEvent.click(screen.getByRole("button", { name: /demo/i }));
+    expect(screen.getByText("first").closest("[aria-hidden]")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    await userEvent.click(screen.getByRole("button", { name: /demo/i }));
+    expect(screen.getByText("first").closest("[aria-hidden]")).toHaveAttribute(
+      "aria-hidden",
+      "false"
+    );
+  });
+
+  it("truncates long session lists to five and reveals the rest via Show more", async () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      id: `s${i + 1}`,
+      workspaceId: "w",
+      title: `session ${i + 1}`,
+      origin: "ui",
+      model: null
+    }));
+    const api = { listSessions: vi.fn(async () => many) } as unknown as ApiClient;
+    render(<WorkspaceTree api={api} workspace={workspace} onDelete={async () => {}} />);
+    await waitFor(() => screen.getByText("session 1"));
+    expect(screen.getByText("session 5")).toBeInTheDocument();
+    expect(screen.queryByText("session 6")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /show more/i }));
+    expect(screen.getByText("session 6")).toBeInTheDocument();
+    expect(screen.getByText("session 7")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
   });
 
   it("constrains long workspace names to a single truncated row", () => {
@@ -56,7 +89,6 @@ describe("WorkspaceTree", () => {
 
   it("selecting a session updates store", async () => {
     render(<WorkspaceTree api={fakeApi()} workspace={workspace} onDelete={async () => {}} />);
-    await userEvent.click(screen.getByRole("button", { name: /demo/i }));
     await waitFor(() => screen.getByText("first"));
     await userEvent.click(screen.getByText("first"));
     expect(useAppStore.getState().activeWorkspaceId).toBe("w");
@@ -67,7 +99,7 @@ describe("WorkspaceTree", () => {
   it("renders a pin icon when pinned", () => {
     useAppStore.setState((s) => ({ ...s, pinnedWorkspaceIds: ["w"] }));
     render(<WorkspaceTree api={fakeApi()} workspace={workspace} onDelete={async () => {}} />);
-    expect(screen.getByLabelText("pinned")).toBeInTheDocument();
+    expect(screen.getByLabelText(/pinned/i)).toBeInTheDocument();
   });
 
   it("right-click + Pin toggles pin state in store", async () => {

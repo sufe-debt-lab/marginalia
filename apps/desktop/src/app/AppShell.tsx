@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ResizeHandle } from "@/components/ResizeHandle.js";
 import { useApi } from "@/hooks/useApi.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -23,6 +23,12 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const leftWidth = useAppStore((s) => s.leftSidebarWidth);
   const setLeftWidth = useAppStore((s) => s.setLeftSidebarWidth);
+  // Lazy-mount the sidebar: a session that starts collapsed pays no fetch cost,
+  // but once opened the content stays mounted so the collapse can animate.
+  const [sidebarOpenedOnce, setSidebarOpenedOnce] = useState(!leftCollapsed);
+  useEffect(() => {
+    if (!leftCollapsed) setSidebarOpenedOnce(true);
+  }, [leftCollapsed]);
   const rightWidth = useAppStore((s) => s.rightPanelWidth);
   const setRightWidth = useAppStore((s) => s.setRightPanelWidth);
   const workspaces = useWorkspaces(api);
@@ -44,16 +50,20 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <Topbar title={title} />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {!leftCollapsed && (
-          <aside
-            aria-label="Sidebar"
-            style={{ width: leftWidth }}
-            className="pane-width-transition relative min-h-0 shrink-0 overflow-hidden"
-          >
-            <Sidebar api={api} />
+        <aside
+          aria-label="Sidebar"
+          aria-hidden={leftCollapsed}
+          data-collapsed={leftCollapsed}
+          style={{ width: leftCollapsed ? 0 : leftWidth }}
+          className="sidebar-pane relative min-h-0 shrink-0 overflow-hidden"
+        >
+          <div style={{ width: leftWidth }} className="h-full">
+            {sidebarOpenedOnce && <Sidebar api={api} />}
+          </div>
+          {!leftCollapsed && (
             <ResizeHandle side="right" getWidth={() => leftWidth} onWidth={setLeftWidth} />
-          </aside>
-        )}
+          )}
+        </aside>
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
           {view === "settings" ? (
             <SettingsView api={api} />
@@ -69,7 +79,7 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
           <aside
             aria-label="Document panel"
             style={{ width: rightWidth }}
-            className="pane-width-transition relative min-h-0 shrink-0 overflow-hidden border-l border-border-soft"
+            className="pane-width-transition relative min-h-0 shrink-0 overflow-hidden border-l border-border"
           >
             <ResizeHandle side="left" getWidth={() => rightWidth} onWidth={setRightWidth} />
             <DocumentPanel

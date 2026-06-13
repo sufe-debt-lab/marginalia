@@ -35,6 +35,11 @@ describe("FirstRunView", () => {
     expect(screen.getByText("Add a model provider")).toBeInTheDocument();
   });
 
+  it("uses the design's compact logo size", async () => {
+    render(<FirstRunView api={fakeApi()} />);
+    expect(await screen.findByTestId("first-run-logo")).toHaveClass("h-[70px]", "w-[70px]");
+  });
+
   it("step 1 picks a folder and creates the first workspace", async () => {
     const api = fakeApi();
     render(<FirstRunView api={api} />);

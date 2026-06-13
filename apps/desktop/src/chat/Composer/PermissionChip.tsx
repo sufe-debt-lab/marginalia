@@ -1,4 +1,4 @@
-import { ChevronDown, Eye, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { Check, ChevronDown, Eye, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
   DropdownMenu,
@@ -21,12 +21,12 @@ export function PermissionChip({ value, onChange }: Props) {
     full: {
       icon: ShieldAlert,
       label: t("composer.permFull"),
-      className: "text-[oklch(0.58_0.17_35)]"
+      className: "text-danger"
     },
     ask: {
       icon: ShieldQuestion,
       label: t("composer.permAsk"),
-      className: "text-[oklch(0.55_0.15_80)]"
+      className: "text-warn"
     },
     readonly: { icon: Eye, label: t("composer.permReadonly"), className: "text-text-muted" }
   };
@@ -52,7 +52,8 @@ export function PermissionChip({ value, onChange }: Props) {
           return (
             <DropdownMenuItem key={p} onSelect={() => onChange(p)}>
               <Icon className="mr-2 h-3.5 w-3.5" />
-              {conf[p].label}
+              <span className="flex-1">{conf[p].label}</span>
+              {p === value && <Check className="ml-3 h-3.5 w-3.5 text-brand" />}
             </DropdownMenuItem>
           );
         })}

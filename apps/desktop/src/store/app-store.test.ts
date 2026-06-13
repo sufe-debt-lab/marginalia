@@ -13,7 +13,7 @@ describe("useAppStore", () => {
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
-      leftSidebarWidth: 240
+      leftSidebarWidth: 238
     });
     localStorage.clear();
   });

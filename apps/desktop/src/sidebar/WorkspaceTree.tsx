@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, Folder, Pin } from "lucide-react";
+import { Folder, Pin } from "lucide-react";
 import { toast } from "sonner";
 import type { ApiClient, Workspace } from "@/api/client.js";
 import { useSessions } from "@/hooks/useSessions.js";
@@ -16,11 +16,17 @@ interface Props {
   onDelete: (id: string) => Promise<void>;
 }
 
+/** Sessions shown per workspace before the list folds behind "Show more". */
+const VISIBLE_SESSIONS = 5;
+
 export function WorkspaceTree({ api, workspace, onDelete }: Props) {
   const { t, locale } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+  const [showAll, setShowAll] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const sessions = useSessions(api, expanded ? workspace.id : null);
+  const sessions = useSessions(api, workspace.id);
+  const visibleSessions = showAll ? sessions.data : sessions.data.slice(0, VISIBLE_SESSIONS);
+  const hiddenCount = sessions.data.length - visibleSessions.length;
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
@@ -63,57 +69,65 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-foreground/80 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent"
+          className="flex min-w-0 w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent"
         >
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 shrink-0 transition-transform duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1)]",
-              expanded && "rotate-90"
-            )}
-          />
-          <Folder className="h-3.5 w-3.5 shrink-0" />
+          <Folder className="h-3.5 w-3.5 shrink-0 text-text-muted" />
           <span className="min-w-0 flex-1 truncate text-left" title={workspace.name}>
             {workspace.name}
           </span>
           {isPinned && (
-            <Pin aria-label="pinned" className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <Pin
+              aria-label={t("common.pinned")}
+              className="h-3 w-3 shrink-0 text-muted-foreground"
+            />
           )}
         </button>
       </WorkspaceActions>
-      <ul
-        className="ml-[18px] mt-0.5 space-y-0.5 overflow-hidden border-l border-border-soft pl-1.5 transition-[max-height,opacity] duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1)]"
-        style={{
-          maxHeight: expanded ? `${Math.min(sessions.data.length * 32 + 8, 480)}px` : "0px",
-          opacity: expanded ? 1 : 0
-        }}
-        aria-hidden={!expanded}
-      >
-        {sessions.loading && (
-          <li className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</li>
-        )}
-        {!sessions.loading && sessions.data.length === 0 && (
-          <li className="px-2 py-1 text-xs text-muted-foreground">{t("common.noChats")}</li>
-        )}
-        {sessions.data.map((s) => (
-          <li key={s.id}>
-            <button
-              type="button"
-              onClick={() => selectSession(s.id, s.title)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
-                activeSessionId === s.id && "bg-accent text-foreground"
-              )}
-            >
-              <span className="min-w-0 flex-1 truncate">{s.title || t("common.untitled")}</span>
-              {s.updatedAt && (
-                <span className="mono shrink-0 text-[10.5px] text-text-faint">
-                  {relativeTime(s.updatedAt, locale)}
-                </span>
-              )}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div className="reveal" data-open={expanded ? "true" : undefined} aria-hidden={!expanded}>
+        {/* preflight is off — reset the UA list padding/margin explicitly */}
+        <ul className="m-0 list-none space-y-px overflow-hidden p-0 pb-1">
+          {sessions.loading && (
+            <li className="py-1 pl-[30px] pr-2 text-xs text-muted-foreground">
+              {t("common.loading")}
+            </li>
+          )}
+          {!sessions.loading && sessions.data.length === 0 && (
+            <li className="py-1 pl-[30px] pr-2 text-xs text-muted-foreground">
+              {t("common.noChats")}
+            </li>
+          )}
+          {visibleSessions.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => selectSession(s.id, s.title)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md py-1.5 pl-[30px] pr-2 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
+                  activeSessionId === s.id && "bg-select text-foreground"
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{s.title || t("common.untitled")}</span>
+                {s.updatedAt && (
+                  <span className="mono shrink-0 text-[10.5px] text-text-faint">
+                    {relativeTime(s.updatedAt, locale)}
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+          {hiddenCount > 0 && (
+            <li>
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="flex w-full items-center rounded-md py-1.5 pl-[30px] pr-2 text-left text-sm text-text-subtle transition-colors motion-fast hover:text-foreground [@media(hover:hover)]:hover:bg-accent"
+              >
+                {t("common.showMore")}
+              </button>
+            </li>
+          )}
+        </ul>
+      </div>
       <ConfirmDeleteDialog
         open={deleteOpen}
         workspaceName={workspace.name}
