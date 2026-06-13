@@ -41,6 +41,12 @@ describe("parseCompareArgs", () => {
     expect(parseCompareArgs(["--max-diff-percent", "0.5"]).maxDiffPercent).toBe(0.5);
     expect(() => parseCompareArgs(["--bogus"])).toThrow(/Unknown argument/);
   });
+
+  it("validates --max-diff-percent is a non-negative number", () => {
+    expect(parseCompareArgs(["--max-diff-percent", "0"]).maxDiffPercent).toBe(0);
+    expect(() => parseCompareArgs(["--max-diff-percent", "abc"])).toThrow(/non-negative number/);
+    expect(() => parseCompareArgs(["--max-diff-percent", "-1"])).toThrow(/non-negative number/);
+  });
 });
 
 describe("classifyShots", () => {

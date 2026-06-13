@@ -23,7 +23,13 @@ export function parseCompareArgs(argv) {
       if (arg === "--design") options.design = value;
       else if (arg === "--impl") options.impl = value;
       else if (arg === "--reason") options.reason = value;
-      else options.maxDiffPercent = Number(value);
+      else {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) {
+          throw new Error(`--max-diff-percent requires a non-negative number, got: ${value}`);
+        }
+        options.maxDiffPercent = num;
+      }
       i += 1;
     } else if (arg === "--update-baseline") {
       while (argv[i + 1] && !argv[i + 1].startsWith("--")) {
@@ -54,7 +60,7 @@ export function classifyShots({ manifest, scenarios, baselineLabels }) {
   );
   const entries = [];
   for (const id of ranScenarios) {
-    const shots = manifest.screenshots.filter((shot) => shot.scenario === id);
+    const shots = (manifest.screenshots ?? []).filter((shot) => shot.scenario === id);
     const captured = new Set(shots.map((shot) => shot.label));
     for (const shot of shots) {
       const hasBaseline = (baselineLabels[id] ?? []).includes(shot.label);
