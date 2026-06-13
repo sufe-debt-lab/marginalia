@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 // @ts-expect-error -- plain ESM script without type declarations
-import { classifyShots, parseCompareArgs } from "./compare-screenshots.mjs";
+import {
+  buildSummaryLine,
+  classifyShots,
+  parseCompareArgs,
+  resolveExitCode
+} from "./compare-screenshots.mjs";
 
 describe("parseCompareArgs", () => {
   it("defaults to regression mode with soft exit semantics", () => {
@@ -86,5 +91,27 @@ describe("classifyShots", () => {
       { scenario: "core-ui", label: "stale-label", status: "orphan" }
     ]);
     expect(notCovered).toEqual(["seeded-workspace"]); // ran ≠ orphan
+  });
+});
+
+describe("report + exit semantics", () => {
+  it("formats the summary line in fixed key order", () => {
+    expect(buildSummaryLine({ changed: 3, new: 1, unchanged: 21, orphan: 0, errors: 0 })).toBe(
+      "changed=3 new=1 unchanged=21 orphan=0 errors=0"
+    );
+  });
+
+  it("exits 0 on diffs by default, non-zero only for errors or explicit gates", () => {
+    const counts = { changed: 5, new: 2, unchanged: 0, orphan: 1, errors: 0 };
+    expect(resolveExitCode(counts, { failOnDiff: false, maxDiffPercent: null }, 0.02)).toBe(0);
+    expect(resolveExitCode(counts, { failOnDiff: true, maxDiffPercent: null }, 0.02)).toBe(1);
+    expect(resolveExitCode(counts, { failOnDiff: false, maxDiffPercent: 1 }, 2)).toBe(1);
+    expect(
+      resolveExitCode(
+        { ...counts, changed: 0, errors: 1 },
+        { failOnDiff: false, maxDiffPercent: null },
+        0
+      )
+    ).toBe(1);
   });
 });
