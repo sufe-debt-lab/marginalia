@@ -3,7 +3,7 @@
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { diffPngBuffers } from "./lib/image-diff.mjs";
+import { composeTriptych, diffPngBuffers, readPngSize } from "./lib/image-diff.mjs";
 import { SCENARIOS } from "./verify-screenshots.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -249,9 +249,94 @@ function renderReportMd(report) {
   return `${lines.join("\n")}\n`;
 }
 
-async function runDesignCompare() {
-  // Implemented in Task 8.
-  throw new Error("design mode not implemented yet");
+export function designSourceKind(input) {
+  if (/^https?:\/\//.test(input)) return "url";
+  if (input.endsWith(".png")) return "png";
+  if (input.endsWith(".html")) return "html";
+  if (input.endsWith(".jsx") || input.endsWith(".tsx")) {
+    throw new Error(
+      "pre-render JSX prototypes to HTML or PNG first (compare does not infer frameworks)"
+    );
+  }
+  throw new Error(`Unsupported design input: ${input} (expected .png, .html or http(s) URL)`);
+}
+
+// --impl accepts "scenario/label" (looked up in the manifest) or a direct .png path
+async function resolveImplPng(impl) {
+  if (impl.endsWith(".png")) {
+    return { buffer: await readFile(path.resolve(repoRoot, impl)), source: impl };
+  }
+  const [scenario, label] = impl.split("/");
+  const manifest = JSON.parse(await readFile(path.join(shotsRoot, "manifest.json"), "utf8"));
+  const shot = (manifest.screenshots ?? []).find(
+    (s) => s.scenario === scenario && s.label === label
+  );
+  if (!shot)
+    throw new Error(`no captured shot matches --impl ${impl}; run verify:screenshots first`);
+  return { buffer: await readFile(path.join(repoRoot, shot.path)), source: shot.path };
+}
+
+async function renderDesignToPng(design, { width, height }) {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ args: ["--force-device-scale-factor=1"] });
+  try {
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+    const kind = designSourceKind(design);
+    const target = kind === "url" ? design : `file://${path.resolve(repoRoot, design)}`;
+    await page.goto(target, { waitUntil: "networkidle" });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    return await page.screenshot({ fullPage: false, scale: "css" });
+  } finally {
+    await browser.close();
+  }
+}
+
+async function runDesignCompare(options) {
+  const impl = await resolveImplPng(options.impl);
+  const implSize = readPngSize(impl.buffer);
+  const kind = designSourceKind(options.design);
+  const designBuffer =
+    kind === "png"
+      ? await readFile(path.resolve(repoRoot, options.design))
+      : await renderDesignToPng(options.design, implSize);
+
+  const designSize = readPngSize(designBuffer);
+  if (designSize.width !== implSize.width || designSize.height !== implSize.height) {
+    throw new Error(
+      `design size ${designSize.width}x${designSize.height} != impl ${implSize.width}x${implSize.height}; ` +
+        "export the design at the implementation's size (window is 1280x800 css px)"
+    );
+  }
+
+  const result = diffPngBuffers(designBuffer, impl.buffer);
+  const slugName = options.impl.replace(/[^a-z0-9_-]+/gi, "-");
+  const designDir = path.join(outRoot, "design");
+  await mkdir(designDir, { recursive: true });
+  const triptychFile = path.join(designDir, `${slugName}.triptych.png`);
+  await writeFile(triptychFile, composeTriptych([designBuffer, impl.buffer, result.diffPngBuffer]));
+
+  const report = {
+    createdAt: new Date().toISOString(),
+    mode: "design",
+    design: { input: options.design, kind, width: designSize.width, height: designSize.height },
+    impl: {
+      input: options.impl,
+      source: impl.source,
+      width: implSize.width,
+      height: implSize.height
+    },
+    diffRatio: result.diffRatio,
+    diffPercent: result.diffRatio * 100,
+    triptych: path.relative(repoRoot, triptychFile)
+  };
+  await writeFile(
+    path.join(designDir, `${slugName}.report.json`),
+    `${JSON.stringify(report, null, 2)}\n`
+  );
+  // Trend signal, NOT a gate (spec): the judge decides via the triptych by layout/spacing/color tokens.
+  console.log(`design-diff: ${report.diffPercent.toFixed(3)}% (trend signal, not a gate)`);
+  console.log(`triptych: ${report.triptych}`);
+  return 0;
 }
 
 async function main() {

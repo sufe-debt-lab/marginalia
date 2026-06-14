@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSummaryLine,
   classifyShots,
+  designSourceKind,
   parseCompareArgs,
   resolveExitCode
 } from "./compare-screenshots.mjs";
@@ -113,5 +114,16 @@ describe("report + exit semantics", () => {
         0
       )
     ).toBe(1);
+  });
+});
+
+describe("designSourceKind", () => {
+  it("recognizes png, html and url design inputs", () => {
+    expect(designSourceKind("docs/mock.png")).toBe("png");
+    expect(designSourceKind("docs/proto.html")).toBe("html");
+    expect(designSourceKind("http://127.0.0.1:5173/proto")).toBe("url");
+    expect(designSourceKind("https://example.test/proto")).toBe("url");
+    expect(() => designSourceKind("docs/proto.jsx")).toThrow(/pre-render JSX/);
+    expect(() => designSourceKind("docs/spec.md")).toThrow(/Unsupported design input/);
   });
 });
