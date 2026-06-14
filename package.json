@@ -16,6 +16,7 @@
     "verify:screenshots": "pnpm --filter @marginalia/desktop verify:screenshots",
     "verify:screenshots:live": "pnpm --filter @marginalia/desktop verify:screenshots:live",
     "verify:screenshots:shot": "pnpm --filter @marginalia/desktop verify:screenshots:shot",
+    "verify:visual": "pnpm --filter @marginalia/desktop verify:visual",
     "lint": "eslint apps packages",
     "format": "prettier --write \"{apps,packages}/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"{apps,packages}/**/*.{ts,tsx,css,json}\""

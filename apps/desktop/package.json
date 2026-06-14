@@ -16,7 +16,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "verify:screenshots": "node scripts/verify-screenshots.mjs",
     "verify:screenshots:live": "node scripts/verify-screenshots.mjs --scenario minimax-live",
-    "verify:screenshots:shot": "node scripts/verify-screenshots.mjs --shot"
+    "verify:screenshots:shot": "node scripts/verify-screenshots.mjs --shot",
+    "compare:screenshots": "node scripts/compare-screenshots.mjs",
+    "compare:design": "node scripts/compare-screenshots.mjs --design",
+    "verify:visual": "node scripts/verify-screenshots.mjs && node scripts/compare-screenshots.mjs"
   },
   "dependencies": {
     "@fontsource-variable/source-serif-4": "^5.2.9",

@@ -325,11 +325,19 @@ async function startHarness() {
   }
 }
 
-const STABLE_RETRY_LIMIT = 5;
-const STABLE_RETRY_DELAY_MS = 150;
+const STABLE_RETRY_LIMIT = 10;
+const STABLE_RETRY_DELAY_MS = 200;
 
 async function captureStablePng(page) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  // Flush any pending ResizeObserver callbacks and layout effects (e.g. Sonner's
+  // --initial-height CSS variable updates) before the first reference frame.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      })
+  );
   let previous = await page.screenshot({ fullPage: false, scale: "css" });
   let last = previous;
   for (let attempt = 0; attempt < STABLE_RETRY_LIMIT; attempt += 1) {
@@ -556,6 +564,14 @@ async function scenarioCoreUi(ctx) {
     .getByText(/Provider added|服务商已添加/i)
     .first()
     .waitFor({ timeout: 5000 });
+  // Wait for the toast's mount animation to settle (Sonner updates JS-driven CSS
+  // variables like --initial-height asynchronously; a brief pause lets them land).
+  await ctx.page.waitForFunction(
+    () => !!document.querySelector("[data-sonner-toast][data-mounted='true']"),
+    null,
+    { timeout: 3000 }
+  );
+  await ctx.page.waitForTimeout(100);
   await capture(ctx, "core-ui", "provider-toast");
   await ctx.page
     .getByText(/Provider added|服务商已添加/i)
