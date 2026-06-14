@@ -432,12 +432,34 @@ async function reloadApp(page) {
   await waitForMain(page);
 }
 
+// A fixed file set for the seeded workspace so file-listing screenshots
+// (attach picker, @-mentions, document panel) are deterministic across runs and
+// independent of the real repo contents.
+async function writeSeedWorkspace() {
+  const root = path.join(runRoot, "seed-workspace");
+  const files = {
+    "package.json": '{\n  "name": "demo-workspace",\n  "version": "1.0.0",\n  "private": true\n}\n',
+    "README.md": "# Demo Workspace\n\nA fixed fixture workspace for screenshot determinism.\n",
+    "tsconfig.json": '{\n  "compilerOptions": {\n    "strict": true\n  }\n}\n',
+    "src/index.ts": 'export function main() {\n  return "demo";\n}\n',
+    "src/utils.ts": "export const noop = () => {};\n",
+    "docs/guide.md": "# Guide\n\nUsage notes for the demo workspace.\n"
+  };
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = path.join(root, rel);
+    await mkdir(path.dirname(abs), { recursive: true });
+    await writeFile(abs, content);
+  }
+  return root;
+}
+
 async function ensureSeededWorkspace(ctx) {
   if (ctx.seed) return ctx.seed;
 
+  const seedRoot = await writeSeedWorkspace();
   const workspace = await apiJson(ctx.apiBase, "/workspaces", {
     method: "POST",
-    body: JSON.stringify({ name: "screenshot-fixture", rootDir: repoRoot })
+    body: JSON.stringify({ name: "screenshot-fixture", rootDir: seedRoot })
   });
   await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/open`, { method: "PATCH" });
 
