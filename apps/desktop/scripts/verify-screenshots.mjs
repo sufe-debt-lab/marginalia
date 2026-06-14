@@ -5,8 +5,6 @@ import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { _electron as electron } from "playwright";
-
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "../..");
 const outRoot = path.join(repoRoot, "output/desktop-screenshots");
@@ -300,6 +298,7 @@ async function startHarness() {
     await mkdir(env.HOME, { recursive: true });
     await mkdir(env.MARGINALIA_USER_DATA_DIR, { recursive: true });
 
+    const { _electron: electron } = await import("playwright");
     app = await electron.launch({
       args: [path.join(desktopRoot, "dist-electron/main.js")],
       cwd: repoRoot,

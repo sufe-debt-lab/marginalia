@@ -108,6 +108,29 @@ export function resolveExitCode(counts, { failOnDiff, maxDiffPercent }, maxChang
   return 0;
 }
 
+async function readCaptureManifest() {
+  const manifestPath = path.join(shotsRoot, "manifest.json");
+  let raw;
+  try {
+    raw = await readFile(manifestPath, "utf8");
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      throw new Error(
+        "no capture manifest found — run `pnpm verify:screenshots` (or `pnpm verify:visual`) first",
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+  const manifest = JSON.parse(raw);
+  if (manifest.status && manifest.status !== "passed") {
+    throw new Error(
+      `capture did not pass (status=${manifest.status}); fix the capture before comparing — see output/desktop-screenshots/summary.md`
+    );
+  }
+  return manifest;
+}
+
 async function readBaselineLabels() {
   const labels = {};
   const scenarioDirs = await readdir(baselineRoot, { withFileTypes: true }).catch(() => []);
@@ -124,7 +147,7 @@ function baselinePath(scenario, label) {
 }
 
 async function runRegression(options) {
-  const manifest = JSON.parse(await readFile(path.join(shotsRoot, "manifest.json"), "utf8"));
+  const manifest = await readCaptureManifest();
   const baselineLabels = await readBaselineLabels();
   const { entries, notCovered } = classifyShots({ manifest, scenarios: SCENARIOS, baselineLabels });
 
@@ -274,7 +297,7 @@ async function resolveImplPng(impl) {
     return { buffer: await readFile(path.resolve(repoRoot, impl)), source: impl };
   }
   const [scenario, label] = impl.split("/");
-  const manifest = JSON.parse(await readFile(path.join(shotsRoot, "manifest.json"), "utf8"));
+  const manifest = await readCaptureManifest();
   const shot = (manifest.screenshots ?? []).find(
     (s) => s.scenario === scenario && s.label === label
   );
