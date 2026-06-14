@@ -564,7 +564,7 @@ async function scenarioCoreUi(ctx) {
     .getByText(/Provider added|服务商已添加/i)
     .first()
     .waitFor({ timeout: 5000 });
-  // Wait for the toast's mount animation to settle (Sonner updates JS-driven CSS
+  // Wait for the toast's mount animation to stabilize (Sonner updates JS-driven CSS
   // variables like --initial-height asynchronously; a brief pause lets them land).
   await ctx.page.waitForFunction(
     () => !!document.querySelector("[data-sonner-toast][data-mounted='true']"),
