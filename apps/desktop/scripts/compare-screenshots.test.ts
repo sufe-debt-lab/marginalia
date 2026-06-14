@@ -6,7 +6,8 @@ import {
   classifyShots,
   designSourceKind,
   parseCompareArgs,
-  resolveExitCode
+  resolveExitCode,
+  slugifyImpl
 } from "./compare-screenshots.mjs";
 
 describe("parseCompareArgs", () => {
@@ -125,5 +126,12 @@ describe("designSourceKind", () => {
     expect(designSourceKind("https://example.test/proto")).toBe("url");
     expect(() => designSourceKind("docs/proto.jsx")).toThrow(/pre-render JSX/);
     expect(() => designSourceKind("docs/spec.md")).toThrow(/Unsupported design input/);
+  });
+});
+
+describe("slugifyImpl", () => {
+  it("strips leading/trailing hyphens from impl selectors", () => {
+    expect(slugifyImpl("/core-ui/first-run")).toBe("core-ui-first-run");
+    expect(slugifyImpl("core-ui/first-run")).toBe("core-ui-first-run");
   });
 });

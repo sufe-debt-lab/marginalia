@@ -249,6 +249,13 @@ function renderReportMd(report) {
   return `${lines.join("\n")}\n`;
 }
 
+export function slugifyImpl(value) {
+  return value
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
 export function designSourceKind(input) {
   if (/^https?:\/\//.test(input)) return "url";
   if (input.endsWith(".png")) return "png";
@@ -276,12 +283,11 @@ async function resolveImplPng(impl) {
   return { buffer: await readFile(path.join(repoRoot, shot.path)), source: shot.path };
 }
 
-async function renderDesignToPng(design, { width, height }) {
+async function renderDesignToPng(design, kind, { width, height }) {
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ args: ["--force-device-scale-factor=1"] });
   try {
     const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
-    const kind = designSourceKind(design);
     const target = kind === "url" ? design : `file://${path.resolve(repoRoot, design)}`;
     await page.goto(target, { waitUntil: "networkidle" });
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -298,7 +304,7 @@ async function runDesignCompare(options) {
   const designBuffer =
     kind === "png"
       ? await readFile(path.resolve(repoRoot, options.design))
-      : await renderDesignToPng(options.design, implSize);
+      : await renderDesignToPng(options.design, kind, implSize);
 
   const designSize = readPngSize(designBuffer);
   if (designSize.width !== implSize.width || designSize.height !== implSize.height) {
@@ -309,7 +315,7 @@ async function runDesignCompare(options) {
   }
 
   const result = diffPngBuffers(designBuffer, impl.buffer);
-  const slugName = options.impl.replace(/[^a-z0-9_-]+/gi, "-");
+  const slugName = slugifyImpl(options.impl);
   const designDir = path.join(outRoot, "design");
   await mkdir(designDir, { recursive: true });
   const triptychFile = path.join(designDir, `${slugName}.triptych.png`);
