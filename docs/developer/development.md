@@ -183,7 +183,19 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 
 **确定性机制：**
 
-截图时冻结渲染端时钟、隐藏输入框 caret、等待 `document.fonts.ready` 后连拍稳定帧再比对，排除动画与字体加载抖动。
+截图时冻结渲染端时钟、隐藏输入框 caret、等待 `document.fonts.ready` 后连拍稳定帧再比对，排除动画与字体加载抖动。`seeded-workspace` 场景使用一个内容固定的 seed 工作区（而非真实仓库目录），让附件选择器 / @-mention / 文档面板等**文件列表类截图**不随仓库文件增减而漂移。
+
+**新增功能的回归流程：**
+
+实现一个新 UI 状态后，要让它纳入此后的自动回归保护：
+
+1. 把该状态加进 `apps/desktop/scripts/verify-screenshots.mjs` 里对应场景的 `expected` 标签与 `run` 步骤（参考同场景已有截图；临时探索可先用 `pnpm verify:screenshots:shot` 拍 adhoc，但 adhoc **不进**基线）。
+2. `pnpm verify:visual` 重新截图并比对——新标签会被标为 `new`（无基线）。
+3. 读 `output/visual-diff/report.md` 确认新截图符合预期，再 bless 为基线：
+   `pnpm --filter @marginalia/desktop compare:screenshots --update-baseline <scenario/label> --reason "<原因>"`，提交新增的基线 PNG。
+4. 此后每次 `pnpm verify:visual` 都会把该截图与基线比对；`changed` 时逐张裁决——有意改动用 `--update-baseline ... --reason` 更新，意外回归则修复，不确定则先排查不要 bless。
+
+改动既有功能时同理：先 `pnpm verify:visual`，对每个 `changed` 截图按上述规则裁决。完整的「实现 → 截图 → 对比设计稿 → 迭代」循环见 `design-loop` skill。
 
 ## 相关文档
 
