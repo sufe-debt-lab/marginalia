@@ -115,7 +115,7 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 
 1. **TDD**：先写或调整测试，看它失败，再实现到通过。
 2. 跑改动所在包的 `typecheck` + 相关 `test`，确认通过。
-3. **UI 改动**：用 **Electron 截图**验证（`pnpm verify:screenshots`）——在浏览器打开 Vite 页面不算数。场景和输出见 `apps/desktop/scripts/README.md`。
+3. **UI 改动**：用 **Electron 截图**验证（`pnpm verify:visual`，capture + 回归比对合一）——在浏览器打开 Vite 页面不算数。每个 `changed` 截图都必须显式裁决：有意更改 → `--update-baseline ... --reason "<原因>"`；意外变更 → 修复后重跑。场景和输出见 `apps/desktop/scripts/README.md`。
 
 ## 测试
 
@@ -158,6 +158,32 @@ pnpm verify:screenshots:shot
 ```bash
 MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 ```
+
+### 视觉回归与设计稿对比
+
+**常用命令：**
+
+- `pnpm verify:visual` — 截图后立即与基线比对（等价于先跑 `verify:screenshots` 再跑 `compare:screenshots`），UI 改动的标准门控。
+- `pnpm --filter @marginalia/desktop compare:screenshots` — 只做基线比对，不重新截图，读上次 `output/desktop-screenshots/` 的产物。
+- `pnpm --filter @marginalia/desktop compare:design <设计稿> --impl <scenario/label 或 png 路径>` — 生成设计稿三联图（设计稿 | 实现 | diff）供肉眼裁决。
+- `--update-baseline <selector> --reason "<原因>"` — 显式将截图 bless 为新基线（**必须附原因**）。
+- `--fail-on-diff` / `--max-diff-percent <n>` — CI 门控开关；不传时默认软报告，仅输出 diff 百分比供人工判断。
+
+**基线纪律：**
+
+基线存放于 `apps/desktop/screenshots-baseline/`，只能通过 `--update-baseline` 显式更新，且必须附 `--reason`。`minimax-live` 与 adhoc 截图不进基线；遇到 `changed` 但不确定是否有意为之时，**不要 bless**，先排查原因。
+
+**设计稿输入类型：**
+
+支持 PNG（须 1280×800）、独立 HTML 文件、`http(s)://` URL；JSX 须先预渲染为 HTML 再传入。diff 百分比是趋势信号而非硬性门控，最终由人或 agent 读三联图按布局、间距、颜色 token 裁决。
+
+**输出位置：**
+
+比对结果写到 `output/visual-diff/report.json`、`output/visual-diff/report.md`，三联图位于 `output/visual-diff/design/` 目录下；所有输出均不入库（`.gitignore` 已排除）。
+
+**确定性机制：**
+
+截图时冻结渲染端时钟、隐藏输入框 caret、等待 `document.fonts.ready` 后连拍稳定帧再比对，排除动画与字体加载抖动。
 
 ## 相关文档
 

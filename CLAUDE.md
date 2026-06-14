@@ -49,6 +49,9 @@ Before every commit:
    captured shots against the intended design before claiming it works. Opening the Vite page in a
    browser does not count. When a new UI state isn't reachable by the default screenshot fixtures,
    extend the relevant scenario in `apps/desktop/scripts/verify-screenshots.mjs` so it is covered.
+   Run the visual gate via `pnpm verify:visual`; every `changed` shot in the regression
+   report must be explicitly judged (bless intentional changes with
+   `--update-baseline … --reason`, fix unintended ones) before committing.
 
 ## Native module / runtime notes
 
