@@ -116,6 +116,12 @@ describe("report + exit semantics", () => {
       )
     ).toBe(1);
   });
+
+  it("fails on new (un-blessed) shots under --fail-on-diff", () => {
+    const onlyNew = { changed: 0, new: 3, unchanged: 0, orphan: 0, errors: 0 };
+    expect(resolveExitCode(onlyNew, { failOnDiff: false, maxDiffPercent: null }, 0)).toBe(0);
+    expect(resolveExitCode(onlyNew, { failOnDiff: true, maxDiffPercent: null }, 0)).toBe(1);
+  });
 });
 
 describe("designSourceKind", () => {

@@ -103,7 +103,7 @@ export function buildSummaryLine(counts) {
 // maxChangedRatioPercent: largest diff ratio among changed shots, as a percent (0–100)
 export function resolveExitCode(counts, { failOnDiff, maxDiffPercent }, maxChangedRatioPercent) {
   if (counts.errors > 0) return 1;
-  if (failOnDiff && (counts.changed > 0 || counts.orphan > 0)) return 1;
+  if (failOnDiff && (counts.changed > 0 || counts.new > 0 || counts.orphan > 0)) return 1;
   if (maxDiffPercent !== null && maxChangedRatioPercent > maxDiffPercent) return 1;
   return 0;
 }
