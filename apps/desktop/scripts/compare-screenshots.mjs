@@ -195,7 +195,7 @@ async function applyBaselineUpdates(options, manifest, shots) {
     if (!SCENARIOS[scenario] || SCENARIOS[scenario].live) {
       throw new Error(`cannot bless baseline for unknown/live scenario: ${selector}`);
     }
-    const candidates = manifest.screenshots.filter(
+    const candidates = (manifest.screenshots ?? []).filter(
       (shot) => shot.scenario === scenario && (!label || shot.label === label)
     );
     if (candidates.length === 0) throw new Error(`no captured shots match selector: ${selector}`);
@@ -217,7 +217,8 @@ async function applyBaselineUpdates(options, manifest, shots) {
 function renderReportMd(report) {
   const order = { error: 0, changed: 1, new: 2, orphan: 3, unchanged: 4 };
   const sorted = [...report.shots].sort(
-    (a, b) => order[a.status] - order[b.status] || a.scenario.localeCompare(b.scenario)
+    (a, b) =>
+      (order[a.status] ?? 99) - (order[b.status] ?? 99) || a.scenario.localeCompare(b.scenario)
   );
   const lines = [
     "# Visual diff report",
