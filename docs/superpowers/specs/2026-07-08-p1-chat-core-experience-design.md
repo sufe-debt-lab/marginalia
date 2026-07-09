@@ -94,7 +94,7 @@ Marginalia 的目标用户场景是**文本工作**（文章解读、基于资�
 4. **diff 生成复用 pi**：不自写 diff。预览用 pi 导出的
    `generateUnifiedPatch(path, oldContent, newContent)`；`edit` 工具入参只有
    `oldText/newText`，pi-server 需**读盘 + 用 pi 的 edit 应用函数模拟**得到完整新文，
-   再生成 diff——保证预览与 pi 实际落盘结果一致（含 fuzzy 匹配行为）。
+   再生成 diff——保证预览与 pi 实际落盘结果一致（含 fuzzy 匹配行为）。实测 `generateUnifiedPatch` / `applyEditsToNormalizedContent` 未从 pi 包根导出（exports map 拒绝 deep import），实现改用 pi 同款 `diff` 包生成 patch；edit 预览精确匹配优先，失败降级为 oldText→newText 近似 diff 并在卡片上标注「近似预览」。
 5. **持久化与重开 merge**：`approvals` 表（id, run_id, tool_call_id, kind,
    payload(diff/命令), decision, reason, decided_at）。重开会话时，消息接口在 pi session
    文件消息之外附带审批元数据，桌面端按 `toolCallId` merge 到对应工具卡，渲染最终结果态
