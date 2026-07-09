@@ -12,6 +12,7 @@ import { emptyUsage } from "@marginalia/chat-core";
 import type { ChatEntry } from "@marginalia/chat-core";
 import type { AgentClient } from "./agent/agent-client.js";
 import { AgentSessionRegistry } from "./agent/agent-session-registry.js";
+import { ApprovalGateway } from "./agent/approval-gateway.js";
 import { PiCodingAgentClient } from "./agent/pi-coding-agent-client.js";
 import { piProviderId } from "./agent/provider-id.js";
 import { readMessagesFromSessionFile } from "./agent/session-messages.js";
@@ -76,18 +77,23 @@ export function createApp(options: AppOptions = {}) {
     createSession: (config) =>
       createAgentSession(config as Parameters<typeof createAgentSession>[0])
   });
+  const approvalGateway = new ApprovalGateway();
   const agentClient =
     options.agentClient ??
-    new PiCodingAgentClient(registry, (provider, modelId) => {
-      try {
-        // getModel's typed overloads only accept its literal provider/model unions;
-        // here provider/modelId are dynamic strings from the registry.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return getModel(provider as any, modelId as any) ?? null;
-      } catch {
-        return null;
-      }
-    });
+    new PiCodingAgentClient(
+      registry,
+      (provider, modelId) => {
+        try {
+          // getModel's typed overloads only accept its literal provider/model unions;
+          // here provider/modelId are dynamic strings from the registry.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return getModel(provider as any, modelId as any) ?? null;
+        } catch {
+          return null;
+        }
+      },
+      approvalGateway
+    );
   const availabilityChecker =
     options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
 

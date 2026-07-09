@@ -1,10 +1,17 @@
+import { homedir } from "node:os";
+import path from "node:path";
+import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type {
   AgentClient,
+  AgentRunEvent,
   AgentRunInput,
   AgentRunResult,
-  AgentSessionEvent
+  ApprovalDecision
 } from "./agent-client.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
+import type { ApprovalGateway } from "./approval-gateway.js";
+import { createApprovalExtension } from "./approval-extension.js";
 
 /** Resolves a pi `Model` for the given provider/model id; returns null when unavailable. */
 export type ResolveModelFn = (piProviderId: string, modelId: string) => unknown | null;
@@ -15,15 +22,16 @@ const READONLY_TOOLS = ["read", "grep", "find", "ls"];
 export class PiCodingAgentClient implements AgentClient {
   constructor(
     private readonly registry: AgentSessionRegistry,
-    private readonly resolveModel: ResolveModelFn
+    private readonly resolveModel: ResolveModelFn,
+    private readonly gateway: ApprovalGateway
   ) {}
 
-  resolveApproval(): boolean {
-    return false;
+  resolveApproval(_sessionId: string, approvalId: string, decision: ApprovalDecision): boolean {
+    return this.gateway.resolve(approvalId, decision);
   }
 
-  cancelPending(): number {
-    return 0;
+  cancelPending(sessionId: string): number {
+    return this.gateway.cancelPending(sessionId);
   }
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
@@ -32,8 +40,28 @@ export class PiCodingAgentClient implements AgentClient {
       throw new Error(`unknown model ${input.piProviderId}/${input.modelId}`);
     }
 
+    // Approval policy is per-run: cached sessions read the current value.
+    this.gateway.setPolicy(input.sessionId, {
+      permission: input.permission ?? "full",
+      workspaceRoot: input.workspaceRoot
+    });
+
+    const loader = new DefaultResourceLoader({
+      cwd: input.workspaceRoot,
+      agentDir: path.join(homedir(), ".marginalia", "pi-agent"),
+      noExtensions: true, // discovery disabled; inline extensionFactories still run (verified in resource-loader-factories.test.ts)
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      extensionFactories: [
+        createApprovalExtension(this.gateway, input.sessionId) as unknown as ExtensionFactory
+      ]
+    });
+    await loader.reload();
+
     // Map composer permission/reasoning onto createAgentSession options.
-    const config: Record<string, unknown> = { model };
+    const config: Record<string, unknown> = { model, resourceLoader: loader };
     if (input.permission === "readonly") config.tools = READONLY_TOOLS;
     if (input.reasoning) config.thinkingLevel = input.reasoning;
 
@@ -57,19 +85,25 @@ export class PiCodingAgentClient implements AgentClient {
     };
     input.abortSignal?.addEventListener("abort", abort, { once: true });
 
-    const queue: AgentSessionEvent[] = [];
-    const waiters: Array<(value: IteratorResult<AgentSessionEvent>) => void> = [];
+    const queue: AgentRunEvent[] = [];
+    const waiters: Array<(value: IteratorResult<AgentRunEvent>) => void> = [];
     let finished = false;
     let error: unknown = null;
 
-    const unsubscribe = handle.session.subscribe((event) => {
+    // Shared sink: both raw pi session events and gateway approval events feed
+    // the same ordered stream, so the consumer sees approvals interleaved with
+    // the tool calls they gate.
+    const pushEvent = (event: AgentRunEvent) => {
       const waiter = waiters.shift();
       if (waiter) {
         waiter({ value: event, done: false });
         return;
       }
       queue.push(event);
-    });
+    };
+
+    const offApproval = this.gateway.onEvent(input.sessionId, pushEvent);
+    const unsubscribe = handle.session.subscribe(pushEvent);
 
     handle.session
       .prompt(input.message, input.promptOptions)
@@ -79,17 +113,18 @@ export class PiCodingAgentClient implements AgentClient {
       .finally(() => {
         finished = true;
         input.abortSignal?.removeEventListener("abort", abort);
+        offApproval();
         unsubscribe?.();
         for (const waiter of waiters.splice(0)) {
-          waiter({ value: undefined as unknown as AgentSessionEvent, done: true });
+          waiter({ value: undefined as unknown as AgentRunEvent, done: true });
         }
       });
 
-    const events: AsyncIterable<AgentSessionEvent> = {
+    const events: AsyncIterable<AgentRunEvent> = {
       [Symbol.asyncIterator]() {
         return {
           next() {
-            return new Promise<IteratorResult<AgentSessionEvent>>((resolve, reject) => {
+            return new Promise<IteratorResult<AgentRunEvent>>((resolve, reject) => {
               if (queue.length > 0) {
                 resolve({ value: queue.shift()!, done: false });
                 return;
@@ -99,7 +134,7 @@ export class PiCodingAgentClient implements AgentClient {
                 return;
               }
               if (finished) {
-                resolve({ value: undefined as unknown as AgentSessionEvent, done: true });
+                resolve({ value: undefined as unknown as AgentRunEvent, done: true });
                 return;
               }
               waiters.push(resolve);
@@ -112,7 +147,10 @@ export class PiCodingAgentClient implements AgentClient {
     return {
       sessionFile: handle.sessionFile,
       events,
-      dispose: () => unsubscribe?.()
+      dispose: () => {
+        offApproval();
+        unsubscribe?.();
+      }
     };
   }
 }

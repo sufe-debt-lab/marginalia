@@ -1,7 +1,12 @@
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { PiCodingAgentClient } from "../src/agent/pi-coding-agent-client.js";
 import type { AgentSessionEvent } from "../src/agent/agent-client.js";
 import type { AgentSessionRegistry, SessionHandle } from "../src/agent/agent-session-registry.js";
+import { AgentSessionRegistry as RealAgentSessionRegistry } from "../src/agent/agent-session-registry.js";
+import { ApprovalGateway } from "../src/agent/approval-gateway.js";
 
 function fakeSession(events: AgentSessionEvent[]) {
   const listeners: Array<(e: AgentSessionEvent) => void> = [];
@@ -46,7 +51,11 @@ describe("PiCodingAgentClient", () => {
       acquire: vi.fn(async () => handle)
     } as unknown as AgentSessionRegistry;
 
-    const client = new PiCodingAgentClient(registry, () => ({ id: "MiniMax-M2.7" }));
+    const client = new PiCodingAgentClient(
+      registry,
+      () => ({ id: "MiniMax-M2.7" }),
+      new ApprovalGateway()
+    );
     const result = await client.run({
       sessionId: "s1",
       workspaceRoot: "/tmp",
@@ -74,7 +83,11 @@ describe("PiCodingAgentClient", () => {
     const acquire = vi.fn(async () => handle);
     const registry = { acquire } as unknown as AgentSessionRegistry;
 
-    const client = new PiCodingAgentClient(registry, () => ({ id: "MiniMax-M2.7" }));
+    const client = new PiCodingAgentClient(
+      registry,
+      () => ({ id: "MiniMax-M2.7" }),
+      new ApprovalGateway()
+    );
     const result = await client.run({
       sessionId: "s1",
       workspaceRoot: "/tmp",
@@ -104,7 +117,7 @@ describe("PiCodingAgentClient", () => {
     };
     const acquire = vi.fn(async () => handle);
     const registry = { acquire } as unknown as AgentSessionRegistry;
-    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }));
+    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
     await client.run({
       sessionId: "s1",
       workspaceRoot: "/tmp",
@@ -119,7 +132,7 @@ describe("PiCodingAgentClient", () => {
 
   it("throws when the resolver cannot find the model", async () => {
     const registry = { acquire: vi.fn() } as unknown as AgentSessionRegistry;
-    const client = new PiCodingAgentClient(registry, () => null);
+    const client = new PiCodingAgentClient(registry, () => null, new ApprovalGateway());
     await expect(
       client.run({
         sessionId: "s1",
@@ -129,5 +142,77 @@ describe("PiCodingAgentClient", () => {
         message: "x"
       })
     ).rejects.toThrow(/unknown\/nope/);
+  });
+});
+
+function fakeSessionFactory() {
+  let subscriber: ((event: unknown) => void) | null = null;
+  let finishPrompt: (() => void) | null = null;
+  const session = {
+    sessionFile: "/tmp/fake-session.jsonl",
+    subscribe(fn: (event: unknown) => void) {
+      subscriber = fn;
+      return () => {};
+    },
+    prompt() {
+      return new Promise<void>((resolve) => {
+        finishPrompt = resolve;
+      });
+    },
+    dispose() {}
+  };
+  return {
+    session,
+    emit: (event: unknown) => subscriber?.(event),
+    finish: () => finishPrompt?.()
+  };
+}
+
+describe("PiCodingAgentClient approval merge", () => {
+  it("merges gateway approval events into the run event stream and resolves via resolveApproval", async () => {
+    // Real DefaultResourceLoader.reload() runs inside run(), so workspaceRoot must be a real directory.
+    const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "pi-client-approval-"));
+    const fake = fakeSessionFactory();
+    const registry = new RealAgentSessionRegistry({
+      authStorage: {} as never,
+      modelRegistry: {} as never,
+      createSession: async () => ({ session: fake.session as never }),
+      sessionManagerFor: () => ({}) as never
+    });
+    const gateway = new ApprovalGateway({ fileExists: () => true });
+    const client = new PiCodingAgentClient(registry, () => ({}) as never, gateway);
+
+    const result = await client.run({
+      sessionId: "s1",
+      workspaceRoot,
+      piProviderId: "openai",
+      modelId: "gpt",
+      message: "hi",
+      permission: "ask"
+    });
+    // Policy was registered for the session by run().
+    expect(gateway.policyFor("s1")).toEqual({ permission: "ask", workspaceRoot });
+
+    const iterator = result.events[Symbol.asyncIterator]();
+    const decisionPromise = gateway.request("s1", {
+      toolCallId: "t1",
+      toolName: "bash",
+      payload: { kind: "command", command: "python x.py", cwd: "/ws" }
+    });
+    expect((await iterator.next()).value).toMatchObject({ type: "approval_requested" });
+
+    const approvalId = gateway.pendingIds("s1")[0]!;
+    expect(client.resolveApproval("s1", approvalId, { approved: true })).toBe(true);
+    await expect(decisionPromise).resolves.toEqual({ approved: true });
+    expect((await iterator.next()).value).toMatchObject({
+      type: "approval_resolved",
+      approved: true
+    });
+
+    fake.emit({ type: "message_end", message: {} });
+    expect((await iterator.next()).value).toMatchObject({ type: "message_end" });
+    fake.finish();
+    await new Promise((r) => setTimeout(r, 0));
+    expect((await iterator.next()).done).toBe(true);
   });
 });
