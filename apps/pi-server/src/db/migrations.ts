@@ -69,6 +69,21 @@ export function migrate(db: Database.Database) {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
       FOREIGN KEY (provider_id) REFERENCES providers(id)
     );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      tool_call_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      reason TEXT,
+      created_at INTEGER NOT NULL,
+      decided_at INTEGER,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
   `);
   const sessionColumns = db
     .prepare("pragma table_info(sessions)")

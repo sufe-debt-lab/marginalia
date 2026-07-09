@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import type { PiMessageCore } from "@marginalia/chat-core";
+import type { ApprovalPayload } from "../agent/agent-client.js";
 
 let clock = Date.now();
 const now = () => ++clock;
@@ -411,4 +412,99 @@ function hasColumn(db: Database.Database, table: string, column: string) {
     .prepare(`pragma table_info(${table})`)
     .all()
     .some((row: any) => row.name === column);
+}
+
+export type ApprovalRow = {
+  id: string;
+  sessionId: string;
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  kind: "command" | "file_edit";
+  payload: ApprovalPayload;
+  status: "pending" | "approved" | "denied" | "expired";
+  reason: string | null;
+  createdAt: number;
+  decidedAt: number | null;
+};
+
+function mapApproval(row: Record<string, unknown>): ApprovalRow {
+  return {
+    id: row.id as string,
+    sessionId: row.session_id as string,
+    runId: row.run_id as string,
+    toolCallId: row.tool_call_id as string,
+    toolName: row.tool_name as string,
+    kind: row.kind as ApprovalRow["kind"],
+    payload: JSON.parse(row.payload as string) as ApprovalPayload,
+    status: row.status as ApprovalRow["status"],
+    reason: (row.reason as string | null) ?? null,
+    createdAt: row.created_at as number,
+    decidedAt: (row.decided_at as number | null) ?? null
+  };
+}
+
+export function createApproval(
+  db: Database.Database,
+  input: {
+    id: string;
+    sessionId: string;
+    runId: string;
+    toolCallId: string;
+    toolName: string;
+    kind: ApprovalRow["kind"];
+    payload: ApprovalPayload;
+  }
+): ApprovalRow {
+  const now = Date.now();
+  db.prepare(
+    `insert into approvals (id, session_id, run_id, tool_call_id, tool_name, kind, payload, status, created_at)
+     values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+  ).run(
+    input.id,
+    input.sessionId,
+    input.runId,
+    input.toolCallId,
+    input.toolName,
+    input.kind,
+    JSON.stringify(input.payload),
+    now
+  );
+  return getApproval(db, input.id)!;
+}
+
+export function getApproval(db: Database.Database, id: string): ApprovalRow | null {
+  const row = db.prepare("select * from approvals where id = ?").get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapApproval(row) : null;
+}
+
+export function decideApproval(
+  db: Database.Database,
+  id: string,
+  status: "approved" | "denied" | "expired",
+  reason?: string
+): ApprovalRow | null {
+  db.prepare(
+    "update approvals set status = ?, reason = coalesce(?, reason), decided_at = ? where id = ?"
+  ).run(status, reason ?? null, Date.now(), id);
+  return getApproval(db, id);
+}
+
+export function listApprovals(db: Database.Database, sessionId: string): ApprovalRow[] {
+  return (
+    db
+      .prepare("select * from approvals where session_id = ? order by created_at asc")
+      .all(sessionId) as Record<string, unknown>[]
+  ).map(mapApproval);
+}
+
+export function expirePendingApprovals(db: Database.Database, runId: string): number {
+  const result = db
+    .prepare(
+      "update approvals set status = 'expired', decided_at = ? where run_id = ? and status = 'pending'"
+    )
+    .run(Date.now(), runId);
+  return result.changes;
 }
