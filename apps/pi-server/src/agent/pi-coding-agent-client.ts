@@ -18,6 +18,14 @@ export class PiCodingAgentClient implements AgentClient {
     private readonly resolveModel: ResolveModelFn
   ) {}
 
+  resolveApproval(): boolean {
+    return false;
+  }
+
+  cancelPending(): number {
+    return 0;
+  }
+
   async run(input: AgentRunInput): Promise<AgentRunResult> {
     const model = this.resolveModel(input.piProviderId, input.modelId);
     if (!model) {

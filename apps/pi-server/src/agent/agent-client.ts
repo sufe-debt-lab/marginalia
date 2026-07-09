@@ -52,11 +52,55 @@ export type AgentRunResult = {
   /** Final session file path. Persist this in DB so future runs reuse it. */
   sessionFile: string;
   /** Stream of pi-native events. Consumer is responsible for full drain. */
-  events: AsyncIterable<AgentSessionEvent>;
+  events: AsyncIterable<AgentRunEvent>;
   /** Disposes the underlying AgentSession when caller is done. */
   dispose(): void;
 };
 
 export interface AgentClient {
   run(input: AgentRunInput): Promise<AgentRunResult>;
+  /** Resolve one pending approval; false when the id is unknown/already resolved. */
+  resolveApproval(sessionId: string, approvalId: string, decision: ApprovalDecision): boolean;
+  /** Deny every pending approval for the session (disconnect/exit safety). Returns count. */
+  cancelPending(sessionId: string): number;
 }
+
+/** Decision sent back from the UI for one pending approval. */
+export type ApprovalDecision = { approved: boolean; reason?: string; alwaysAllowPrefix?: boolean };
+
+export type ApprovalPayload =
+  | { kind: "command"; command: string; cwd: string }
+  | {
+      kind: "file_edit";
+      path: string;
+      mode: "edit" | "write";
+      patch: string;
+      additions: number;
+      deletions: number;
+      exact: boolean;
+      error?: string;
+    };
+
+export type ApprovalRequestedEvent = {
+  type: "approval_requested";
+  approvalId: string;
+  sessionId: string;
+  toolCallId: string;
+  toolName: string;
+  payload: ApprovalPayload;
+};
+
+export type ApprovalResolvedEvent = {
+  type: "approval_resolved";
+  approvalId: string;
+  sessionId: string;
+  toolCallId: string;
+  approved: boolean;
+  reason?: string;
+  expired?: boolean;
+};
+
+export type ApprovalEvent = ApprovalRequestedEvent | ApprovalResolvedEvent;
+
+/** Marginalia run-envelope event stream: raw pi events plus approval envelope events. */
+export type AgentRunEvent = AgentSessionEvent | ApprovalEvent;
