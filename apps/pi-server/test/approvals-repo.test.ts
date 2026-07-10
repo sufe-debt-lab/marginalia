@@ -73,4 +73,31 @@ describe("approvals repository", () => {
     const byId = Object.fromEntries(listApprovals(db, session.id).map((r) => [r.id, r.status]));
     expect(byId).toEqual({ a: "approved", b: "expired" });
   });
+
+  it("returns approvals in insertion order with strictly increasing timestamps", () => {
+    const { db, session, run } = seeded();
+    createApproval(db, {
+      id: "a",
+      sessionId: session.id,
+      runId: run.id,
+      toolCallId: "t1",
+      toolName: "bash",
+      kind: "command",
+      payload: { kind: "command", command: "x", cwd: "/" }
+    });
+    createApproval(db, {
+      id: "b",
+      sessionId: session.id,
+      runId: run.id,
+      toolCallId: "t2",
+      toolName: "bash",
+      kind: "command",
+      payload: { kind: "command", command: "y", cwd: "/" }
+    });
+    const rows = listApprovals(db, session.id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.id).toBe("a");
+    expect(rows[1]?.id).toBe("b");
+    expect(rows[1]!.createdAt).toBeGreaterThan(rows[0]!.createdAt);
+  });
 });

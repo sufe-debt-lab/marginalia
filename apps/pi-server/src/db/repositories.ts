@@ -456,7 +456,7 @@ export function createApproval(
     payload: ApprovalPayload;
   }
 ): ApprovalRow {
-  const now = Date.now();
+  const timestamp = now();
   db.prepare(
     `insert into approvals (id, session_id, run_id, tool_call_id, tool_name, kind, payload, status, created_at)
      values (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
@@ -468,7 +468,7 @@ export function createApproval(
     input.toolName,
     input.kind,
     JSON.stringify(input.payload),
-    now
+    timestamp
   );
   return getApproval(db, input.id)!;
 }
@@ -488,7 +488,7 @@ export function decideApproval(
 ): ApprovalRow | null {
   db.prepare(
     "update approvals set status = ?, reason = coalesce(?, reason), decided_at = ? where id = ?"
-  ).run(status, reason ?? null, Date.now(), id);
+  ).run(status, reason ?? null, now(), id);
   return getApproval(db, id);
 }
 
@@ -505,6 +505,6 @@ export function expirePendingApprovals(db: Database.Database, runId: string): nu
     .prepare(
       "update approvals set status = 'expired', decided_at = ? where run_id = ? and status = 'pending'"
     )
-    .run(Date.now(), runId);
+    .run(now(), runId);
   return result.changes;
 }
