@@ -1,11 +1,11 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { stringifyContent } from "@marginalia/chat-core";
 import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
 import type { Approval } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
-import { markdownComponents } from "@/lib/markdown.js";
+import { createMarkdownComponents } from "@/lib/markdown.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { ToolCard, type ApprovalDecision } from "./ToolCard.js";
 
@@ -28,6 +28,9 @@ function MessageItemImpl({
 }) {
   const { t } = useTranslation();
   const message = entry.message;
+  // Stateless (node-derived) heading ids, so memoizing on entry.id is safe —
+  // no render-time counter to drift across re-renders.
+  const markdownComponents = useMemo(() => createMarkdownComponents(entry.id), [entry.id]);
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -49,13 +52,11 @@ function MessageItemImpl({
         {message.content.map((part, index) => {
           if (part.type === "text") {
             return (
-              <ReactMarkdown
-                key={`${index}:text`}
-                remarkPlugins={[remarkGfm]}
-                components={markdownComponents}
-              >
-                {part.text}
-              </ReactMarkdown>
+              <div key={`${index}:text`} className="max-w-[72ch] font-serif leading-7">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {part.text}
+                </ReactMarkdown>
+              </div>
             );
           }
           if (part.type === "thinking") {
