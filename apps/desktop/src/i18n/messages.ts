@@ -164,6 +164,9 @@ export const en = {
   },
   status: {
     startingServer: "Starting pi-server..."
+  },
+  approval: {
+    expandDiff: "Show full diff"
   }
 } as const;
 
@@ -335,6 +338,9 @@ export const zh = {
   },
   status: {
     startingServer: "正在启动 pi-server..."
+  },
+  approval: {
+    expandDiff: "展开完整 diff"
   }
 } satisfies MessageShape<typeof en>;
 
