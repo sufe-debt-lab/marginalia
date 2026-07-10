@@ -6,6 +6,7 @@ import { resolveComposerSelection } from "@/lib/provider-selection.js";
 import { useStreamingChat } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { useAppStore } from "@/store/app-store.js";
+import { mergeApprovals } from "./approval-merge.js";
 import { Composer } from "./Composer/Composer.js";
 import { extractMentions } from "./Composer/mentions.js";
 import { MessageStream } from "./MessageStream.js";
@@ -55,7 +56,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       .listApprovals(sessionId)
       .then((list) => {
         if (cancelled) return;
-        setApprovals(new Map(list.map((a) => [a.toolCallId, a])));
+        // Merge instead of replace: an approval that streamed in while this
+        // fetch was in flight is newer than the snapshot and must survive.
+        setApprovals((prev) => mergeApprovals(list, prev));
       })
       .catch(() => {});
     return () => {
