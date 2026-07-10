@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error -- plain ESM script without type declarations
 import { assertScreenshotMotionOff, parseArgs, SCENARIOS } from "./verify-screenshots.mjs";
 
-const DEFAULTS = ["core-ui", "seeded-workspace"];
+const DEFAULTS = ["core-ui", "seeded-workspace", "approval-flow"];
 
 describe("verify-screenshots parseArgs", () => {
   it("defaults to the local scenarios with cleaning enabled", () => {
@@ -121,9 +121,21 @@ describe("screenshot determinism injection (electron main)", () => {
 
 describe("SCENARIOS registry export", () => {
   it("exposes scenario metadata for the compare tool", () => {
-    expect(Object.keys(SCENARIOS)).toEqual(["core-ui", "seeded-workspace", "minimax-live"]);
+    expect(Object.keys(SCENARIOS)).toEqual([
+      "core-ui",
+      "seeded-workspace",
+      "approval-flow",
+      "minimax-live"
+    ]);
     expect(SCENARIOS["minimax-live"].live).toBe(true);
     expect(SCENARIOS["core-ui"].expected).toContain("first-run");
     expect(SCENARIOS["seeded-workspace"].expected).toContain("recent-threads");
+    expect(SCENARIOS["approval-flow"].expected).toContain("approval-command-pending");
+  });
+
+  it("isolates env-declaring scenarios (e.g. approval-flow's fake agent) from the shared harness pass", () => {
+    expect(SCENARIOS["approval-flow"].env).toEqual({ MARGINALIA_FAKE_AGENT: "1" });
+    expect(SCENARIOS["core-ui"].env).toBeUndefined();
+    expect(SCENARIOS["seeded-workspace"].env).toBeUndefined();
   });
 });

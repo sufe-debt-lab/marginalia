@@ -9,24 +9,25 @@ Marginalia 是**本地优先的桌面端 AI 文档协作器**。它把本机 wor
 ### 非目标
 
 - 不做 IDE、代码编辑器入口、Language Server。
-- 不内置 bash、终端、PTY 或系统命令执行。
+- 命令执行采用副作用分级审批（见[使用指南](./guide.md#审批)）；不做完整终端/PTY 体验。
 - 不做专业 Git UI（branch/merge/rebase/push/pull）。
 - 不做 GUI / 浏览器自动化。
 - MVP 不做多人协作、云账号、自动更新、Skills 市场。
 
 ## 术语
 
-| 术语                    | 含义                                                            | 状态                                      |
-| ----------------------- | --------------------------------------------------------------- | ----------------------------------------- |
-| **Workspace / project** | 用户的资料目录 + 其下的会话集合。                               | ✅ 已实现（`workspaces` 表 + 文件接口）   |
-| **Session**             | 一次 agent 对话，属于某个 workspace。                           | ✅ 已实现（`sessions` 表）                |
-| **Quick chat**          | 临时对话，自动归属到最近打开的 workspace。                      | 部分实现（后端 `POST /quick-chat` 已有，桌面端暂无独立入口） |
-| **Provider**            | LLM 服务商配置（key/baseUrl/模型）。                            | ✅ 已实现（见[配置](./configuration.md)） |
-| **Run**                 | 一次 agent 执行，以 SSE 流式返回事件。                          | ✅ 已实现（`runs` 表 + `POST …/runs`）    |
-| **Agent output**        | agent 创建的普通文件，额外用 SQLite 元数据标记来源。            | 🚧 路线图                                 |
-| **Snapshot**            | 用户视角的版本快照，底层可用 Git commit 实现。                  | 🚧 路线图（`/branch` 接口尚未实现）       |
-| **Remote control**      | 外部入口（手机/Web/IM）控制本机 agent，执行仍在本机 pi-server。 | 🚧 路线图（P1）                           |
-| **MCP server**          | 接入外部资料源/数据库的 MCP 服务。                              | 🚧 路线图                                 |
+| 术语                    | 含义                                                            | 状态                                                              |
+| ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Workspace / project** | 用户的资料目录 + 其下的会话集合。                               | ✅ 已实现（`workspaces` 表 + 文件接口）                           |
+| **Session**             | 一次 agent 对话，属于某个 workspace。                           | ✅ 已实现（`sessions` 表）                                        |
+| **Quick chat**          | 临时对话，自动归属到最近打开的 workspace。                      | 部分实现（后端 `POST /quick-chat` 已有，桌面端暂无独立入口）      |
+| **Provider**            | LLM 服务商配置（key/baseUrl/模型）。                            | ✅ 已实现（见[配置](./configuration.md)）                         |
+| **Run**                 | 一次 agent 执行，以 SSE 流式返回事件。                          | ✅ 已实现（`runs` 表 + `POST …/runs`）                            |
+| **Approval**            | `ask` 档下对副作用操作（命令执行、文件写入）的逐条批准记录。    | ✅ 已实现（`approvals` 表，见[使用指南 · 审批](./guide.md#审批)） |
+| **Agent output**        | agent 创建的普通文件，额外用 SQLite 元数据标记来源。            | 🚧 路线图                                                         |
+| **Snapshot**            | 用户视角的版本快照，底层可用 Git commit 实现。                  | 🚧 路线图（`/branch` 接口尚未实现）                               |
+| **Remote control**      | 外部入口（手机/Web/IM）控制本机 agent，执行仍在本机 pi-server。 | 🚧 路线图（P1）                                                   |
+| **MCP server**          | 接入外部资料源/数据库的 MCP 服务。                              | 🚧 路线图                                                         |
 
 > 状态以当前代码为准。「路线图」项在内部 spec 中有设计，但尚未在本仓库实现——文档不会把它们描述成已有能力。
 

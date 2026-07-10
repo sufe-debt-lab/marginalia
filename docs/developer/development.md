@@ -90,11 +90,12 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 
 ## 相关环境变量
 
-| 变量                   | 说明                                                   |
-| ---------------------- | ------------------------------------------------------ |
-| `MARGINALIA_NODE_PATH` | dev 下指定启动 pi-server 用的 `node` 二进制。          |
-| `MARGINALIA_DB_PATH`   | 覆盖 SQLite 路径（默认 `~/.marginalia/db.sqlite`）。   |
-| `VITE_DEV_SERVER_URL`  | Electron 从该 URL 加载 renderer；`pnpm dev` 自动设置。 |
+| 变量                    | 说明                                                                                                                                                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARGINALIA_NODE_PATH`  | dev 下指定启动 pi-server 用的 `node` 二进制。                                                                                                                                                                                                                        |
+| `MARGINALIA_DB_PATH`    | 覆盖 SQLite 路径（默认 `~/.marginalia/db.sqlite`）。                                                                                                                                                                                                                 |
+| `VITE_DEV_SERVER_URL`   | Electron 从该 URL 加载 renderer；`pnpm dev` 自动设置。                                                                                                                                                                                                               |
+| `MARGINALIA_FAKE_AGENT` | 设为 `1` 时 pi-server 用 `ScriptedFakeAgentClient`（`apps/pi-server/src/agent/scripted-fake-agent.ts`）替换真实 agent，按消息关键字回放确定性脚本（含审批事件）。**仅用于截图验证（`approval-flow` 场景）和本地调试**，不接入任何真实模型；不要在打包/生产环境设置。 |
 
 完整清单见[配置 · 环境变量](../user/configuration.md#环境变量)。
 

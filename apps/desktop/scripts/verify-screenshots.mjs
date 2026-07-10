@@ -54,6 +54,20 @@ const SCENARIOS = {
     ],
     run: scenarioSeededWorkspace
   },
+  "approval-flow": {
+    description: "Approval cards: command pending/approved, edit diff pending, denied with reason.",
+    default: true,
+    // Runs the scripted fake agent instead of a real provider, so this scenario
+    // gets its own isolated harness pass (see main()'s scenario grouping below).
+    env: { MARGINALIA_FAKE_AGENT: "1" },
+    expected: [
+      "approval-command-pending",
+      "approval-command-approved",
+      "approval-edit-pending",
+      "approval-denied"
+    ],
+    run: scenarioApprovalFlow
+  },
   "minimax-live": {
     live: true,
     description: "Opt-in real MiniMax run with prompt, streaming and final result screenshots.",
@@ -251,7 +265,7 @@ async function waitForPiServerUrl(page) {
   throw new Error("pi-server did not become ready");
 }
 
-async function startHarness() {
+async function startHarness(extraEnv = {}) {
   await runCommand(
     "ensure:native",
     "pnpm",
@@ -293,7 +307,8 @@ async function startHarness() {
       MARGINALIA_DB_PATH: path.join(runRoot, "db.sqlite"),
       MARGINALIA_SCREENSHOT_VERIFY: "1",
       MARGINALIA_USER_DATA_DIR: path.join(runRoot, "user-data"),
-      HOME: path.join(runRoot, "home")
+      HOME: path.join(runRoot, "home"),
+      ...extraEnv
     };
     await mkdir(env.HOME, { recursive: true });
     await mkdir(env.MARGINALIA_USER_DATA_DIR, { recursive: true });
@@ -387,6 +402,20 @@ async function goNewChat(page) {
     .getByRole("textbox", { name: /message|消息/i })
     .first()
     .waitFor({ timeout: 10000 });
+}
+
+// Fills the composer and submits it (same fill-then-click-send shape as
+// scenarioMinimaxLive's inline steps, factored out here since approval-flow
+// drives two separate turns).
+async function typeAndSend(page, text) {
+  await page
+    .getByRole("textbox", { name: /message|消息/i })
+    .first()
+    .fill(text);
+  await page
+    .getByRole("button", { name: /send|发送/i })
+    .first()
+    .click({ timeout: 5000 });
 }
 
 async function waitForDocumentPanelReady(page) {
@@ -749,6 +778,80 @@ async function scenarioSeededWorkspace(ctx) {
   await capture(ctx, "seeded-workspace", "mention-inline-token");
 }
 
+// Drives the scripted fake agent (MARGINALIA_FAKE_AGENT=1, see scenario.env above)
+// through both approval variants: a bash command approved after a pending review,
+// and a file edit denied with a reason. The scripted client keys its canned events
+// off keywords in the message text ("approval-bash" / "approval-edit"), so the
+// composer's own permission selector doesn't matter here — see
+// apps/pi-server/src/agent/scripted-fake-agent.ts.
+async function scenarioApprovalFlow(ctx) {
+  await ensureSeededWorkspace(ctx);
+  // This scenario runs in its own isolated harness pass (see scenario.env), so —
+  // unlike seeded-workspace, which piggybacks on the provider core-ui's shared
+  // pass already added — it can't assume one exists. The composer refuses to
+  // send without a provider selected; the key/model here are never used since
+  // the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never calls a real model.
+  await apiJson(ctx.apiBase, "/providers", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "OpenAI",
+      apiKey: "sk-approval-flow-fixture",
+      defaultModel: "gpt-5.1"
+    })
+  });
+  await resetUiState(ctx.page);
+  await reloadApp(ctx.page);
+  await goNewChat(ctx.page);
+
+  // 1) Command approval: pending → approved.
+  await typeAndSend(ctx.page, "approval-bash demo");
+  await ctx.page
+    .getByText(/需要审批|Approval required/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-command-pending");
+  await ctx.page
+    .getByRole("button", { name: /允许|Allow/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/已批准|Approved|分析完成/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-command-approved");
+
+  // 2) Edit approval: diff pending. `exact: true` in the scripted payload means
+  // the "approximate preview" badge never renders, so match on the file path
+  // (always shown) with the badge text kept as a defensive alternate.
+  await typeAndSend(ctx.page, "approval-edit demo");
+  await ctx.page
+    .getByText(/近似预览|摘要\.md/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-edit-pending");
+
+  // 3) Deny with a reason. The reason textarea has no aria-label, so target it by
+  // its placeholder rather than `getByRole("textbox").last()` — the composer's own
+  // message textbox sits later in the DOM (below the transcript) and would win a
+  // last-match instead of the approval card's textarea.
+  await ctx.page
+    .getByRole("button", { name: /拒绝|Deny/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByPlaceholder(/告诉模型该怎么改|Tell the model what to do instead/i)
+    .fill("先给我看结论");
+  await ctx.page
+    .getByRole("button", { name: /确认拒绝|Confirm deny/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/已拒绝|Denied/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-denied");
+}
+
 async function scenarioMinimaxLive(ctx) {
   await ensureSeededWorkspace(ctx);
   await apiJson(ctx.apiBase, "/providers", {
@@ -872,12 +975,17 @@ async function writeSummary(manifest) {
 // the mode, and always tear the app + vite down. `manifest` is only the capture
 // sink threaded onto ctx for capture() to append to; reading it back (status,
 // contract validation, summary) is entirely the caller's job.
-async function withHarness({ clean, manifest }, run) {
+//
+// `extraEnv` lets a caller start this one pass's Electron process with extra
+// env vars (e.g. MARGINALIA_FAKE_AGENT=1) without leaking them into other
+// passes — main() only ever passes it for scenarios that declare `scenario.env`,
+// each isolated in its own startHarness() call (see main()'s scenario grouping).
+async function withHarness({ clean, manifest, extraEnv }, run) {
   if (clean) await rm(outRoot, { recursive: true, force: true });
   await mkdir(runRoot, { recursive: true });
   let harness = null;
   try {
-    harness = await startHarness();
+    harness = await startHarness(extraEnv);
     await run({ ...harness, manifest, captureCounts: new Map(), seed: null });
   } finally {
     if (harness?.app) await harness.app.close().catch(() => {});
@@ -957,16 +1065,39 @@ async function main() {
     screenshots: []
   };
 
+  // Most scenarios share one Electron/vite harness for the whole run. A scenario
+  // that declares `env` (currently only approval-flow, which needs
+  // MARGINALIA_FAKE_AGENT=1) can't join that shared pass — startHarness() bakes
+  // env once at launch, and pi-server inherits it via utilityProcess.fork, so
+  // setting it globally would leak the fake agent into core-ui/seeded-workspace/
+  // minimax-live too. Instead each env-declaring scenario gets its own isolated
+  // withHarness() pass, run after the shared one. All passes append into the same
+  // `manifest` so the contract validation below sees every captured screenshot.
+  const sharedScenarios = options.scenarios.filter((id) => !SCENARIOS[id].env);
+  const isolatedScenarios = options.scenarios.filter((id) => SCENARIOS[id].env);
+
   let exitCode = 0;
   try {
-    await withHarness({ clean: options.clean, manifest }, async (ctx) => {
-      for (const scenario of options.scenarios) {
-        console.log(`[scenario] ${scenario}`);
-        await SCENARIOS[scenario].run(ctx);
-      }
-      await validateScreenshotContract(manifest);
-      manifest.status = "passed";
-    });
+    let clean = options.clean;
+    if (sharedScenarios.length > 0) {
+      await withHarness({ clean, manifest }, async (ctx) => {
+        for (const scenario of sharedScenarios) {
+          console.log(`[scenario] ${scenario}`);
+          await SCENARIOS[scenario].run(ctx);
+        }
+      });
+      // Later passes must not wipe the screenshots the earlier pass just captured.
+      clean = false;
+    }
+    for (const scenario of isolatedScenarios) {
+      console.log(`[scenario] ${scenario}`);
+      await withHarness({ clean, manifest, extraEnv: SCENARIOS[scenario].env }, (ctx) =>
+        SCENARIOS[scenario].run(ctx)
+      );
+      clean = false;
+    }
+    await validateScreenshotContract(manifest);
+    manifest.status = "passed";
   } catch (error) {
     manifest.status = "failed";
     manifest.error = error instanceof Error ? error.stack || error.message : String(error);

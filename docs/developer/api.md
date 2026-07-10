@@ -97,7 +97,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 {
   "run_id": "<run id>",
   "session_id": "<session id>",
-  "type": "run_started" | "agent_event" | "run_completed" | "run_failed",
+  "type": "run_started" | "agent_event" | "approval_requested" | "approval_resolved" | "run_completed" | "run_failed",
   "payload": { /* 随 type 不同 */ },
   "created_at": "ISO 时间"
 }
@@ -107,25 +107,87 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 1. `run_started` — `payload: { model }`。
 2. 若干 `agent_event` — `payload: { event }`，其中 `event` 是 **原样转发的原始 pi 事件**（message_start、文本/思考增量、工具调用、message_end 等）。客户端从这些原始事件派生所有 UI。
-3. 结束：`run_completed`（无 payload）；或 `run_failed` — `payload: { error }`（agent 返回 `message_end` 且 `stopReason === "error"`，或抛异常时）。
+3. `ask` 权限下，写副作用的工具调用（`bash`、`edit`、`write`）在真正执行前会插入一对 `approval_requested` / `approval_resolved`（见下一节），流会在 `approval_requested` 处暂停，直到收到决策。
+4. 结束：`run_completed`（无 payload）；或 `run_failed` — `payload: { error }`（agent 返回 `message_end` 且 `stopReason === "error"`，或抛异常时）。
 
 > 设计约定：pi-server **不**把 pi 事件重映射成 desktop 专用形状，只加 run 级信封。详见[系统架构 · 单一事实源](./architecture.md#单一事实源single-source-of-truth)。
 
 客户端解析见 `apps/desktop/src/api/sse-stream.ts` 与 `apps/desktop/src/hooks/useStreamingChat.ts`。
 
+### 审批（`ask` 档）
+
+判定某次工具调用是否需要审批的纯函数见 `apps/pi-server/src/agent/approval-policy.ts`；暂停/恢复流程（含挂起态管理、断连时的自动拒绝）见 `apps/pi-server/src/agent/approval-gateway.ts`；把两者接到 pi 工具调用钩子上的 extension 见 `apps/pi-server/src/agent/approval-extension.ts`。
+
+两类 SSE 信封（`payload.approval` 形状见 `apps/pi-server/src/agent/agent-client.ts#ApprovalRequestedEvent`/`ApprovalResolvedEvent`）：
+
+```jsonc
+// approval_requested — 流在此暂停
+{
+  "type": "approval_requested",
+  "payload": {
+    "approval": {
+      "approvalId": "<id>",
+      "sessionId": "<session id>",
+      "toolCallId": "<对应 toolCall 的 id>",
+      "toolName": "bash" | "edit" | "write",
+      "payload": {
+        // kind: "command" —— bash 工具
+        "kind": "command",
+        "command": "<shell 命令>",
+        "cwd": "<workspace 内绝对路径>"
+
+        // 或 kind: "file_edit" —— edit/write 工具
+        // "kind": "file_edit",
+        // "path": "<workspace 相对路径>",
+        // "mode": "edit" | "write",
+        // "patch": "<unified diff 文本>",
+        // "additions": 0,
+        // "deletions": 0,
+        // "exact": true,          // false 时是近似 diff（预览失败的降级）
+        // "error": "<可选，预览失败时的说明>"
+      }
+    }
+  }
+}
+// approval_resolved —— 决策到达（用户批准/拒绝，或断连/run 结束时自动过期拒绝）后恢复流
+{
+  "type": "approval_resolved",
+  "payload": {
+    "approval": {
+      "approvalId": "<id>",
+      "sessionId": "<session id>",
+      "toolCallId": "<对应 toolCall 的 id>",
+      "approved": true,
+      "reason": "可选，拒绝理由",
+      "expired": false
+    }
+  }
+}
+```
+
+对应的 REST 接口：
+
+| 方法 | 路径                                         | 说明                                                                                                 |
+| ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| POST | `/sessions/:sessionId/approvals/:approvalId` | 提交决策。Body `{ approved, reason?, alwaysAllowPrefix? }`；未知或已处理的 `approvalId` 返回 `404`。 |
+| GET  | `/sessions/:sessionId/approvals`             | 列出该 session 的全部审批记录（含终态），用于重开会话还原 UI。                                       |
+
+`Approval` 形状（`apps/pi-server/src/db/repositories.ts#ApprovalRow`）：`{ id, sessionId, runId, toolCallId, toolName, kind, payload, status, reason, createdAt, decidedAt }`；`status` 为 `"pending" | "approved" | "denied" | "expired"`。客户端断连或 run 结束时仍处于 `pending` 的审批会被标记为 `expired`（`apps/pi-server/src/app.ts#expirePendingApprovals`）。
+
 ## 数据模型（SQLite）
 
 schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置见[配置 · 存储位置](../user/configuration.md#存储位置)。
 
-| 表                  | 关键列                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| `workspaces`        | `id, name, root_dir, last_opened_at, created_at, updated_at`                         |
-| `sessions`          | `id, workspace_id, title, origin, model, agent_session_path, created_at, updated_at` |
-| `messages`          | `id, session_id, role, content, created_at`                                          |
-| `providers`         | `id, name, api_key_ref→env_vars, base_url, default_model, enabled, config, …`        |
-| `runs`              | `id, session_id, provider_id, model, status, error, created_at, completed_at`        |
-| `env_vars`          | `id, key, value, scope, workspace_id, created_at`（存 provider API key 等）          |
-| `schema_migrations` | `version, applied_at`                                                                |
+| 表                  | 关键列                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `workspaces`        | `id, name, root_dir, last_opened_at, created_at, updated_at`                                             |
+| `sessions`          | `id, workspace_id, title, origin, model, agent_session_path, created_at, updated_at`                     |
+| `messages`          | `id, session_id, role, content, created_at`                                                              |
+| `providers`         | `id, name, api_key_ref→env_vars, base_url, default_model, enabled, config, …`                            |
+| `runs`              | `id, session_id, provider_id, model, status, error, created_at, completed_at`                            |
+| `approvals`         | `id, session_id, run_id, tool_call_id, tool_name, kind, payload, status, reason, created_at, decided_at` |
+| `env_vars`          | `id, key, value, scope, workspace_id, created_at`（存 provider API key 等）                              |
+| `schema_migrations` | `version, applied_at`                                                                                    |
 
 外键启用 `ON DELETE CASCADE`：删除 workspace 会级联清理其 session/message/run。
 

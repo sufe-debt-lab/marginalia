@@ -44,16 +44,33 @@ Composer 里可以选择工具权限：
 
 Marginalia 不提供内置终端或专业 Git UI。工具能力仍由 pi agent 运行时和当前权限共同决定。
 
+## 审批
+
+`ask` 档下，副作用工具调用（执行命令、写入/编辑文件）会先暂停，等你在对话里批准或拒绝后才会真正执行——不会静默跑掉。
+
+| 权限档位      | 与审批的关系                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| Full access   | 不经过审批，工具按 pi 默认权限直接执行。                                                      |
+| Ask each time | 每次副作用调用都会弹出审批卡，等待 Allow/Deny。                                               |
+| Read-only     | 工具集被限制为只读 allowlist（read/grep/find/ls），写入类工具本身不可用，因此也不会触发审批。 |
+
+审批出现在触发它的工具调用下方，两种卡片：
+
+- **命令卡**：展示要执行的 shell 命令与工作目录；可勾选「本次会话总是允许此命令前缀」，之后同前缀命令在本会话内自动放行。
+- **diff 卡**：展示文件改动的 unified diff 与新增/删除行数；无法生成精确 diff 时会标注「近似预览」。
+
+点 **Allow** 立即放行，工具正常执行。点 **Deny** 会展开一个可选的理由输入框；确认拒绝后，工具调用不会执行，模型会收到你填写的理由并据此继续对话。拒绝/过期状态以及理由会持久化，重新打开该会话时仍能看到。
+
 ## 本地数据
 
 主要本地状态：
 
-| 内容 | 位置 | 说明 |
-| --- | --- | --- |
-| SQLite 数据库 | `~/.marginalia/db.sqlite` | workspace、session、message、provider、run 等记录。 |
-| Provider API key | SQLite `env_vars` 表 | 当前记录在本地数据库中，并在 pi-server 启动时注册到 pi 运行时。 |
-| pi AuthStorage | `~/.marginalia/auth.json` | pi 运行时 auth storage 路径，避免与独立 pi CLI 的默认目录混用。 |
-| UI 偏好 | Electron localStorage `marginalia-app` | 语言、侧栏状态、权限、推理档位、上次模型等。 |
+| 内容             | 位置                                   | 说明                                                            |
+| ---------------- | -------------------------------------- | --------------------------------------------------------------- |
+| SQLite 数据库    | `~/.marginalia/db.sqlite`              | workspace、session、message、provider、run 等记录。             |
+| Provider API key | SQLite `env_vars` 表                   | 当前记录在本地数据库中，并在 pi-server 启动时注册到 pi 运行时。 |
+| pi AuthStorage   | `~/.marginalia/auth.json`              | pi 运行时 auth storage 路径，避免与独立 pi CLI 的默认目录混用。 |
+| UI 偏好          | Electron localStorage `marginalia-app` | 语言、侧栏状态、权限、推理档位、上次模型等。                    |
 
 如果你把文件加入对话上下文，该文件内容会随请求发送给你选择的模型服务商。Marginalia 不会自动上传整个 workspace。
 

@@ -1,7 +1,13 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import { ScriptedFakeAgentClient } from "./agent/scripted-fake-agent.js";
 
-const app = createApp();
+// Dev/screenshot-only escape hatch: swaps in a deterministic scripted agent
+// instead of the real pi-coding-agent client. See docs/developer/development.md.
+const agentClient =
+  process.env.MARGINALIA_FAKE_AGENT === "1" ? new ScriptedFakeAgentClient() : undefined;
+
+const app = createApp({ agentClient });
 
 const server = serve(
   {

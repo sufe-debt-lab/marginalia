@@ -13,6 +13,7 @@ Marginalia 把一个本机 AI agent 装进桌面应用，帮你**精读和写作
 - 🔗 **`@文件` 上下文**：把 workspace 里的文件作为上下文附给 agent。
 - 🔌 **多 provider**：内置 OpenAI、智谱 GLM、MiniMax、小米 MiMo 预设，也支持自定义。
 - 💾 **本地持久化**：workspace / session / 消息存于本机 SQLite（`~/.marginalia/`）。
+- 🛡️ **副作用审批**：ask 档下命令与文件变更逐条批准，diff 预览后落盘。
 - 📦 **可打包**：当前 CI 覆盖 macOS / Windows；Linux AppImage target 已配置但尚未纳入 CI。
 
 **非目标**：不做 IDE / 终端 / 专业 Git UI / 浏览器自动化。完整边界见[核心术语](./docs/user/concepts.md)。
