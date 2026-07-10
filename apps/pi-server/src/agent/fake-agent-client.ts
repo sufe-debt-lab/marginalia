@@ -53,16 +53,20 @@ export class FakeAgentClient implements AgentClient {
     const pending = this.pending;
     async function* iterate(): AsyncGenerator<AgentRunEvent> {
       for (const event of events) {
-        yield event;
         if ((event as { type?: string }).type === "approval_requested") {
           const req = event as ApprovalRequestedEvent;
-          const decision = await new Promise<ApprovalDecision & { expired?: boolean }>((resolve) =>
+          // Mirror ApprovalGateway.request(): register the pending entry BEFORE
+          // the event reaches the consumer, so resolveApproval/cancelPending
+          // fired from an abort handler mid-delivery can always find it.
+          const decisionPromise = new Promise<ApprovalDecision & { expired?: boolean }>((resolve) =>
             pending.set(req.approvalId, {
               sessionId: req.sessionId,
               toolCallId: req.toolCallId,
               resolve
             })
           );
+          yield event;
+          const decision = await decisionPromise;
           const resolved: ApprovalResolvedEvent = {
             type: "approval_resolved",
             approvalId: req.approvalId,
@@ -73,6 +77,8 @@ export class FakeAgentClient implements AgentClient {
             expired: decision.expired
           };
           yield resolved;
+        } else {
+          yield event;
         }
       }
     }

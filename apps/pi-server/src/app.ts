@@ -10,7 +10,11 @@ import { AuthStorage, ModelRegistry, createAgentSession } from "@earendil-works/
 import { getModel } from "@earendil-works/pi-ai";
 import { emptyUsage } from "@marginalia/chat-core";
 import type { ChatEntry } from "@marginalia/chat-core";
-import type { AgentClient } from "./agent/agent-client.js";
+import type {
+  AgentClient,
+  ApprovalRequestedEvent,
+  ApprovalResolvedEvent
+} from "./agent/agent-client.js";
 import { AgentSessionRegistry } from "./agent/agent-session-registry.js";
 import { ApprovalGateway } from "./agent/approval-gateway.js";
 import { PiCodingAgentClient } from "./agent/pi-coding-agent-client.js";
@@ -20,18 +24,22 @@ import { migrate } from "./db/migrations.js";
 import { openDatabase } from "./db/connection.js";
 import {
   completeRun,
+  createApproval,
   createMessage,
   createProvider,
   createRun,
   createSession,
   createWorkspace,
+  decideApproval,
   deleteProvider,
   deleteWorkspace,
+  expirePendingApprovals,
   getMessages,
   getSession,
   getWorkspace,
   getProvider,
   getRecentWorkspace,
+  listApprovals,
   listProviders,
   listSessions,
   listWorkspaces,
@@ -191,6 +199,21 @@ export function createApp(options: AppOptions = {}) {
       201
     );
   });
+  app.post("/sessions/:sessionId/approvals/:approvalId", async (c) => {
+    const body = await c.req.json<{
+      approved: boolean;
+      reason?: string;
+      alwaysAllowPrefix?: boolean;
+    }>();
+    const approvalId = c.req.param("approvalId");
+    const ok = agentClient.resolveApproval(c.req.param("sessionId"), approvalId, body);
+    if (!ok) return c.json({ error: "approval not found or already resolved" }, 404);
+    decideApproval(db, approvalId, body.approved ? "approved" : "denied", body.reason);
+    return c.json({ ok: true });
+  });
+  app.get("/sessions/:sessionId/approvals", (c) =>
+    c.json(listApprovals(db, c.req.param("sessionId")))
+  );
   app.post("/quick-chat", (c) => {
     const workspace = getRecentWorkspace(db);
     if (!workspace) return c.json({ error: "workspace required" }, 409);
@@ -314,22 +337,55 @@ export function createApp(options: AppOptions = {}) {
         });
         if (result.sessionFile) setAgentSessionPath(db, sessionId, result.sessionFile);
 
-        // Single source of truth: forward raw pi events; the client derives all
-        // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
-        // envelope (started/failed/completed) is added on top.
-        for await (const event of result.events) {
-          await emit("agent_event", { event });
-          const e = event as {
-            type?: string;
-            message?: { stopReason?: string; errorMessage?: string };
-          };
-          if (e?.type === "message_end" && e.message?.stopReason === "error") {
-            const msg = e.message.errorMessage ?? "agent failed";
-            await emit("run_failed", { error: msg });
-            completeRun(db, run.id, "failed", msg);
-            failed = true;
-            return;
+        // 断开即拒绝：abort 时主动取消挂起审批，避免被阻塞的扩展死等。
+        const onAbort = () => {
+          agentClient.cancelPending(sessionId);
+        };
+        c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
+
+        try {
+          // Single source of truth: forward raw pi events; the client derives all
+          // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
+          // envelope (started/failed/completed) is added on top.
+          for await (const event of result.events) {
+            const type = (event as { type?: string }).type;
+            if (type === "approval_requested") {
+              const approval = event as ApprovalRequestedEvent;
+              createApproval(db, {
+                id: approval.approvalId,
+                sessionId,
+                runId: run.id,
+                toolCallId: approval.toolCallId,
+                toolName: approval.toolName,
+                kind: approval.payload.kind,
+                payload: approval.payload
+              });
+              await emit("approval_requested", { approval });
+              continue;
+            }
+            if (type === "approval_resolved") {
+              const approval = event as ApprovalResolvedEvent;
+              if (approval.expired) decideApproval(db, approval.approvalId, "expired");
+              await emit("approval_resolved", { approval });
+              continue;
+            }
+            await emit("agent_event", { event });
+            const e = event as {
+              type?: string;
+              message?: { stopReason?: string; errorMessage?: string };
+            };
+            if (e?.type === "message_end" && e.message?.stopReason === "error") {
+              const msg = e.message.errorMessage ?? "agent failed";
+              await emit("run_failed", { error: msg });
+              completeRun(db, run.id, "failed", msg);
+              failed = true;
+              return;
+            }
           }
+        } finally {
+          c.req.raw.signal.removeEventListener("abort", onAbort);
+          agentClient.cancelPending(sessionId);
+          expirePendingApprovals(db, run.id);
         }
 
         if (!failed) {
