@@ -7,7 +7,7 @@ import type {
   ChatToolExecutionResult,
   ChatToolResult
 } from "@marginalia/chat-core";
-import type { ApiClient } from "@/api/client.js";
+import type { ApiClient, ApprovalPayload } from "@/api/client.js";
 
 interface Options {
   api: ApiClient;
@@ -22,6 +22,19 @@ interface Options {
   onAssistantDelta: (delta: string) => void;
   onToolCallUpsert?: (tool: ChatToolCall) => void;
   onToolResultUpsert?: (entry: ChatEntry & { message: ChatToolResult }) => void;
+  onApprovalRequested?: (approval: {
+    approvalId: string;
+    toolCallId: string;
+    toolName: string;
+    payload: ApprovalPayload;
+  }) => void;
+  onApprovalResolved?: (update: {
+    approvalId: string;
+    toolCallId: string;
+    approved: boolean;
+    reason?: string;
+    expired?: boolean;
+  }) => void;
   onComplete: () => void;
   onError?: (msg: string) => void;
 }
@@ -253,6 +266,39 @@ export function useStreamingChat(opts: Options) {
             throw new Error(
               (event.payload as { error?: string } | undefined)?.error ?? "run failed"
             );
+          }
+          if (event.type === "approval_requested") {
+            const approval = (
+              event.payload as
+                | {
+                    approval?: {
+                      approvalId: string;
+                      toolCallId: string;
+                      toolName: string;
+                      payload: ApprovalPayload;
+                    };
+                  }
+                | undefined
+            )?.approval;
+            if (approval) opts.onApprovalRequested?.(approval);
+            continue;
+          }
+          if (event.type === "approval_resolved") {
+            const approval = (
+              event.payload as
+                | {
+                    approval?: {
+                      approvalId: string;
+                      toolCallId: string;
+                      approved: boolean;
+                      reason?: string;
+                      expired?: boolean;
+                    };
+                  }
+                | undefined
+            )?.approval;
+            if (approval) opts.onApprovalResolved?.(approval);
+            continue;
           }
           if (event.type !== "agent_event") continue;
           const pi = (event.payload as { event?: PiEvent } | undefined)?.event;
