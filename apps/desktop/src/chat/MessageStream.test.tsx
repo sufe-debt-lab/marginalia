@@ -68,6 +68,54 @@ describe("MessageStream", () => {
     expect(scrollSpy.mock.calls.length).toBeGreaterThan(before);
   });
 
+  it("scrolls to the bottom when an approval card appears on a bare tool call", () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const toolCallEntry: ChatEntry = {
+      id: "a1",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "tc1", name: "bash", arguments: { command: "python x.py" } }
+        ],
+        api: "anthropic-messages",
+        provider: "minimax-cn",
+        model: "MiniMax-M2.7",
+        usage,
+        stopReason: "toolUse",
+        timestamp: 2
+      }
+    };
+    const { rerender } = render(
+      <MessageStream messages={[toolCallEntry]} error={null} onRetry={() => {}} streaming />
+    );
+    const before = scrollSpy.mock.calls.length;
+    rerender(
+      <MessageStream
+        messages={[toolCallEntry]}
+        error={null}
+        onRetry={() => {}}
+        streaming
+        approvalsByToolCallId={
+          new Map([
+            [
+              "tc1",
+              {
+                id: "ap-1",
+                toolCallId: "tc1",
+                toolName: "bash",
+                kind: "command" as const,
+                status: "pending" as const,
+                payload: { kind: "command" as const, command: "python x.py", cwd: "/ws" }
+              }
+            ]
+          ])
+        }
+      />
+    );
+    expect(scrollSpy.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it("shows a thinking indicator while reasoning streams", () => {
     render(
       <MessageStream

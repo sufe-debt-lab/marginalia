@@ -54,7 +54,10 @@ export function MessageStream({
     last?.message.role === "user" || last?.message.role === "assistant"
       ? stringifyContent(last.message.content)
       : "";
-  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}`;
+  // Approval cards need user action, so their appearance must pull the view
+  // down just like new content does (a bare tool call has no result yet, so
+  // none of the other tail inputs change when the card shows up).
+  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}:${approvalsByToolCallId?.size ?? 0}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       // data-motion="off" covers both screenshot mode and the OS reduced-motion
