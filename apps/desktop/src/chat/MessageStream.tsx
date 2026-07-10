@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 import { stringifyContent } from "@marginalia/chat-core";
 import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
+import type { Approval } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { MessageItem } from "./MessageItem.js";
+import type { ApprovalDecision } from "./ToolCard.js";
 
 interface Props {
   messages: readonly ChatEntry[];
@@ -14,9 +16,20 @@ interface Props {
   streaming?: boolean;
   /** Transient reasoning text for the in-flight turn; shown while the model thinks. */
   reasoning?: string;
+  approvalsByToolCallId?: ReadonlyMap<string, Approval>;
+  onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
 }
 
-export function MessageStream({ messages, error, onRetry, model, streaming, reasoning }: Props) {
+export function MessageStream({
+  messages,
+  error,
+  onRetry,
+  model,
+  streaming,
+  reasoning,
+  approvalsByToolCallId,
+  onDecideApproval
+}: Props) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
   // One pass splits toolResults out (they attach to their tool call, not their own bubble) and
@@ -69,6 +82,8 @@ export function MessageStream({ messages, error, onRetry, model, streaming, reas
           key={entry.id}
           entry={entry}
           toolResultsByCallId={toolResultsByCallId}
+          approvalsByToolCallId={approvalsByToolCallId}
+          onDecideApproval={onDecideApproval}
           model={entry.message.role === "assistant" ? model : undefined}
           streaming={Boolean(streaming) && i === lastIndex && entry.message.role === "assistant"}
         />

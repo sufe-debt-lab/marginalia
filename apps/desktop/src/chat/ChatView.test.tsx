@@ -20,6 +20,7 @@ function makeApi(): ApiClient {
   return {
     listProviders: vi.fn(async () => [{ id: "p1", name: "Minimax", defaultModel: "M2.7" }]),
     listMessages: vi.fn(async () => []),
+    listApprovals: vi.fn(async () => []),
     createMessage: vi.fn(async (_sid, input) => ({
       id: "u",
       role: input.role,

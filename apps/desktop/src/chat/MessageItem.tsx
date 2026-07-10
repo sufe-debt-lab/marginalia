@@ -3,20 +3,25 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { stringifyContent } from "@marginalia/chat-core";
 import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
+import type { Approval } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { markdownComponents } from "@/lib/markdown.js";
-import { ToolCard } from "./ToolCard.js";
+import { ToolCard, type ApprovalDecision } from "./ToolCard.js";
 
 function MessageItemImpl({
   entry,
   model,
   streaming,
-  toolResultsByCallId
+  toolResultsByCallId,
+  approvalsByToolCallId,
+  onDecideApproval
 }: {
   entry: ChatEntry;
   model?: string;
   streaming?: boolean;
   toolResultsByCallId?: ReadonlyMap<string, ChatToolResult>;
+  approvalsByToolCallId?: ReadonlyMap<string, Approval>;
+  onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
 }) {
   const { t } = useTranslation();
   const message = entry.message;
@@ -60,7 +65,15 @@ function MessageItemImpl({
               </div>
             );
           }
-          return <ToolCard key={part.id} call={part} result={toolResultsByCallId?.get(part.id)} />;
+          return (
+            <ToolCard
+              key={part.id}
+              call={part}
+              result={toolResultsByCallId?.get(part.id)}
+              approval={approvalsByToolCallId?.get(part.id)}
+              onDecideApproval={onDecideApproval}
+            />
+          );
         })}
         {streaming && <span className="caret" aria-hidden />}
       </div>

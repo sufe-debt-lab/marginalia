@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { ApiClient } from "@/api/client.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ApiClient, Approval } from "@/api/client.js";
 import { useMessages } from "@/hooks/useMessages.js";
 import { useProviders } from "@/hooks/useProviders.js";
 import { resolveComposerSelection } from "@/lib/provider-selection.js";
@@ -9,6 +9,7 @@ import { useAppStore } from "@/store/app-store.js";
 import { Composer } from "./Composer/Composer.js";
 import { extractMentions } from "./Composer/mentions.js";
 import { MessageStream } from "./MessageStream.js";
+import type { ApprovalDecision } from "./ToolCard.js";
 
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
   const { t } = useTranslation();
@@ -43,6 +44,29 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const lastUserIdRef = useRef<string | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
 
+  // Approvals keyed by toolCallId so a ToolCard can look up its own decision state.
+  const [approvals, setApprovals] = useState<Map<string, Approval>>(new Map());
+
+  // Reopen restore: load this session's persisted approvals whenever it changes.
+  useEffect(() => {
+    let cancelled = false;
+    setApprovals(new Map());
+    void api
+      .listApprovals(sessionId)
+      .then((list) => {
+        if (cancelled) return;
+        setApprovals(new Map(list.map((a) => [a.toolCallId, a])));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [api, sessionId]);
+
+  function upsertApproval(a: Approval) {
+    setApprovals((prev) => new Map(prev).set(a.toolCallId, a));
+  }
+
   const stream = useStreamingChat({
     api,
     sessionId,
@@ -64,9 +88,37 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     onAssistantDelta: messages.appendToLast,
     onToolCallUpsert: messages.upsertToolCall,
     onToolResultUpsert: messages.upsertToolResult,
+    onApprovalRequested: (a) =>
+      upsertApproval({
+        id: a.approvalId,
+        toolCallId: a.toolCallId,
+        toolName: a.toolName,
+        kind: a.payload.kind,
+        payload: a.payload,
+        status: "pending"
+      }),
+    onApprovalResolved: (u) =>
+      setApprovals((prev) => {
+        const existing = prev.get(u.toolCallId);
+        if (!existing) return prev;
+        const status = u.expired ? "expired" : u.approved ? "approved" : "denied";
+        return new Map(prev).set(u.toolCallId, { ...existing, status, reason: u.reason ?? null });
+      }),
     onComplete: () => setError(null),
     onError: setError
   });
+
+  // Stable identity so approving/denying doesn't defeat MessageItem's memoization.
+  const decideApproval = useCallback(
+    async (approvalId: string, decision: ApprovalDecision) => {
+      try {
+        await api.resolveApproval(sessionId, approvalId, decision);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [api, sessionId]
+  );
 
   // `+` attachments (contextFiles) plus inline `@path` mentions from the text.
   function filesFor(text: string): string[] {
@@ -117,6 +169,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           model={actualModel || undefined}
           streaming={stream.sending}
           reasoning={stream.reasoning}
+          approvalsByToolCallId={approvals}
+          onDecideApproval={decideApproval}
         />
       </div>
       <div className="border-t border-border bg-background px-4 py-3">
