@@ -75,3 +75,30 @@ export function resultText(result: ToolResultTextSource): string | undefined {
   const text = stringifyContent(result.content);
   return text ? text.slice(0, 400) : undefined;
 }
+
+export type ToolSummary = { title: string; detail?: string };
+
+const DETAIL_KEY_BY_TOOL: Record<string, string> = {
+  read: "path",
+  edit: "path",
+  write: "path",
+  bash: "command",
+  grep: "pattern",
+  find: "query"
+};
+
+/** Per-tool one-line summary for collapsed tool cards. */
+export function toolSummary(call: ChatToolCall): ToolSummary {
+  const key = DETAIL_KEY_BY_TOOL[call.name];
+  const candidate = key ? call.arguments[key] : undefined;
+  const detail = typeof candidate === "string" ? candidate : toolSubtitle(call.arguments);
+  return { title: call.name, detail };
+}
+
+/** Like resultText but untruncated, for expanded tool panels. */
+export function fullResultText(result: ToolResultTextSource): string | undefined {
+  if (result === undefined) return undefined;
+  if (typeof result === "string") return result;
+  const text = stringifyContent(result.content);
+  return text || undefined;
+}
