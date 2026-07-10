@@ -51,6 +51,29 @@ export type DocumentContent = {
   truncated: boolean;
 };
 
+export type ApprovalPayload =
+  | { kind: "command"; command: string; cwd: string }
+  | {
+      kind: "file_edit";
+      path: string;
+      mode: "edit" | "write";
+      patch: string;
+      additions: number;
+      deletions: number;
+      exact: boolean;
+      error?: string;
+    };
+
+export type Approval = {
+  id: string;
+  toolCallId: string;
+  toolName: string;
+  kind: "command" | "file_edit";
+  payload: ApprovalPayload;
+  status: "pending" | "approved" | "denied" | "expired";
+  reason?: string | null;
+};
+
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
@@ -147,6 +170,21 @@ export class ApiClient {
   updateSession(sessionId: string, input: { model: string | null }) {
     return this.request<Session>(`/sessions/${sessionId}`, {
       method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  }
+
+  listApprovals(sessionId: string) {
+    return this.request<Approval[]>(`/sessions/${sessionId}/approvals`);
+  }
+
+  resolveApproval(
+    sessionId: string,
+    approvalId: string,
+    input: { approved: boolean; reason?: string; alwaysAllowPrefix?: boolean }
+  ) {
+    return this.request<{ ok: boolean }>(`/sessions/${sessionId}/approvals/${approvalId}`, {
+      method: "POST",
       body: JSON.stringify(input)
     });
   }
