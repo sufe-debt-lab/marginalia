@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { emptyUsage, resultText } from "@marginalia/chat-core";
+import { emptyUsage, fullResultText, resultText } from "@marginalia/chat-core";
 import type {
   ChatAssistantMessage,
   ChatEntry,
@@ -21,6 +21,7 @@ interface Options {
   onAssistantReplace: (m: ChatEntry) => void;
   onAssistantDelta: (delta: string) => void;
   onToolCallUpsert?: (tool: ChatToolCall) => void;
+  onToolProgress?: (toolCallId: string, output: string) => void;
   onToolResultUpsert?: (entry: ChatEntry & { message: ChatToolResult }) => void;
   onApprovalRequested?: (approval: {
     approvalId: string;
@@ -226,12 +227,23 @@ export function useStreamingChat(opts: Options) {
             }
             break;
           }
-          case "tool_execution_start":
+          case "tool_execution_start": {
+            const tool = toolCallFromEvent(pi);
+            if (tool) {
+              ensureAssistant();
+              opts.onToolCallUpsert?.(tool);
+            }
+            break;
+          }
           case "tool_execution_update": {
             const tool = toolCallFromEvent(pi);
             if (tool) {
               ensureAssistant();
               opts.onToolCallUpsert?.(tool);
+            }
+            if (pi.toolCallId) {
+              const output = fullResultText(pi.partialResult as never);
+              if (output !== undefined) opts.onToolProgress?.(pi.toolCallId, output);
             }
             break;
           }
