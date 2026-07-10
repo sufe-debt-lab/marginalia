@@ -101,4 +101,102 @@ describe("ToolCard", () => {
     expect(screen.getByText("+1")).toBeInTheDocument();
     expect(screen.getByText("-1")).toBeInTheDocument();
   });
+
+  describe("dot-status precedence", () => {
+    it("renders .dot.ok.pulse when no result and no approval", () => {
+      const { container } = render(<ToolCard call={call} />);
+      const dot = container.querySelector(".dot");
+      expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("ok");
+      expect(dot).toHaveClass("pulse");
+    });
+
+    it("renders .dot.err when result has isError:true", () => {
+      const { container } = render(<ToolCard call={call} result={result("failed", true)} />);
+      const dot = container.querySelector(".dot");
+      expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("err");
+      expect(dot).not.toHaveClass("pulse");
+    });
+
+    it("renders .dot.ok (no pulse) when result has isError:false", () => {
+      const { container } = render(<ToolCard call={call} result={result("success")} />);
+      const dot = container.querySelector(".dot");
+      expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("ok");
+      expect(dot).not.toHaveClass("pulse");
+    });
+
+    it("renders .dot.warn when approval status is pending", () => {
+      const { container } = render(
+        <ToolCard
+          call={call}
+          approval={{
+            id: "ap-1",
+            toolCallId: "t1",
+            toolName: "bash",
+            kind: "command",
+            status: "pending",
+            payload: { kind: "command", command: "python analyze.py", cwd: "/ws" }
+          }}
+        />
+      );
+      const dot = container.querySelector(".dot");
+      expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("warn");
+    });
+
+    it("renders .dot.err when approval status is denied", () => {
+      const { container } = render(
+        <ToolCard
+          call={call}
+          approval={{
+            id: "ap-1",
+            toolCallId: "t1",
+            toolName: "bash",
+            kind: "command",
+            status: "denied",
+            reason: "不安全",
+            payload: { kind: "command", command: "python analyze.py", cwd: "/ws" }
+          }}
+        />
+      );
+      const dot = container.querySelector(".dot");
+      expect(dot).toBeInTheDocument();
+      expect(dot).toHaveClass("err");
+    });
+  });
+
+  describe("file_edit expanded panel DiffView swap", () => {
+    it("renders DiffView instead of JSON args when file_edit approval is expanded", async () => {
+      const editCall = {
+        type: "toolCall" as const,
+        id: "t2",
+        name: "edit",
+        arguments: { path: "src/foo.ts" }
+      };
+      const approval: Approval = {
+        id: "ap-2",
+        toolCallId: "t2",
+        toolName: "edit",
+        kind: "file_edit",
+        status: "approved",
+        payload: {
+          kind: "file_edit",
+          path: "src/foo.ts",
+          mode: "edit",
+          patch: "@@ -1 +1 @@\n-old\n+new\n",
+          additions: 1,
+          deletions: 1,
+          exact: true
+        }
+      };
+      render(<ToolCard call={editCall} approval={approval} />);
+      await userEvent.click(screen.getByRole("button", { name: /edit/ }));
+      // DiffView renders the diff content
+      expect(screen.getByText("+new")).toBeInTheDocument();
+      // JSON args should not be rendered
+      expect(screen.queryByText(/"path"/)).not.toBeInTheDocument();
+    });
+  });
 });
