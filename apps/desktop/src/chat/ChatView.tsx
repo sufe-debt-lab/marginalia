@@ -47,6 +47,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
 
   // Approvals keyed by toolCallId so a ToolCard can look up its own decision state.
   const [approvals, setApprovals] = useState<Map<string, Approval>>(new Map());
+  // Live tool output keyed by toolCallId; retired once that call's result arrives.
+  const [toolProgress, setToolProgress] = useState<Map<string, string>>(new Map());
 
   // Reopen restore: load this session's persisted approvals whenever it changes.
   useEffect(() => {
@@ -81,6 +83,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       // New send: reset the assistant id (bubbles are now created lazily as content arrives).
       lastUserIdRef.current = m.id;
       lastAssistantIdRef.current = null;
+      setToolProgress(new Map());
       messages.append(m);
     },
     onAssistantStart: (m) => {
@@ -90,7 +93,18 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     onAssistantReplace: messages.replaceAssistant,
     onAssistantDelta: messages.appendToLast,
     onToolCallUpsert: messages.upsertToolCall,
-    onToolResultUpsert: messages.upsertToolResult,
+    onToolProgress: (toolCallId, output) =>
+      setToolProgress((prev) => new Map(prev).set(toolCallId, output)),
+    onToolResultUpsert: (entry) => {
+      // Result arrived: the live progress area retires in favor of the final result.
+      setToolProgress((prev) => {
+        if (!prev.has(entry.message.toolCallId)) return prev;
+        const next = new Map(prev);
+        next.delete(entry.message.toolCallId);
+        return next;
+      });
+      messages.upsertToolResult(entry);
+    },
     onApprovalRequested: (a) =>
       upsertApproval({
         id: a.approvalId,
@@ -173,6 +187,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           streaming={stream.sending}
           reasoning={stream.reasoning}
           approvalsByToolCallId={approvals}
+          toolProgressByCallId={toolProgress}
           onDecideApproval={decideApproval}
         />
       </div>

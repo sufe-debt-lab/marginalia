@@ -14,6 +14,7 @@ function MessageItemImpl({
   streaming,
   toolResultsByCallId,
   approvalsByToolCallId,
+  toolProgressByCallId,
   onDecideApproval
 }: {
   entry: ChatEntry;
@@ -21,6 +22,7 @@ function MessageItemImpl({
   streaming?: boolean;
   toolResultsByCallId?: ReadonlyMap<string, ChatToolResult>;
   approvalsByToolCallId?: ReadonlyMap<string, Approval>;
+  toolProgressByCallId?: ReadonlyMap<string, string>;
   onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
 }) {
   const { t } = useTranslation();
@@ -71,6 +73,7 @@ function MessageItemImpl({
               call={part}
               result={toolResultsByCallId?.get(part.id)}
               approval={approvalsByToolCallId?.get(part.id)}
+              progress={toolProgressByCallId?.get(part.id)}
               onDecideApproval={onDecideApproval}
             />
           );

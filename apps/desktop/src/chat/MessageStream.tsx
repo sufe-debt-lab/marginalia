@@ -17,6 +17,7 @@ interface Props {
   /** Transient reasoning text for the in-flight turn; shown while the model thinks. */
   reasoning?: string;
   approvalsByToolCallId?: ReadonlyMap<string, Approval>;
+  toolProgressByCallId?: ReadonlyMap<string, string>;
   onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
 }
 
@@ -28,6 +29,7 @@ export function MessageStream({
   streaming,
   reasoning,
   approvalsByToolCallId,
+  toolProgressByCallId,
   onDecideApproval
 }: Props) {
   const { t } = useTranslation();
@@ -54,10 +56,17 @@ export function MessageStream({
     last?.message.role === "user" || last?.message.role === "assistant"
       ? stringifyContent(last.message.content)
       : "";
+  // Live tool output grows in place (same toolCallId, longer string) without
+  // changing any of the other tail inputs, so its total length must be part
+  // of the tail too or the follow-scroll stalls while a command is running.
+  const progressLength = useMemo(
+    () => [...(toolProgressByCallId?.values() ?? [])].reduce((n, s) => n + s.length, 0),
+    [toolProgressByCallId]
+  );
   // Approval cards need user action, so their appearance must pull the view
   // down just like new content does (a bare tool call has no result yet, so
   // none of the other tail inputs change when the card shows up).
-  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}:${approvalsByToolCallId?.size ?? 0}`;
+  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}:${approvalsByToolCallId?.size ?? 0}:${progressLength}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       // data-motion="off" covers both screenshot mode and the OS reduced-motion
@@ -86,6 +95,7 @@ export function MessageStream({
           entry={entry}
           toolResultsByCallId={toolResultsByCallId}
           approvalsByToolCallId={approvalsByToolCallId}
+          toolProgressByCallId={toolProgressByCallId}
           onDecideApproval={onDecideApproval}
           model={entry.message.role === "assistant" ? model : undefined}
           streaming={Boolean(streaming) && i === lastIndex && entry.message.role === "assistant"}

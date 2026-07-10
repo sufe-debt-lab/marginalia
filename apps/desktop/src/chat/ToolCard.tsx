@@ -33,11 +33,14 @@ export function ToolCard({
   call,
   result,
   approval,
+  progress,
   onDecideApproval
 }: {
   call: ChatToolCall;
   result?: ChatToolResult;
   approval?: Approval;
+  /** Live (unfinished) output tail for a running tool call; retired once `result` arrives. */
+  progress?: string;
   onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
 }) {
   const { t } = useTranslation();
@@ -88,6 +91,16 @@ export function ToolCard({
           )}
         />
       </button>
+      {!result && progress && (
+        <pre className="mono max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-soft bg-surface px-3 py-2 text-[11.5px] text-text-muted">
+          {progress
+            .split("\n")
+            .slice(-8)
+            .map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+        </pre>
+      )}
       {approval?.status === "pending" && (
         <ApprovalCard
           approval={approval}
