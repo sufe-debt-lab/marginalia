@@ -436,12 +436,21 @@ function mapApproval(row: Record<string, unknown>): ApprovalRow {
     toolCallId: row.tool_call_id as string,
     toolName: row.tool_name as string,
     kind: row.kind as ApprovalRow["kind"],
-    payload: JSON.parse(row.payload as string) as ApprovalPayload,
+    payload: parseApprovalPayload(row.payload as string),
     status: row.status as ApprovalRow["status"],
     reason: (row.reason as string | null) ?? null,
     createdAt: row.created_at as number,
     decidedAt: (row.decided_at as number | null) ?? null
   };
+}
+
+function parseApprovalPayload(raw: string): ApprovalPayload {
+  try {
+    return JSON.parse(raw) as ApprovalPayload;
+  } catch {
+    // One corrupted row must not break the whole session's approval restore.
+    return { kind: "command", command: "[unreadable approval payload]", cwd: "" };
+  }
 }
 
 export function createApproval(

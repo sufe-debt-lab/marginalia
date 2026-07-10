@@ -100,4 +100,26 @@ describe("approvals repository", () => {
     expect(rows[1]?.id).toBe("b");
     expect(rows[1]!.createdAt).toBeGreaterThan(rows[0]!.createdAt);
   });
+
+  it("survives a corrupted payload row instead of throwing", () => {
+    const { db, session, run } = seeded();
+    createApproval(db, {
+      id: "ok",
+      sessionId: session.id,
+      runId: run.id,
+      toolCallId: "t1",
+      toolName: "bash",
+      kind: "command",
+      payload: { kind: "command", command: "x", cwd: "/" }
+    });
+    db.prepare("update approvals set payload = ? where id = ?").run("{not json", "ok");
+    const rows = listApprovals(db, session.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("pending");
+    expect(rows[0]?.payload).toEqual({
+      kind: "command",
+      command: "[unreadable approval payload]",
+      cwd: ""
+    });
+  });
 });
