@@ -185,7 +185,6 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           onRetry={retry}
           model={actualModel || undefined}
           streaming={stream.sending}
-          reasoning={stream.reasoning}
           approvalsByToolCallId={approvals}
           toolProgressByCallId={toolProgress}
           onDecideApproval={decideApproval}

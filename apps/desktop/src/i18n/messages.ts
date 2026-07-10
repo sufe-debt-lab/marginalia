@@ -58,7 +58,9 @@ export const en = {
     noMessages: "No messages yet",
     assistant: "assistant",
     noProvider: "No provider configured",
-    thinking: "Thinking…"
+    thinkingLive: "Thinking…",
+    thoughtFor: "Thought for {s}s",
+    thought: "Thought"
   },
   settings: {
     title: "Settings",
@@ -247,7 +249,9 @@ export const zh = {
     noMessages: "还没有消息",
     assistant: "assistant",
     noProvider: "未配置服务商",
-    thinking: "思考中…"
+    thinkingLive: "思考中…",
+    thoughtFor: "已思考 · {s} 秒",
+    thought: "已思考"
   },
   settings: {
     title: "设置",

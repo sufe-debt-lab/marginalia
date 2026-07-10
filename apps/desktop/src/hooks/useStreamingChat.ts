@@ -137,7 +137,6 @@ function toolResultEntryFromMessage(
 
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
-  const [reasoning, setReasoning] = useState("");
   const bufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -165,7 +164,6 @@ export function useStreamingChat(opts: Options) {
       abortRef.current = controller;
       sendingRef.current = true;
       setSending(true);
-      setReasoning("");
       const stamp = Date.now();
       let turn = 0;
       let currentAssistantId: string | null = null;
@@ -205,18 +203,13 @@ export function useStreamingChat(opts: Options) {
               ensureAssistant(pi.message);
             } else if (ev?.type === "text_delta" && ev.delta) {
               ensureAssistant();
-              setReasoning("");
               bufferRef.current += ev.delta;
               schedule();
-            }
-            if (ev?.type === "thinking_delta" && ev.delta) {
-              setReasoning((r) => r + ev.delta);
             }
             break;
           }
           case "message_end": {
             flush();
-            setReasoning("");
             if (isAssistantMessage(pi.message)) ensureAssistant(pi.message);
             if (isToolResultMessage(pi.message)) {
               opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
@@ -334,5 +327,5 @@ export function useStreamingChat(opts: Options) {
     abortRef.current?.abort();
   }, []);
 
-  return { send, stop, sending, reasoning };
+  return { send, stop, sending };
 }

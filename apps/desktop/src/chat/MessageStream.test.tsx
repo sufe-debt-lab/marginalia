@@ -116,20 +116,6 @@ describe("MessageStream", () => {
     expect(scrollSpy.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it("shows a thinking indicator while reasoning streams", () => {
-    render(
-      <MessageStream
-        messages={[assistant("1", "")]}
-        error={null}
-        onRetry={() => {}}
-        streaming
-        reasoning="pondering"
-      />
-    );
-    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
-    expect(screen.getByText("pondering")).toBeInTheDocument();
-  });
-
   it("renders error row + retry button", async () => {
     const onRetry = vi.fn();
     render(<MessageStream messages={[user("1", "hi")]} error="boom" onRetry={onRetry} />);

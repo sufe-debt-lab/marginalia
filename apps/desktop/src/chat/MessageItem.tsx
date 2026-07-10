@@ -6,6 +6,7 @@ import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
 import type { Approval } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { markdownComponents } from "@/lib/markdown.js";
+import { ThinkingBlock } from "./ThinkingBlock.js";
 import { ToolCard, type ApprovalDecision } from "./ToolCard.js";
 
 function MessageItemImpl({
@@ -59,12 +60,11 @@ function MessageItemImpl({
           }
           if (part.type === "thinking") {
             return (
-              <div
+              <ThinkingBlock
                 key={`${index}:thinking`}
-                className="whitespace-pre-wrap border-l border-border pl-3 text-[12.5px] italic text-text-muted"
-              >
-                {part.thinking}
-              </div>
+                text={part.thinking}
+                streaming={Boolean(streaming) && index === message.content.length - 1}
+              />
             );
           }
           return (

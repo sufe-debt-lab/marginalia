@@ -14,8 +14,6 @@ interface Props {
   onRetry: () => void;
   model?: string;
   streaming?: boolean;
-  /** Transient reasoning text for the in-flight turn; shown while the model thinks. */
-  reasoning?: string;
   approvalsByToolCallId?: ReadonlyMap<string, Approval>;
   toolProgressByCallId?: ReadonlyMap<string, string>;
   onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
@@ -27,7 +25,6 @@ export function MessageStream({
   onRetry,
   model,
   streaming,
-  reasoning,
   approvalsByToolCallId,
   toolProgressByCallId,
   onDecideApproval
@@ -66,7 +63,7 @@ export function MessageStream({
   // Approval cards need user action, so their appearance must pull the view
   // down just like new content does (a bare tool call has no result yet, so
   // none of the other tail inputs change when the card shows up).
-  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}:${approvalsByToolCallId?.size ?? 0}:${progressLength}`;
+  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${approvalsByToolCallId?.size ?? 0}:${progressLength}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       // data-motion="off" covers both screenshot mode and the OS reduced-motion
@@ -101,17 +98,6 @@ export function MessageStream({
           streaming={Boolean(streaming) && i === lastIndex && entry.message.role === "assistant"}
         />
       ))}
-      {streaming && reasoning && (
-        <div className="flex flex-col gap-1 rounded-lg border border-soft bg-surface px-3 py-2">
-          <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-faint">
-            <span className="dot ok pulse" />
-            {t("chat.thinking")}
-          </span>
-          <div className="max-h-32 overflow-auto whitespace-pre-wrap text-[12.5px] italic text-text-muted">
-            {reasoning}
-          </div>
-        </div>
-      )}
       {error && (
         <div className="flex items-center gap-2.5 rounded-lg border border-danger bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
           <AlertTriangle className="h-4 w-4 shrink-0" />
