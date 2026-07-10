@@ -23,7 +23,8 @@ export const en = {
     showMore: "Show more",
     pin: "Pin",
     unpin: "Unpin",
-    delete: "Delete"
+    delete: "Delete",
+    cancel: "Cancel"
   },
   newThread: {
     title: "What should we build?",
@@ -166,6 +167,17 @@ export const en = {
     startingServer: "Starting pi-server..."
   },
   approval: {
+    title: "Approval required",
+    workingDir: "Working directory",
+    approxPreview: "Approximate preview",
+    allow: "Allow",
+    deny: "Deny",
+    confirmDeny: "Confirm deny",
+    denyReasonPlaceholder: "Tell the model what to do instead (optional)",
+    alwaysAllowPrefix: "Always allow this command prefix in this session",
+    approved: "Approved",
+    denied: "Denied",
+    expired: "Approval expired",
     expandDiff: "Show full diff"
   }
 } as const;
@@ -199,7 +211,8 @@ export const zh = {
     showMore: "显示更多",
     pin: "置顶",
     unpin: "取消置顶",
-    delete: "删除"
+    delete: "删除",
+    cancel: "取消"
   },
   newThread: {
     title: "我们要做点什么？",
@@ -340,6 +353,17 @@ export const zh = {
     startingServer: "正在启动 pi-server..."
   },
   approval: {
+    title: "需要审批",
+    workingDir: "工作目录",
+    approxPreview: "近似预览",
+    allow: "允许",
+    deny: "拒绝",
+    confirmDeny: "确认拒绝",
+    denyReasonPlaceholder: "告诉模型该怎么改（可选）",
+    alwaysAllowPrefix: "本次会话总是允许此命令前缀",
+    approved: "已批准",
+    denied: "已拒绝",
+    expired: "审批已过期",
     expandDiff: "展开完整 diff"
   }
 } satisfies MessageShape<typeof en>;
