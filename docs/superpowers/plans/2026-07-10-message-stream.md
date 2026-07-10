@@ -561,7 +561,9 @@ git commit -m "feat(desktop): live tool output tail while commands run"
 - Test: `apps/desktop/src/chat/ThinkingBlock.test.tsx`
 - Modify: `apps/desktop/src/chat/MessageItem.tsx`（thinking part → ThinkingBlock）
 - Modify: `apps/desktop/src/chat/MessageStream.tsx`、`apps/desktop/src/chat/ChatView.tsx`、`apps/desktop/src/hooks/useStreamingChat.ts`（移除 transient `reasoning` 链路）
-- Modify: `apps/desktop/src/i18n/messages.ts`（`chat.thinkingLive`/`chat.thoughtFor`/`chat.thought`，en+zh）
+- Modify: `apps/desktop/src/hooks/useStreamingChat.test.ts`（**删除**两个断言 `result.current.reasoning` 的既有用例："accumulates reasoning text from thinking deltas" 与 "clears reasoning once the answer starts streaming"——thinking 渲染改由新增的 `ThinkingBlock.test.tsx` 覆盖，无需迁移等价断言）
+- Modify: `apps/desktop/src/chat/MessageStream.test.tsx`（**删除**既有用例 "shows a thinking indicator while reasoning streams"，它传 `reasoning` prop 且断言 `chat.thinking` 旧文案，本任务已删该 prop 与渲染块）
+- Modify: `apps/desktop/src/i18n/messages.ts`（新增 `chat.thinkingLive`/`chat.thoughtFor`/`chat.thought`，en+zh；删除不再引用的 `chat.thinking` 键——zh `satisfies` 会强制两侧同步删）
 
 **Interfaces:**
 
@@ -569,7 +571,7 @@ git commit -m "feat(desktop): live tool output tail while commands run"
   - `streaming=true`：显示「思考中…」标签（`chat.thinkingLive`）+ 实时文本（`max-h-32 overflow-auto`，斜体沿用现有样式），组件内部用 `useRef` 记录首次挂载时间，text 停止增长且 `streaming` 变 false 时冻结秒数；
   - `streaming=false`：折叠为一行 `chat.thoughtFor`（"Thought for N s" / "已思考 · N 秒"；**无秒数时**——重开会话场景——用 `chat.thought`（"Thought" / "已思考")），点击展开/收起完整思考文本。
   - 秒数只在 live 会话内可得（组件 state），重开渲染必然走无秒数分支——这是 Global Constraints 里"瞬态降级"的既定形态。
-- 事件模型依据：pi `message_update` 携带完整 message（含累计的 thinking part），`ensureAssistant(pi.message)` 已在每次 update 用它整体替换气泡内容，因此 **thinking 文本在流式期间就存在于消息 content 里**，无需 transient 通道。移除链路：`useStreamingChat` 删掉 `reasoning` state、`setReasoning` 调用与返回值；`MessageStream` 删掉 `reasoning` prop 与底部 transient 块（tail 串同步去掉 reasoning 长度项）；`ChatView` 删掉透传。**若实现中发现某 provider 的 message_update 不带 message 只带 thinking_delta**（测试 `useStreamingChat.test.ts` 现有用例会暴露），降级方案：hook 将 thinking_delta 累计进当前气泡的 thinking part（构造 `{ type:"thinking", thinking }` part 并 onAssistantReplace）——以现有测试全绿为准。
+- 事件模型依据（评审已用 pi 源码确证）：pi `message_update` 携带完整 message（含累计的 thinking part），`ensureAssistant(pi.message)` 已在每次 update 用它整体替换气泡内容，因此 **thinking 文本在流式期间就存在于消息 content 里**，无需 transient 通道。移除链路：`useStreamingChat` 删掉 `reasoning` state、`setReasoning` 调用与返回值；`MessageStream` 删掉 `reasoning` prop 与底部 transient 块（tail 串同步去掉 reasoning 长度项）；`ChatView` 删掉透传。**不要保留任何"message_update 只带 thinking_delta 不带 message"的降级分支**——真实 pi 与仓库的 scripted fake agent 的 `message_update` 必然带 `message`（`pi-agent-core` agent-loop 对 text/thinking/toolcall delta 走同一 `emit({message:{...partialMessage}})` 分支），该降级只会迁就旧 fixture 的失真事件，属死代码，随两个旧用例一并删除。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -659,7 +661,7 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming: bo
 
 MessageItem：thinking part 分支改为 `<ThinkingBlock key={…} text={part.thinking} streaming={Boolean(streaming) && index === message.content.length - 1} />`（仅当 thinking 是当前正在生成的最后一个 part 时视为 streaming；简单判定：`streaming && !hasTextAfter`，实现时以"该 part 之后是否已有 text part"判断）。同任务内删除 MessageStream 的 reasoning 块与 `chat.thinking` 旧键引用（键保留给 zh/en 或删除——若删除，`satisfies` 会强制两侧同步删）。
 
-- [ ] **Step 4: 运行确认通过** → `pnpm --filter @marginalia/desktop test`（全量；useStreamingChat/MessageStream 既有用例中涉及 reasoning 的断言随实现调整——删除的是 transient 通道的断言，thinking 渲染断言改到 MessageItem/ThinkingBlock 层）
+- [ ] **Step 4: 运行确认通过** → `pnpm --filter @marginalia/desktop test`（全量）。前置：已按上面 Files 清单删除 `useStreamingChat.test.ts` 的 2 个 reasoning 用例与 `MessageStream.test.tsx` 的 1 个 thinking-indicator 用例（thinking 渲染的新断言由 `ThinkingBlock.test.tsx` 承担）。全量绿的判据 = 无 `reasoning` 相关红灯、ThinkingBlock 用例通过、其余零回归。
 
 - [ ] **Step 5: 提交**
 
@@ -810,10 +812,12 @@ function md(text: string, prefix?: string) {
 }
 
 describe("createMarkdownComponents", () => {
-  it("renders heading hierarchy with ids when a prefix is given", () => {
+  it("renders heading hierarchy with line-based ids when a prefix is given", () => {
+    // ids come from the markdown source line (react-markdown node.position),
+    // so "# One" is line 1 and "## Two" is line 3 (blank line between).
     md("# One\n\n## Two", "m1");
-    expect(screen.getByText("One").id).toBe("m1-h-0");
-    expect(screen.getByText("Two").id).toBe("m1-h-1");
+    expect(screen.getByText("One").id).toBe("m1-h-1");
+    expect(screen.getByText("Two").id).toBe("m1-h-3");
     expect(screen.getByText("One").className).toMatch(/font-semibold/);
   });
 
@@ -830,20 +834,32 @@ describe("createMarkdownComponents", () => {
 
 `markdown.tsx` 重构为工厂（保留既有 `markdownComponents` 导出 = `createMarkdownComponents()` 以免动全部调用点）：
 
+**无状态、稳定的 heading id 用 react-markdown 的 `node.position`**（不要用渲染期计数器——会跨重渲染漂移）。`node` 与 `node.position` 在类型上都是 optional（`react-markdown@9` + `@types/hast`/`@types/unist`，仓库 `strict: true`），**必须可选链**，无 position 时回退到不带行号的稳定兜底（如 `${prefix}-h`）：
+
 ```tsx
+import type { Components } from "react-markdown";
+import type { Element } from "hast";
+
 export function createMarkdownComponents(prefix?: string): Components {
-  let headingIndex = 0;
-  const headingId = () => (prefix ? `${prefix}-h-${headingIndex++}` : undefined);
+  const headingId = (node: Element | undefined): string | undefined => {
+    if (!prefix) return undefined;
+    const line = node?.position?.start.line;
+    return line ? `${prefix}-h-${line}` : `${prefix}-h`;
+  };
   const heading =
     (Tag: "h1" | "h2" | "h3" | "h4", className: string) =>
-    ({ children }: { children?: React.ReactNode }) => (
-      <Tag id={headingId()} className={className}>
+    ({ node, children }: { node?: Element; children?: React.ReactNode }) => (
+      <Tag id={headingId(node)} className={className}>
         {children}
       </Tag>
     );
   return {
-    code({ className, children, ...props }) { /* Task 6 的实现原样搬入 */ },
-    a({ children, href, ...rest }) { /* 既有实现原样搬入 */ },
+    code({ className, children, ...props }) {
+      /* Task 6 的实现原样搬入 */
+    },
+    a({ children, href, ...rest }) {
+      /* 既有实现原样搬入 */
+    },
     table: /* Task 6 */, blockquote: /* Task 6 */,
     h1: heading("h1", "mt-4 mb-2 text-[1.25em] font-semibold"),
     h2: heading("h2", "mt-3 mb-1.5 text-[1.15em] font-semibold"),
@@ -858,7 +874,7 @@ export function createMarkdownComponents(prefix?: string): Components {
 export const markdownComponents: Components = createMarkdownComponents();
 ```
 
-注意 `headingIndex` 每次渲染递增会在重渲染时漂移——正确做法：`createMarkdownComponents` 在**每次渲染时调用**（MessageItem 内 `useMemo(() => createMarkdownComponents(entry.id), [entry.id, /* content 长度 */])` 不可行，索引会跨渲染累计）。实现改为**无状态 id**：heading 渲染依赖 react-markdown 提供的 `node.position.start.line`（`({ node, children })` 里可得）——`id = `${prefix}-h-${node.position.start.line}``，稳定且无计数器。测试断言相应改为 `m1-h-1`/`m1-h-3`（行号）——实现者据实际行号调整断言值，语义保持"有 prefix 就有稳定 id"。MessageItem 助手正文容器加排版类并传 `prefix=entry.id`。
+id 用 markdown 源行号（`node.position.start.line`，1-based），与 Task 8 `extractHeadings` 的行号同源一致。MessageItem 助手正文容器加排版类并传 `prefix={entry.id}`。因为 id 无状态（纯 `node` 派生），`createMarkdownComponents(entry.id)` 可安全 `useMemo`（依赖 `[entry.id]`），不会有计数器漂移——Task 7 的性能顾虑不再适用。
 
 - [ ] **Step 4: 运行确认通过** → `pnpm --filter @marginalia/desktop test`（全量）
 
@@ -1088,16 +1104,16 @@ export async function saveTextFile(defaultName: string, content: string): Promis
 }
 ```
 
-main.ts（在既有 handle 簇后追加，`windowRef` 取法照抄 `workspace:pick-directory`）：
+main.ts（在既有 handle 簇后追加）。**复用模块级 `windowRef`**（`main.ts:16` 声明、`createWindow()` 赋值），与既有 `workspace:pick-directory`（`main.ts:110-118`）一致——**不要**新建局部 `const windowRef = BrowserWindow.getFocusedWindow()`，那会遮蔽模块级变量且在原生对话框抢焦点时可能返回 null，语义与既有 handler 不一致：
 
 ```ts
 ipcMain.handle("marginalia:save-text-file", async (_event, input: unknown) => {
   const { defaultName, content } = input as { defaultName: string; content: string };
-  const windowRef = BrowserWindow.getFocusedWindow();
   const options = {
     defaultPath: defaultName,
     filters: [{ name: "Markdown", extensions: ["md"] }]
   };
+  // windowRef is the module-level ref (same as workspace:pick-directory).
   const result = windowRef
     ? await dialog.showSaveDialog(windowRef, options)
     : await dialog.showSaveDialog(options);
@@ -1522,23 +1538,27 @@ describe("file_changed notifications", () => {
     expect(change?.payload?.kind).toBe("file_edit");
   });
 
-  it("notifies for full-permission edits too", async () => {
+  it("notifies with a real diff for full-permission edits using the edits-array shape", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "file-changed-full-"));
-    writeFileSync(path.join(root, "a.md"), "old\n");
+    writeFileSync(path.join(root, "a.md"), "# 旧标题\n");
     const gateway = new ApprovalGateway();
     gateway.setPolicy("s1", { permission: "full", workspaceRoot: root });
-    const events: Array<{ type: string }> = [];
+    const events: Array<{ type: string; payload?: { patch?: string; exact?: boolean } }> = [];
     gateway.onEvent("s1", (e) => events.push(e as never));
     const handler = register(gateway, "s1");
     await handler(
       {
         toolName: "edit",
         toolCallId: "t2",
-        input: { path: "a.md", oldText: "old", newText: "new" }
+        // pi's current edit tool uses this array shape — the diff must NOT be empty.
+        input: { path: "a.md", edits: [{ oldText: "# 旧标题", newText: "# 新标题" }] }
       },
       {}
     );
-    expect(events.some((e) => e.type === "file_changed")).toBe(true);
+    const change = events.find((e) => e.type === "file_changed");
+    expect(change).toBeTruthy();
+    expect(change?.payload?.exact).toBe(true);
+    expect(change?.payload?.patch).toContain("+# 新标题");
   });
 
   it("does not notify for bash or read", async () => {
@@ -1569,25 +1589,16 @@ if (need === "allow") {
     const input = event.input;
     const relPath = typeof input.path === "string" ? input.path : "";
     if (relPath) {
-      const payload =
-        event.toolName === "edit"
-          ? {
-              kind: "file_edit" as const,
-              path: relPath,
-              mode: "edit" as const,
-              ...previewEdit(
-                workspaceRoot,
-                relPath,
-                String(input.oldText ?? ""),
-                String(input.newText ?? "")
-              )
-            }
-          : {
-              kind: "file_edit" as const,
-              path: relPath,
-              mode: "write" as const,
-              ...previewWrite(workspaceRoot, relPath, String(input.content ?? ""))
-            };
+      // MUST reuse buildFileEditPayload → previewEdits(parseEdits(input)), NOT
+      // previewEdit(oldText,newText). pi's edit tool uses the {edits:[...]}
+      // array shape; the legacy single-pair path yields an empty diff (this is
+      // the exact bug commit 96bf76e fixed for the ask path — do not reintroduce it).
+      const payload = buildFileEditPayload(
+        event.toolName as "edit" | "write",
+        relPath,
+        input,
+        workspaceRoot
+      );
       gateway.notifyFileChange(sessionId, {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
@@ -1599,7 +1610,24 @@ if (need === "allow") {
 }
 ```
 
-（与 `buildPayload` 的 file_edit 分支重复——把 `buildPayload` 的 file_edit 部分抽成 `buildFileEditPayload(need|toolName, input, workspaceRoot)` 供两处共用，避免 verbatim 重复。）`createApproval` 加可选 `status`（insert 语句的 `'pending'` 字面量改绑参数，默认 `"pending"`）；app.ts 在审批分流旁加：
+**重构（必做，消除重复且防止字段名回归）**：把 `approval-extension.ts` 里 `buildPayload` 的 file_edit 分支抽成共用函数，`buildPayload` 与上面的直通分支都调用它：
+
+```ts
+function buildFileEditPayload(
+  mode: "edit" | "write",
+  relPath: string,
+  input: Record<string, unknown>,
+  workspaceRoot: string
+): ApprovalPayload {
+  const preview =
+    mode === "edit"
+      ? previewEdits(workspaceRoot, relPath, parseEdits(input))
+      : previewWrite(workspaceRoot, relPath, String(input.content ?? ""));
+  return { kind: "file_edit", path: relPath, mode, ...preview };
+}
+```
+
+（`parseEdits` 与 `previewEdits` 已存在于 `approval-extension.ts` / `diff-preview.ts`，P1-A commit 96bf76e 引入；直接复用，勿新写单形态解析。）`createApproval` 加可选 `status`（insert 语句的 `'pending'` 字面量改绑参数，默认 `"pending"`）；app.ts 在审批分流旁加：
 
 ```ts
 if (type === "file_changed") {
