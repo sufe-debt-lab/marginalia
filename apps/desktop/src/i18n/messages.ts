@@ -25,7 +25,8 @@ export const en = {
     unpin: "Unpin",
     delete: "Delete",
     cancel: "Cancel",
-    copy: "Copy"
+    copy: "Copy",
+    copied: "Copied"
   },
   newThread: {
     title: "What should we build?",
@@ -216,7 +217,8 @@ export const zh = {
     unpin: "取消置顶",
     delete: "删除",
     cancel: "取消",
-    copy: "复制"
+    copy: "复制",
+    copied: "已复制"
   },
   newThread: {
     title: "我们要做点什么？",

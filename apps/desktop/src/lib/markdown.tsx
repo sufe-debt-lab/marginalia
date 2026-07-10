@@ -1,5 +1,5 @@
 import type { Components } from "react-markdown";
-import { highlightCode } from "./highlight.js";
+import { CodeBlock } from "../chat/CodeBlock.js";
 import { isWebUrl, openExternal } from "./open-external.js";
 
 export const markdownComponents: Components = {
@@ -13,17 +13,8 @@ export const markdownComponents: Components = {
         </code>
       );
     }
-    const language = match[1];
-    const html = highlightCode(raw, language);
-    return (
-      <pre className="my-2 overflow-x-auto rounded-md border border-border bg-muted/50 p-3">
-        <code
-          className={`hljs font-mono text-xs ${className || ""}`}
-          dangerouslySetInnerHTML={{ __html: html }}
-          {...props}
-        />
-      </pre>
-    );
+    const language = match[1]!;
+    return <CodeBlock code={raw} language={language} />;
   },
   a({ children, href, ...rest }) {
     return (
@@ -44,5 +35,16 @@ export const markdownComponents: Components = {
         {children}
       </a>
     );
-  }
+  },
+  table: (props) => (
+    <div className="my-2 overflow-x-auto">
+      <table
+        className="w-full border-collapse text-[13px] [&_td]:border [&_td]:border-soft [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-soft [&_th]:bg-surface [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
+        {...props}
+      />
+    </div>
+  ),
+  blockquote: (props) => (
+    <blockquote className="my-2 border-l-2 border-brand/40 pl-3 text-text-muted" {...props} />
+  )
 };
