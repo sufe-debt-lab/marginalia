@@ -23,7 +23,7 @@ export function extractHeadings(markdown: string): TocItem[] {
 export function MessageToc({ items, prefix }: { items: TocItem[]; prefix: string }) {
   const { t } = useTranslation();
   return (
-    <nav className="mb-2 rounded-lg border border-soft bg-surface px-3 py-2">
+    <nav className="mb-2 rounded-lg border border-border-soft bg-surface px-3 py-2">
       <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-faint">
         <List className="h-3 w-3" />
         {t("chat.outline")}

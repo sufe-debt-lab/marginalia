@@ -92,7 +92,7 @@ export function ToolCard({
         />
       </button>
       {!result && progress && (
-        <pre className="mono max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-soft bg-surface px-3 py-2 text-[11.5px] text-text-muted">
+        <pre className="mono max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border-soft bg-surface px-3 py-2 text-[11.5px] text-text-muted">
           {progress
             .split("\n")
             .slice(-8)
@@ -121,7 +121,7 @@ export function ToolCard({
         </div>
       )}
       {expanded && (
-        <div className="flex flex-col gap-2 rounded-lg border border-soft bg-surface px-3 py-2">
+        <div className="flex flex-col gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2">
           {fileEditPatch ? (
             <DiffView patch={fileEditPatch.patch} />
           ) : (
@@ -134,7 +134,7 @@ export function ToolCard({
               <button
                 type="button"
                 onClick={() => void navigator.clipboard.writeText(full)}
-                className="absolute right-1 top-1 rounded border border-soft bg-surface px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface-3"
+                className="absolute right-1 top-1 rounded border border-border-soft bg-surface px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface-3"
               >
                 {t("common.copy")}
               </button>

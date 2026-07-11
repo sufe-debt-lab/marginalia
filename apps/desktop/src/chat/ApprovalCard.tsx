@@ -71,7 +71,7 @@ export function ApprovalCard({
             onChange={(e) => setReason(e.target.value)}
             placeholder={t("approval.denyReasonPlaceholder")}
             rows={2}
-            className="rounded-md border border-soft bg-surface px-2 py-1.5 text-[12.5px]"
+            className="rounded-md border border-border-soft bg-surface px-2 py-1.5 text-[12.5px]"
           />
           <div className="flex gap-2">
             <Button

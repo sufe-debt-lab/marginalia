@@ -54,7 +54,7 @@ export function createMarkdownComponents(prefix?: string): Components {
     table: (props) => (
       <div className="my-2 overflow-x-auto">
         <table
-          className="w-full border-collapse text-[13px] [&_td]:border [&_td]:border-soft [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-soft [&_th]:bg-surface [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
+          className="w-full border-collapse text-[13px] [&_td]:border [&_td]:border-border-soft [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border-soft [&_th]:bg-surface [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
           {...props}
         />
       </div>
