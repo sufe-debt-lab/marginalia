@@ -10,6 +10,7 @@ import { mergeApprovals } from "./approval-merge.js";
 import { Composer } from "./Composer/Composer.js";
 import { extractMentions } from "./Composer/mentions.js";
 import { MessageStream } from "./MessageStream.js";
+import { SaveToWorkspaceDialog } from "./SaveToWorkspaceDialog.js";
 import type { ApprovalDecision } from "./ToolCard.js";
 
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
@@ -41,6 +42,11 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   );
   const [error, setError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<{ text: string; contextFiles: string[] } | null>(null);
+  // Message queued for the save-to-workspace dialog: its markdown (write content)
+  // plus the proposed file name. Null when the dialog is closed.
+  const [saveTarget, setSaveTarget] = useState<{ markdown: string; defaultName: string } | null>(
+    null
+  );
   // Ids of the most recent optimistic pair, so a retry can drop them before resending.
   const lastUserIdRef = useRef<string | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
@@ -137,6 +143,38 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     [api, sessionId]
   );
 
+  // Stable identity so a user hovering/saving one message doesn't defeat
+  // MessageItem's memoization for every other message in the stream.
+  const handleSaveMessage = useCallback(
+    (markdown: string, defaultName: string) => setSaveTarget({ markdown, defaultName }),
+    []
+  );
+
+  // User-initiated write into the workspace — deliberately bypasses the agent
+  // tool-call approval flow; the overwrite-confirm step in the dialog itself
+  // is the only gate. A "file exists" 409 surfaces as "exists" so the dialog
+  // can ask before overwriting; any other failure just reports the error.
+  async function handleSaveToWorkspace(
+    fileName: string,
+    overwrite: boolean
+  ): Promise<"saved" | "exists"> {
+    if (!activeWorkspaceId || !saveTarget) return "saved";
+    try {
+      await api.writeWorkspaceFile(activeWorkspaceId, {
+        path: fileName,
+        content: saveTarget.markdown,
+        overwrite
+      });
+      setSaveTarget(null);
+      return "saved";
+    } catch (err) {
+      if ((err as Error).message === "file exists") return "exists";
+      setError((err as Error).message);
+      setSaveTarget(null);
+      return "saved";
+    }
+  }
+
   // `+` attachments (contextFiles) plus inline `@path` mentions from the text.
   function filesFor(text: string): string[] {
     return [...new Set([...contextFiles, ...extractMentions(text)])];
@@ -188,6 +226,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           approvalsByToolCallId={approvals}
           toolProgressByCallId={toolProgress}
           onDecideApproval={decideApproval}
+          onSaveMessage={activeWorkspaceId ? handleSaveMessage : undefined}
         />
       </div>
       <div className="border-t border-border bg-background px-4 py-3">
@@ -213,6 +252,12 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           />
         </div>
       </div>
+      <SaveToWorkspaceDialog
+        open={saveTarget !== null}
+        defaultName={saveTarget?.defaultName ?? ""}
+        onCancel={() => setSaveTarget(null)}
+        onSave={handleSaveToWorkspace}
+      />
     </div>
   );
 }

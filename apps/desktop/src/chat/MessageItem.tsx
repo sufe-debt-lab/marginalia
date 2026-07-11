@@ -11,6 +11,19 @@ import { ThinkingBlock } from "./ThinkingBlock.js";
 import { ToolCard, type ApprovalDecision } from "./ToolCard.js";
 import { extractHeadings, MessageToc } from "./MessageToc.js";
 
+// Strip common markdown emphasis/code markers before slugging so headings like
+// "**Summary**" or "`foo`" don't carry punctuation into the file name.
+function slugifyHeading(text: string): string {
+  return text
+    .replace(/[`*_~]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+const FALLBACK_SAVE_NAME = "marginalia-笔记.md";
+
 function MessageItemImpl({
   entry,
   model,
@@ -18,7 +31,8 @@ function MessageItemImpl({
   toolResultsByCallId,
   approvalsByToolCallId,
   toolProgressByCallId,
-  onDecideApproval
+  onDecideApproval,
+  onSaveMessage
 }: {
   entry: ChatEntry;
   model?: string;
@@ -27,6 +41,7 @@ function MessageItemImpl({
   approvalsByToolCallId?: ReadonlyMap<string, Approval>;
   toolProgressByCallId?: ReadonlyMap<string, string>;
   onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
+  onSaveMessage?: (markdown: string, defaultName: string) => void;
 }) {
   const { t } = useTranslation();
   const message = entry.message;
@@ -56,6 +71,13 @@ function MessageItemImpl({
   // concatenated, tool calls and thinking excluded (stringifyContent skips them).
   const markdown = useMemo(() => stringifyContent(message.content), [message.content]);
 
+  // Default file name for the save-to-workspace dialog: slug of the first
+  // heading in the message, or a fixed fallback when there's no heading.
+  const saveDefaultName = useMemo(() => {
+    const slug = headings[0] ? slugifyHeading(headings[0].text) : "";
+    return slug ? `${slug}.md` : FALLBACK_SAVE_NAME;
+  }, [headings]);
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -80,6 +102,9 @@ function MessageItemImpl({
           <MessageActions
             markdown={markdown}
             defaultName={`marginalia-${entry.id.slice(0, 6)}.md`}
+            onSaveToWorkspace={
+              onSaveMessage ? () => onSaveMessage(markdown, saveDefaultName) : undefined
+            }
           />
         </div>
       )}

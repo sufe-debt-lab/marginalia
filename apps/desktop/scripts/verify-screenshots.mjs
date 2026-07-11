@@ -47,6 +47,8 @@ const SCENARIOS = {
       "sidebar-session-timestamps",
       "sidebar-show-more-expanded",
       "chat-seeded-session",
+      "save-dialog-input",
+      "save-dialog-overwrite",
       "attach-picker",
       "attachment-card",
       "mention-menu",
@@ -744,6 +746,34 @@ async function scenarioSeededWorkspace(ctx) {
   });
   await waitForDocumentPanelReady(ctx.page);
   await capture(ctx, "seeded-workspace", "chat-seeded-session");
+
+  // Hovering the assistant bubble reveals its action bar (copy / export / save);
+  // "save to workspace" opens the dialog added in this change.
+  await ctx.page.getByText(/implementation, verification and release notes/i).hover();
+  const saveToWorkspaceButton = ctx.page
+    .getByRole("button", { name: /save to workspace|存入工作区/i })
+    .first();
+  await saveToWorkspaceButton.waitFor({ timeout: 5000 });
+  await saveToWorkspaceButton.click({ timeout: 5000 });
+  const saveDialog = ctx.page.getByRole("alertdialog");
+  await saveDialog.getByRole("textbox").waitFor({ timeout: 5000 });
+  await capture(ctx, "seeded-workspace", "save-dialog-input");
+
+  // README.md already exists in the seed workspace fixture (writeSeedWorkspace),
+  // so saving under that exact name deterministically exercises the real
+  // pi-server 409 path and the dialog's overwrite-confirm step.
+  await saveDialog.getByRole("textbox").fill("README.md");
+  await saveDialog
+    .getByRole("button", { name: /^save$|^保存$/i })
+    .first()
+    .click({ timeout: 5000 });
+  await saveDialog.getByText(/already exists|已存在/i).waitFor({ timeout: 5000 });
+  await capture(ctx, "seeded-workspace", "save-dialog-overwrite");
+  await saveDialog
+    .getByRole("button", { name: /^cancel$|^取消$/i })
+    .first()
+    .click({ timeout: 5000 });
+  await saveDialog.waitFor({ state: "hidden", timeout: 5000 });
 
   await ctx.page
     .getByRole("button", { name: /add attachment|添加附件/i })

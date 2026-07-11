@@ -17,6 +17,7 @@ interface Props {
   approvalsByToolCallId?: ReadonlyMap<string, Approval>;
   toolProgressByCallId?: ReadonlyMap<string, string>;
   onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
+  onSaveMessage?: (markdown: string, defaultName: string) => void;
 }
 
 export function MessageStream({
@@ -27,7 +28,8 @@ export function MessageStream({
   streaming,
   approvalsByToolCallId,
   toolProgressByCallId,
-  onDecideApproval
+  onDecideApproval,
+  onSaveMessage
 }: Props) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -94,6 +96,7 @@ export function MessageStream({
           approvalsByToolCallId={approvalsByToolCallId}
           toolProgressByCallId={toolProgressByCallId}
           onDecideApproval={onDecideApproval}
+          onSaveMessage={onSaveMessage}
           model={entry.message.role === "assistant" ? model : undefined}
           streaming={Boolean(streaming) && i === lastIndex && entry.message.role === "assistant"}
         />

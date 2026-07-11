@@ -73,7 +73,8 @@ loop is codified in the `design-loop` skill.
 - `core-ui`: first run, new thread, composer controls, settings, locale switch,
   and sidebar collapse.
 - `seeded-workspace`: seeded workspace/session state, recent threads, sidebar
-  session timestamps, chat rendering, attachment picker, and mention flow. Uses a
+  session timestamps, chat rendering, the save-to-workspace dialog (file name
+  input and overwrite-confirm steps), attachment picker, and mention flow. Uses a
   fixed, content-controlled seed directory (not the real repo) so file-listing
   shots stay deterministic as the repo changes.
 - `minimax-live`: real MiniMax prompt/stream/result capture. This is not part of

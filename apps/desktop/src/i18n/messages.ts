@@ -189,6 +189,14 @@ export const en = {
     copyAll: "Copy full text",
     exportMd: "Export as .md",
     saveToWorkspace: "Save to workspace"
+  },
+  saveDialog: {
+    title: "Save to workspace",
+    description: "Choose a file name to save this message into the current workspace.",
+    fileNameLabel: "File name",
+    save: "Save",
+    overwrite: "Overwrite",
+    overwriteHint: "A file with this name already exists. Overwrite it?"
   }
 } as const;
 
@@ -385,6 +393,14 @@ export const zh = {
     copyAll: "复制全文",
     exportMd: "导出 .md",
     saveToWorkspace: "存入工作区"
+  },
+  saveDialog: {
+    title: "存入工作区",
+    description: "为这条消息选择要存入当前工作区的文件名。",
+    fileNameLabel: "文件名",
+    save: "保存",
+    overwrite: "覆盖",
+    overwriteHint: "文件已存在，覆盖？"
   }
 } satisfies MessageShape<typeof en>;
 
