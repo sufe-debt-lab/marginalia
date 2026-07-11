@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -174,6 +175,23 @@ export function createApp(options: AppOptions = {}) {
     const workspace = getWorkspace(db, c.req.param("id"));
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
     return c.json(await searchWorkspaceFiles(workspace.rootDir, c.req.query("q") ?? ""));
+  });
+  app.put("/workspaces/:id/files/content", async (c) => {
+    const workspace = getWorkspace(db, c.req.param("id"));
+    if (!workspace) return c.json({ error: "workspace not found" }, 404);
+    const body = await c.req.json<{ path: string; content: string; overwrite?: boolean }>();
+    try {
+      const absolute = resolveWorkspacePath(workspace.rootDir, body.path ?? "");
+      const exists = existsSync(absolute);
+      if (exists && !body.overwrite) return c.json({ error: "file exists" }, 409);
+      await mkdir(path.dirname(absolute), { recursive: true });
+      await writeFile(absolute, body.content ?? "", "utf8");
+      return c.json({ path: body.path }, exists ? 200 : 201);
+    } catch (error) {
+      if ((error as Error).message === "Path escapes workspace")
+        return c.json({ error: "Path escapes workspace" }, 403);
+      return c.json({ error: (error as Error).message }, 500);
+    }
   });
   app.post("/sessions", async (c) => {
     const body = await c.req.json<{ workspaceId: string; title: string; origin?: string }>();

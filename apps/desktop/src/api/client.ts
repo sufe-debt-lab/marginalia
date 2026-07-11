@@ -167,6 +167,16 @@ export class ApiClient {
     );
   }
 
+  writeWorkspaceFile(
+    workspaceId: string,
+    input: { path: string; content: string; overwrite?: boolean }
+  ) {
+    return this.request<{ path: string }>(`/workspaces/${workspaceId}/files/content`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    });
+  }
+
   updateSession(sessionId: string, input: { model: string | null }) {
     return this.request<Session>(`/sessions/${sessionId}`, {
       method: "PATCH",
