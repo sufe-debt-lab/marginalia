@@ -61,7 +61,8 @@ export const en = {
     noProvider: "No provider configured",
     thinkingLive: "Thinking…",
     thoughtFor: "Thought for {s}s",
-    thought: "Thought"
+    thought: "Thought",
+    outline: "Outline"
   },
   settings: {
     title: "Settings",
@@ -253,7 +254,8 @@ export const zh = {
     noProvider: "未配置服务商",
     thinkingLive: "思考中…",
     thoughtFor: "已思考 · {s} 秒",
-    thought: "已思考"
+    thought: "已思考",
+    outline: "目录"
   },
   settings: {
     title: "设置",

@@ -8,6 +8,7 @@ import { useTranslation } from "@/i18n/useTranslation.js";
 import { createMarkdownComponents } from "@/lib/markdown.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { ToolCard, type ApprovalDecision } from "./ToolCard.js";
+import { extractHeadings, MessageToc } from "./MessageToc.js";
 
 function MessageItemImpl({
   entry,
@@ -31,6 +32,25 @@ function MessageItemImpl({
   // Stateless (node-derived) heading ids, so memoizing on entry.id is safe —
   // no render-time counter to drift across re-renders.
   const markdownComponents = useMemo(() => createMarkdownComponents(entry.id), [entry.id]);
+
+  // Extract headings from the first text part for the outline.
+  // Note: We only generate an outline for the first text part. While assistant messages
+  // with multiple text parts are rare, this keeps the outline focused on the main content.
+  // For user/toolResult messages, message.content is not an array, so we guard with an array check.
+  const firstTextPart = useMemo(() => {
+    if (Array.isArray(message.content)) {
+      return message.content.find((part) => part.type === "text");
+    }
+    return undefined;
+  }, [message.content]);
+
+  const headings = useMemo(() => {
+    if (firstTextPart?.type === "text") {
+      return extractHeadings(firstTextPart.text);
+    }
+    return [];
+  }, [firstTextPart]);
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -53,6 +73,9 @@ function MessageItemImpl({
           if (part.type === "text") {
             return (
               <div key={`${index}:text`} className="max-w-[72ch] font-serif leading-7">
+                {index === 0 && headings.length >= 3 && (
+                  <MessageToc items={headings} prefix={entry.id} />
+                )}
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                   {part.text}
                 </ReactMarkdown>
