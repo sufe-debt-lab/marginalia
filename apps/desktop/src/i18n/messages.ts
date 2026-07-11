@@ -184,6 +184,11 @@ export const en = {
     denied: "Denied",
     expired: "Approval expired",
     expandDiff: "Show full diff"
+  },
+  message: {
+    copyAll: "Copy full text",
+    exportMd: "Export as .md",
+    saveToWorkspace: "Save to workspace"
   }
 } as const;
 
@@ -375,6 +380,11 @@ export const zh = {
     denied: "已拒绝",
     expired: "审批已过期",
     expandDiff: "展开完整 diff"
+  },
+  message: {
+    copyAll: "复制全文",
+    exportMd: "导出 .md",
+    saveToWorkspace: "存入工作区"
   }
 } satisfies MessageShape<typeof en>;
 

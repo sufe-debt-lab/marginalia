@@ -6,6 +6,7 @@ import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
 import type { Approval } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { createMarkdownComponents } from "@/lib/markdown.js";
+import { MessageActions } from "./MessageActions.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { ToolCard, type ApprovalDecision } from "./ToolCard.js";
 import { extractHeadings, MessageToc } from "./MessageToc.js";
@@ -51,6 +52,10 @@ function MessageItemImpl({
     return [];
   }, [firstTextPart]);
 
+  // Full markdown for the message actions bar (copy / export) — all text parts
+  // concatenated, tool calls and thinking excluded (stringifyContent skips them).
+  const markdown = useMemo(() => stringifyContent(message.content), [message.content]);
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -62,12 +67,22 @@ function MessageItemImpl({
   }
   if (message.role === "toolResult") return null;
 
+  const hasMarkdown = markdown.trim().length > 0;
+
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group relative flex flex-col gap-1.5">
       <span className="text-[11px] font-semibold uppercase tracking-wide text-text-faint">
         {t("chat.assistant")}
         {model && <span className="lowercase"> · {model}</span>}
       </span>
+      {hasMarkdown && (
+        <div className="absolute -top-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <MessageActions
+            markdown={markdown}
+            defaultName={`marginalia-${entry.id.slice(0, 6)}.md`}
+          />
+        </div>
+      )}
       <div className="flex flex-col gap-2 text-sm leading-relaxed">
         {message.content.map((part, index) => {
           if (part.type === "text") {

@@ -46,11 +46,12 @@ renderer 不直接接触文件系统或 LLM——所有能力都经本机 pi-ser
 
 main 进程通过 `ipcMain.handle` 暴露给 renderer 的桥接：
 
-| IPC 通道                   | 作用                    | 源码                                                     |
-| -------------------------- | ----------------------- | -------------------------------------------------------- |
-| `pi-server:status`         | 查询 pi-server 当前状态 | `apps/desktop/electron/main.ts#pi-server:status`         |
-| `pi-server:restart`        | 杀掉并重启 pi-server    | `apps/desktop/electron/main.ts#pi-server:restart`        |
-| `workspace:pick-directory` | 打开系统目录选择框      | `apps/desktop/electron/main.ts#workspace:pick-directory` |
+| IPC 通道                    | 作用                          | 源码                                                      |
+| --------------------------- | ----------------------------- | --------------------------------------------------------- |
+| `pi-server:status`          | 查询 pi-server 当前状态       | `apps/desktop/electron/main.ts#pi-server:status`          |
+| `pi-server:restart`         | 杀掉并重启 pi-server          | `apps/desktop/electron/main.ts#pi-server:restart`         |
+| `workspace:pick-directory`  | 打开系统目录选择框            | `apps/desktop/electron/main.ts#workspace:pick-directory`  |
+| `marginalia:save-text-file` | 弹出保存对话框，写入 .md 文件 | `apps/desktop/electron/main.ts#marginalia:save-text-file` |
 
 这些通道经 `electron/preload.cts` 暴露到 renderer 的 `window.marginalia`（见 `getBridge()`，`apps/desktop/src/App.tsx#getBridge`）。
 

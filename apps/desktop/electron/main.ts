@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  shell,
+  type OpenDialogOptions,
+  type SaveDialogOptions
+} from "electron";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isExternalUrl } from "./external-url.js";
 import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
@@ -118,6 +127,20 @@ ipcMain.handle("workspace:pick-directory", async () => {
 });
 ipcMain.handle("marginalia:open-external", async (_event, url: unknown) => {
   if (typeof url === "string" && isExternalUrl(url)) await shell.openExternal(url);
+});
+ipcMain.handle("marginalia:save-text-file", async (_event, input: unknown) => {
+  const { defaultName, content } = input as { defaultName: string; content: string };
+  const options: SaveDialogOptions = {
+    defaultPath: defaultName,
+    filters: [{ name: "Markdown", extensions: ["md"] }]
+  };
+  // windowRef is the module-level ref (same as workspace:pick-directory).
+  const result = windowRef
+    ? await dialog.showSaveDialog(windowRef, options)
+    : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) return { saved: false };
+  await writeFile(result.filePath, content, "utf8");
+  return { saved: true, path: result.filePath };
 });
 
 app.on("before-quit", () => {
