@@ -1,0 +1,9 @@
+# Documentation gate and repository rules require maintainer review.
+/.github/CODEOWNERS @shixy96
+/.github/workflows/ @shixy96
+/scripts/docs-check.mjs @shixy96
+/scripts/docs-check-lib.mjs @shixy96
+/scripts/docs-check.test.mjs @shixy96
+/docs/contracts/ @shixy96
+/AGENTS.md @shixy96
+/CLAUDE.md @shixy96

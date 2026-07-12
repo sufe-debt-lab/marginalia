@@ -1,6 +1,6 @@
 # 系统架构
 
-本文描述 Marginalia 的进程模型、启动流程和请求数据流，面向想理解或修改代码的贡献者。源码引用使用 `path:line` 形式，便于在编辑器中定位。
+本文描述 Marginalia 的进程模型、启动流程、请求数据流和当前信任边界。源码引用使用仓库根相对的 `path` 或 `path#symbol`，不使用容易漂移的行号。
 
 ## 总览
 
@@ -36,7 +36,7 @@ Marginalia 是一个本地优先的桌面应用，由三个 pnpm workspace 包�
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-renderer 不直接接触文件系统或 LLM——所有能力都经本机 pi-server 的 HTTP/SSE 接口暴露。pi-server 只监听 `127.0.0.1`，不对外开放。
+Renderer 不直接加载 Node API。Workspace 文件和 LLM 请求主要经过 pi-server；系统目录选择、外部链接和导出 `.md` 走 preload 到 Electron main 的 IPC。pi-server 只监听 `127.0.0.1`，当前仍没有 API 认证。
 
 ## 进程模型
 
@@ -51,9 +51,10 @@ main 进程通过 `ipcMain.handle` 暴露给 renderer 的桥接：
 | `pi-server:status`          | 查询 pi-server 当前状态       | `apps/desktop/electron/main.ts#pi-server:status`          |
 | `pi-server:restart`         | 杀掉并重启 pi-server          | `apps/desktop/electron/main.ts#pi-server:restart`         |
 | `workspace:pick-directory`  | 打开系统目录选择框            | `apps/desktop/electron/main.ts#workspace:pick-directory`  |
+| `marginalia:open-external`  | 在系统浏览器打开 HTTP(S) URL  | `apps/desktop/electron/main.ts#marginalia:open-external`  |
 | `marginalia:save-text-file` | 弹出保存对话框，写入 .md 文件 | `apps/desktop/electron/main.ts#marginalia:save-text-file` |
 
-这些通道经 `electron/preload.cts` 暴露到 renderer 的 `window.marginalia`（见 `getBridge()`，`apps/desktop/src/App.tsx#getBridge`）。
+这些通道经 `electron/preload.cts` 暴露到 renderer 的 `window.marginalia`。Main 对保存输入只做 TypeScript 断言，没有完整 runtime schema；扩展 IPC 时必须验证来自 renderer 的值。
 
 Electron 截图验证不再通过 renderer IPC；统一由
 `apps/desktop/scripts/verify-screenshots.mjs` 用 Playwright 驱动 Electron 并写入
@@ -64,6 +65,8 @@ Electron 截图验证不再通过 renderer IPC；统一由
 pi-server 是一个独立的 Node 进程，入口 `apps/pi-server/src/index.ts`：用 `@hono/node-server` 在 `127.0.0.1:0`（端口 0 = 由系统分配空闲端口）起服务，就绪后向 stdout 打印一行 JSON `{"type":"ready","port":<n>}`。
 
 main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）解析这行 ready 消息（`createReadyLineParser`，`apps/desktop/electron/pi-server-spawner.ts#createReadyLineParser`），拿到端口后把状态置为 `{ status: "ready", url: "http://127.0.0.1:<port>" }`。10 秒内未就绪则判定 `failed`。
+
+当前 exit listener 只解决“启动前退出”。进程在 ready 后崩溃时，main 中的 `serverStatus` 可能继续显示 ready，直到普通 API 调用失败；完整恢复见 readiness issue `P1-RECOVERY-001`。
 
 **启动策略按 dev / packaged 区分**（见 `apps/desktop/electron/pi-server-spawner.ts#defaultLaunch`）：
 
@@ -95,17 +98,40 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
 5. 结束时发 `run_completed`，出错发 `run_failed`，并落 `runs` 表（`apps/pi-server/src/app.ts#completeRun`）。
 6. renderer 端 `streamSse`（`apps/desktop/src/api/sse-stream.ts`）解析流，`useStreamingChat` 从原始事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
 
+服务端当前没有按 session 协调 active run。两个并发请求会创建两条 run，并可能从 registry 取得同一个缓存 AgentSession。`useStreamingChat` 的发送锁只属于当前 React hook；ChatView 卸载不会自动 abort 旧 run。修改 run 生命周期前先看 readiness issue `P0-RUN-001`。
+
 ### 单一事实源（single source of truth）
 
-这是聊天渲染的核心设计约定：**pi-server 只转发原始 pi `agent_event`，外加 run 级信封（`run_started` / `run_failed` / `run_completed`）；不把它们重映射成 desktop 专用的 delta/tool 事件形状**（见 `apps/pi-server/src/app.ts#agent_event` 的注释）。
+这是聊天渲染的核心设计约定：**pi-server 只转发原始 pi `agent_event`，外加 Marginalia 的 run/approval 信封（`run_started`、`approval_requested`、`approval_resolved`、`run_failed`、`run_completed`）；不把原始 pi 事件重映射成 desktop 专用的 delta/tool 事件形状**（见 `apps/pi-server/src/app.ts#agent_event` 的注释）。
 
-由此带来的不变量（见 `CLAUDE.md` 的 Chat model conventions）：
+由此带来的不变量（见 `AGENTS.md` 的 Chat model conventions）：
 
 - 聊天历史是 `ChatEntry = { id, message }`（来自 `@marginalia/chat-core`），消息体保持 pi 原生形状，不引入扁平化的 `UiMessage`/`UiToolCall` 或假角色（如 `system`）。
 - UI 状态完全从 entries 派生：assistant 的 `toolCall` 内容渲染为工具 UI；带相同 `toolCallId` 的 `toolResult` 消息挂到对应工具卡片上，而非独立气泡。
 - 实时流式与重开会话的渲染必须一致，都以 pi `message_start` 作为 assistant 气泡边界。
 
 历史消息的读取也分两种来源（`apps/pi-server/src/app.ts#readMessagesFromSessionFile`）：若该 session 已有 `agentSessionPath`（pi 落盘的 session 文件），从该文件读；否则从 SQLite 的 `messages` 表读并转成 `ChatEntry`。
+
+## Agent session 与资源
+
+`PiCodingAgentClient` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。
+
+AgentSession 由 `AgentSessionRegistry` 按 session ID 缓存。首次创建时传入 model、resource loader、tool allowlist 和 session manager；缓存命中后直接返回旧 handle，不重新应用配置。Reasoning 通过 setter 动态更新，权限工具集没有同类更新路径。Provider、model、permission 或资源边界变化时，当前缓存不能保证一致。
+
+Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provider.name)` 和 model ID 调用 `getModel()`，没有把该 URL 注入请求。Provider Test 只检查本地 ModelRegistry 和是否配置凭据，不验证 key 或网络。
+
+## 当前信任边界
+
+下面几项是已确认的 Alpha 限制，不应在其他文档中描述成已解决：
+
+- pi-server 没有认证，并反射任意 CORS origin。随机 loopback 端口不是授权边界。
+- BrowserWindow 使用 context isolation 和 `nodeIntegration: false`，但 `sandbox: false`。
+- Full 和 Ask 使用 pi 默认 coding tools。Workspace 只作为 cwd，工具可接收绝对路径，bash 使用宿主用户权限。
+- HTTP 文件接口检查 lexical path 和已存在目标 realpath，但新目标的 symlink parent 仍可逃逸。
+- Ask 审批按字符串前缀判断 shell，新文件 write 默认直通；Read-only 还受缓存 session 配置影响。
+- Provider key 以明文写入 SQLite。
+
+修复目标和验收条件见[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。
 
 ## 包依赖关系
 

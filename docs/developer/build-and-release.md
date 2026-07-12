@@ -2,6 +2,8 @@
 
 本文说明如何把 Marginalia 打包成桌面安装包，以及打包流水线中最棘手的一环——原生模块 `better-sqlite3` 的 ABI 处理。面向需要出包或维护发布流程的贡献者。
 
+项目当前是 Alpha / NO-GO。下面的命令能生成安装包，不表示产物已满足正式发布要求；当前阻断见[产品状态](../product/status.md)。
+
 ## 一句话上手
 
 ```bash
@@ -84,7 +86,19 @@ pnpm --filter @marginalia/pi-server run ensure:native
 
 **每个平台的安装包必须在对应 OS 上构建**：better-sqlite3 由 `build-pi-server.mjs` 在宿主机上按该平台重建，无法从 macOS 交叉构建 Windows/Linux 包。
 
-## CI
+## CI 分成质量检查和打包
+
+`.github/workflows/ci.yml` 对 push 和 pull request 运行通用质量检查：
+
+- Node 22、pnpm 9.15.4、frozen lockfile；
+- `pnpm verify`；
+- Pull request 额外运行 docs impact，作为快速反馈；该 job 会执行 PR checkout 中的代码，不单独承担门禁完整性。
+
+`.github/workflows/docs-gate.yml` 使用 `pull_request_target`，从目标分支提取受信任 checker 和 docs-impact policy，检查事件中精确的 PR head。它不安装依赖，也不执行 PR 提供的脚本；仓库内容权限只读，`statuses: write` 只用于把 `trusted-docs` 结果发布到精确 head SHA。有豁免时，有 write 权限的维护者必须为当前 head 重新添加 `docs-impact-approved` label。`.github/CODEOWNERS` 为 checker、contracts、workflow 和 agent 规则指定维护者评审。
+
+通用 CI 和可信文档 gate 都不执行视觉裁决，也不生成安装包。UI 改动仍需在 PR 中记录 Electron 截图和每张 changed diff 的裁决。合并前要在 branch protection 中把 `verify` 和 PR head 上的 `trusted-docs` commit status 配成 required checks，并要求 Code Owner review；仅添加 workflow 和 CODEOWNERS 文件不会自动阻止合并。
+
+### Desktop 打包 workflow
 
 `.github/workflows/build-desktop.yml`：
 
@@ -94,7 +108,7 @@ pnpm --filter @marginalia/pi-server run ensure:native
 - **打包**：`pnpm --filter @marginalia/desktop run dist -- --publish never`，并设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 阻止 macOS 自动签名（当前是未签名 spike 构建）。
 - **产物**：上传 `release/` 下的 `*.dmg` / `*.zip` / `*.exe`，保留 14 天。
 
-CI 当前不产 Linux AppImage。
+打包 workflow 当前不产 Linux AppImage，也不等同于 PR 质量门禁。
 
 ## 打包后 smoke test
 
@@ -111,9 +125,15 @@ CI 当前不产 Linux AppImage。
 ## 已知限制与待办
 
 - **macOS 未签名/未公证**：面向用户的正式版需要 Developer ID 签名 + 公证（并为未签名的 better-sqlite3 `.node` 配 `hardenedRuntime` + `disable-library-validation` 权限）。配置里以 `identity: null` 标记为 spike。
+- **Windows 未签名**：NSIS 可以生成，但客户机没有可验证的发布者身份。
+- **没有自动更新与回滚**：当前安装包需要手工分发和升级。
+- **没有 LICENSE**：公开发布前需要明确代码许可证。
+- **Smoke test 未自动化**：构建成功不能替代干净客户机上的安装、启动、健康检查和卸载验证。
 - **打包不可与 dev/test 并行**：见上文 ABI 处理。
 
 ## 相关文档
 
 - 进程模型与 dev/packaged 启动差异：[系统架构](./architecture.md)
 - 存储位置与环境变量：[配置](../user/configuration.md)
+- 发布阻断与验证基线：[产品状态](../product/status.md)
+- PR 验证和文档影响：[贡献指南](./contributing.md)

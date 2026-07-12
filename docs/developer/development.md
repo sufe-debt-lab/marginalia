@@ -2,11 +2,11 @@
 
 ## 环境要求
 
-| 工具     | 版本                                    | 说明                                                                                |
-| -------- | --------------------------------------- | ----------------------------------------------------------------------------------- |
-| Node.js  | ≥ 20.11（建议 22.x）                    | dev/test 下 pi-server 跑在系统 Node 上；建议用 22.x 贴近 Electron 39 内置 Node 22。 |
-| pnpm     | 9.15.4                                  | 见根 `package.json` 的 `packageManager`。                                           |
-| Electron | 39（已在 desktop devDependencies 锁定） | pi 生态 / undici 要求 ≥ 39（Node 22.19+）。                                         |
+| 工具     | 版本                                    | 说明                                                                          |
+| -------- | --------------------------------------- | ----------------------------------------------------------------------------- |
+| Node.js  | ≥ 22.19                                 | `@earendil-works/pi-coding-agent@0.75.5` 的最低要求；dev/test 使用系统 Node。 |
+| pnpm     | 9.15.4                                  | 见根 `package.json` 的 `packageManager`。                                     |
+| Electron | 39（已在 desktop devDependencies 锁定） | pi 生态 / undici 要求 ≥ 39（Node 22.19+）。                                   |
 
 仓库是 pnpm workspace + ESM（`"type": "module"`）。
 
@@ -64,9 +64,11 @@ pnpm dev
 pnpm build        # 构建所有包
 pnpm test         # 测试所有包；pretest 会先跑 ensure:native
 pnpm typecheck    # 类型检查所有包
-pnpm lint         # eslint apps packages
+pnpm lint         # eslint apps packages scripts
 pnpm format       # prettier 写入
 pnpm format:check # prettier 校验
+pnpm docs:check   # 文档、API inventory、状态和生命周期检查
+pnpm verify       # docs + format + lint + typecheck + test + build
 ```
 
 单个包用 `--filter`：
@@ -86,6 +88,8 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 
 > desktop 的 `typecheck` 跑**两个** tsconfig——`tsconfig.json`（src）和 `tsconfig.node.json`（vite/electron 配置），两者都必须通过。
 
+`pnpm verify` 不包含视觉差异裁决。UI 改动另跑 `pnpm verify:visual`，并查看每张 changed screenshot。
+
 打包相关命令见[打包与发布](./build-and-release.md)。
 
 ## 相关环境变量
@@ -101,22 +105,28 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 
 ## 代码约定
 
-这些约定是硬性的（详见根 `CLAUDE.md`）：
+这些约定是仓库规则的一部分，完整内容见根 `AGENTS.md`。`CLAUDE.md` 是指向同一文件的 symlink，不单独维护。
 
 - **ESM 导入扩展名**：TypeScript 源码导入即使是 `.ts`/`.tsx` 也写 `.js` 后缀，例如 `import { Foo } from "./Foo.js"`。漏写会导致构建失败。
 - **`@/` 别名** → `apps/desktop/src/`（tsconfig + vite 都配了），跨目录导入优先用它。
 - **i18n 强制**（`apps/desktop`）：每个面向用户的字符串（文本、`aria-label`、placeholder、toast）都要走 `t()`（`@/i18n/useTranslation.js`）。新增 key 要同时加到 `src/i18n/messages.ts` 的 `en` 和 `zh`——`zh` 用 `satisfies`，漏 key 会在 typecheck 报错。UI 里不允许硬编码英文。
 - **设计 token**：视觉风格锁定在 mono + serif + emerald（见 `src/styles.css` + `tailwind.config.ts`）。用设计 token（`text-muted`、`border-soft`、`brand`、`.dot`、`.h-display` 等），不要写临时颜色。
 - **聊天模型约定**：保持消息体为 pi 原生形状，不重新引入扁平化的 `UiMessage`/`UiToolCall`。详见[系统架构 · 单一事实源](./architecture.md#单一事实源single-source-of-truth)。
-- **文档代码引用**：`docs/` 里指向源码时用 `path`（整文件）或 `path#符号`（文件内稳定的标识符 / 路由 / 字符串），**不要用 `path:line`**——行号会随上方代码变动而静默失真。引用写成 repo 根相对路径，守卫测试 `apps/desktop/scripts/docs-references.test.ts` 会校验文件存在、锚点命中，并在出现 `:line` 时报错。需要精确到某一行时，用提交 SHA 固定的 GitHub permalink。
+- **文档代码引用**：`docs/` 里指向源码时用 `path`（整文件）或 `path#符号`（文件内稳定的标识符 / 路由 / 字符串），**不要用 `path:line`**——行号会随上方代码变动而静默失真。引用写成 repo 根相对路径，根级守卫 `scripts/docs-check.test.mjs` 会校验文件存在、锚点命中，并在出现 `:line` 时报错。需要精确到某一行时，用提交 SHA 固定的 GitHub permalink。
 
-## 提交前检查（commit gate）
+## 完成前检查
 
-每次提交前（根 `CLAUDE.md` 的标准规则）：
+开发任务按[文档生命周期](./documentation-lifecycle.md)收口：
 
-1. **TDD**：先写或调整测试，看它失败，再实现到通过。
-2. 跑改动所在包的 `typecheck` + 相关 `test`，确认通过。
-3. **UI 改动**：用 **Electron 截图**验证（`pnpm verify:visual`，capture + 回归比对合一）——在浏览器打开 Vite 页面不算数。每个 `changed` 截图都必须显式裁决：有意更改 → `--update-baseline ... --reason "<原因>"`；意外变更 → 修复后重跑。场景和输出见 `apps/desktop/scripts/README.md`。
+1. 先写或调整测试，确认它在实现前失败，再实现到通过。
+2. 行为进入正常产品路径时，同步对应 user/developer 文档；能力、P0/P1 或发布决定变化时更新产品状态。
+3. 开发中持续同步 active spec/plan 的进度和 Deviation。
+4. 跑改动所在包的 typecheck 和相关 test。
+5. 跑根级 `pnpm verify`。
+6. UI 改动用 Electron 执行 `pnpm verify:visual`。每个 changed 截图都要裁决：有意更改用 `--update-baseline ... --reason "<原因>"` 更新，意外变化修复后重跑。
+7. 功能关闭时写 `Implementation Outcome`，从活跃索引移除并归档。
+
+浏览器打开 Vite 页面不能替代 Electron 验证。场景和输出见 `apps/desktop/scripts/README.md`。
 
 ## 测试
 
@@ -129,13 +139,13 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 
 仓库里有几类**模式特殊但有效**的测试，遇到时不要误删：
 
-- **源码守卫测试**（`vite-base.test.ts`、`electron/dev-script.test.ts`、`scripts/verify-screenshots.test.ts`、`scripts/docs-references.test.ts`、pi-server `package-surface.test.ts`）：用读源码 + 正则的方式锁定打包 / file:// 加载 / 脚本契约等**无法在 jsdom 里运行**的行为。它们守护的是真实事故（如打包后白屏挂起），注释里写明了原因。
+- **源码守卫测试**（`apps/desktop/src/test/vite-base.test.ts`、`apps/desktop/electron/dev-script.test.ts`、`apps/desktop/scripts/verify-screenshots.test.ts`、`scripts/docs-check.test.mjs`、`apps/pi-server/test/package-surface.test.ts`）：用读源码 + 正则的方式锁定打包、file URL 加载和文档契约等无法在 jsdom 里运行的行为。它们守护真实事故，注释中应写清原因。
 - **设计规格锁**（如 `SettingsPrimitives.test.tsx` 对 Toggle 尺寸 class 的断言）：jsdom 拿不到真实几何，class 断言只用于锁定设计稿明确给出的规格值；真正的视觉验证以 Electron 截图 gate 为准，不要把 class 断言当成 UI 测试的常规手段。
 - **Live 冒烟测试**（`minimax-smoke.test.ts`）：用 `describe.runIf(环境变量)` 门控，默认跳过，只在显式提供 API key 时跑真实链路。
 
 ## 截图验证
 
-默认 UI gate：
+只做截图 capture：
 
 ```bash
 pnpm verify:screenshots
@@ -170,6 +180,8 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 - `--update-baseline <selector> --reason "<原因>"` — 显式将截图 bless 为新基线（**必须附原因**）。
 - `--fail-on-diff` / `--max-diff-percent <n>` — CI 门控开关；不传时默认软报告，仅输出 diff 百分比供人工判断。
 
+`pnpm verify:visual` 默认也沿用软报告行为。出现 changed 但命令返回 0 时，仍不能写成视觉通过。
+
 **基线纪律：**
 
 基线存放于 `apps/desktop/screenshots-baseline/`，只能通过 `--update-baseline` 显式更新，且必须附 `--reason`。`minimax-live` 与 adhoc 截图不进基线；遇到 `changed` 但不确定是否有意为之时，**不要 bless**，先排查原因。
@@ -202,3 +214,5 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 
 - 整体架构与进程模型：[系统架构](./architecture.md)
 - 提交/分支/PR 规范：[贡献指南](./contributing.md)
+- 文档同步、docs impact 和 closeout：[文档生命周期](./documentation-lifecycle.md)
+- 当前验证快照和发布阻断：[产品状态](../product/status.md)

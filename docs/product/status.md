@@ -1,0 +1,94 @@
+# 产品状态
+
+```text
+Stage: Alpha
+Release decision: NO-GO
+Snapshot date: 2026-07-11
+Verified commit: 1199645
+Next milestone: M0 - Trustworthy Local Alpha
+```
+
+这是一份经过验证的快照，不是逐提交更新的开发日志。源码和测试提供行为证据；问题的复现、影响和验收条件见[产品就绪审计](../developer/issues/2026-07-11-product-readiness-audit.md)。
+
+## 能力快照
+
+状态只使用 `implemented`、`partial`、`disabled` 和 `planned`。`implemented` 表示主路径已有验证，不表示已经满足发布条件。
+
+<!-- capability-inventory:start -->
+
+| ID                | Capability                    | Status      | Verified result                                                                                            | Current boundary                                                                                   | Release gate                | Evidence                                                                                                                        | Target                     |
+| ----------------- | ----------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| CAP-DESKTOP-001   | Electron shell 与本地 server  | implemented | Electron 启动后拉起随机端口 pi-server，renderer 完成健康检查后进入应用                                     | ready 后的进程退出没有自动反映到 UI；renderer sandbox 未开启                                       | P0-SEC-006、P1-RECOVERY-001 | `apps/desktop/electron/main.ts`、`apps/desktop/electron/pi-server-spawner.ts`                                                   | M0-trustworthy-local-alpha |
+| CAP-WORKSPACE-001 | Workspace、session 与文件浏览 | partial     | 可创建和删除 workspace，管理 session，浏览、搜索、预览和写入文件                                           | workspace 不是 agent 沙箱；新文件写入存在 symlink parent 逃逸                                      | P0-SEC-002、P0-SEC-005      | `apps/pi-server/src/app.ts`、`apps/pi-server/src/files/path-sandbox.ts`                                                         | M0-trustworthy-local-alpha |
+| CAP-PROVIDER-001  | Provider 与 model             | partial     | Provider CRUD、启停、默认模型和运行时 key 注册已接通                                                       | GLM/小米预设映射当前不可用；`baseUrl` 没有进入模型请求；Test 不联网验证 key；key 明文保存          | P0-SEC-006、P1-PROVIDER-001 | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts` | M0-trustworthy-local-alpha |
+| CAP-CHAT-001      | Streaming chat 与长文渲染     | partial     | SSE 流、原始 pi 事件渲染、thinking、工具卡、代码块、长文目录已实现                                         | 滚动始终跟到底部；文件变更摘要和当前消息流计划的收口任务未完成                                     | P1-UX-001、P1-QUALITY-001   | `apps/pi-server/src/app.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`、`apps/desktop/src/chat/MessageStream.tsx`            | M0-trustworthy-local-alpha |
+| CAP-TOOLS-001     | Agent tools 与审批            | partial     | Full、Ask、Read-only 三档入口，审批卡、决策 API 和审批记录已接通                                           | Ask 基于字符串启发式，新文件默认直通；缓存 session 可能保留旧工具配置                              | P0-SEC-003、P0-SEC-004      | `apps/pi-server/src/agent/approval-policy.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`                             | M0-trustworthy-local-alpha |
+| CAP-DOCUMENT-001  | 文档浏览与资料上下文          | partial     | 文本文件可预览、搜索并通过 `@文件` 或附件加入请求；PDF 和图片可在文档面板预览                              | PDF、Office、音视频不抽取正文；Office 没有内置预览                                                 | P1-DOCUMENT-001             | `apps/pi-server/src/files/document-reader.ts`、`apps/desktop/src/documents/DocumentViewer.tsx`                                  | post-M0                    |
+| CAP-EXPORT-001    | 复制、导出与保存到 workspace  | implemented | 助手回答可复制、导出 `.md`，或经覆盖确认写入当前 workspace                                                 | 文件写入仍受 workspace 边界问题影响                                                                | P0-SEC-005                  | `apps/desktop/src/chat/MessageActions.tsx`、`apps/desktop/src/chat/SaveToWorkspaceDialog.tsx`                                   | M0-trustworthy-local-alpha |
+| CAP-RUN-001       | Run 生命周期与恢复            | partial     | Run 状态写入 SQLite，用户可停止当前 UI 持有的请求，断连时挂起审批会过期                                    | 服务端没有同 session single-flight；ChatView 卸载不负责终止旧 run；并发请求可复用同一 AgentSession | P0-RUN-001、P1-RECOVERY-001 | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts` | M0-trustworthy-local-alpha |
+| CAP-SKILLS-001    | Skills                        | disabled    | pi 依赖具备 skills 能力                                                                                    | 产品运行时设置 `noSkills: true`，设置入口禁用                                                      | P1-EXTENSIONS-001           | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/desktop/src/settings/SettingsView.tsx`                              | post-M0                    |
+| CAP-MCP-001       | MCP                           | disabled    | 设置页保留不可用入口                                                                                       | 没有 server 配置、连接、工具发现或运行时注入                                                       | P1-EXTENSIONS-001           | `apps/desktop/src/settings/SettingsView.tsx`                                                                                    | post-M0                    |
+| CAP-RELEASE-001   | 打包与发布                    | partial     | electron-builder 已配置 macOS、Windows、Linux target；tag/manual workflow 配置为构建 macOS 和 Windows 产物 | 安装包未签名，macOS 未公证，无自动更新；Linux 不在 CI                                              | P1-RELEASE-001              | `apps/desktop/electron-builder.yml`、`.github/workflows/build-desktop.yml`                                                      | public-release             |
+| CAP-DOCS-001      | 文档与质量门禁                | partial     | 治理候选树已实现统一 `docs:check`、API inventory、Superpowers closeout、PR CI 和可信文档 gate              | staged 深审仍有路由提取、影响映射和可信状态时效问题；GitHub 强制配置也尚未完成                     | P1-DOCS-001                 | `scripts/docs-check.test.mjs`、`.github/workflows/ci.yml`、`.github/workflows/docs-gate.yml`                                    | M0-trustworthy-local-alpha |
+
+<!-- capability-inventory:end -->
+
+## 发布阻断摘要
+
+问题状态只使用 `open`、`in-progress`、`blocked` 和 `resolved`。本表只保留 P0/P1 摘要，详细证据写在 readiness issue 中。
+
+<!-- issue-inventory:start -->
+
+| ID                | Priority | Status      | Summary                                                          | Last verified | Target                     | Evidence                                                                                           |
+| ----------------- | -------- | ----------- | ---------------------------------------------------------------- | ------------- | -------------------------- | -------------------------------------------------------------------------------------------------- |
+| P0-SEC-001        | P0       | open        | Loopback API 无认证并反射任意 CORS origin                        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`                                                                        |
+| P0-SEC-002        | P0       | open        | Workspace 不是 agent 文件和命令执行的隔离边界                    | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`                                               |
+| P0-SEC-003        | P0       | open        | Ask 审批的 shell 前缀判断可绕过，新文件默认直通                  | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                      |
+| P0-SEC-004        | P0       | open        | 缓存 AgentSession 忽略后续 model、tools 和 resource loader 配置  | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`                                               |
+| P0-SEC-005        | P0       | open        | 新文件写入可经 symlink parent 逃出 workspace                     | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`                                                         |
+| P0-SEC-006        | P0       | open        | Provider key 明文存储，Electron renderer sandbox 未开启          | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                           |
+| P0-RUN-001        | P0       | open        | 同一 session 缺少 run single-flight 和稳定所有者                 | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`                          |
+| P1-PROVIDER-001   | P1       | open        | GLM/小米预设映射不可用，自定义 base URL 和 Test 语义也未接通     | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts` |
+| P1-DOCUMENT-001   | P1       | open        | PDF、Office 等资料缺少可供 agent 使用的正文抽取                  | 2026-07-11    | post-M0                    | `apps/pi-server/src/files/document-reader.ts`                                                      |
+| P1-RECOVERY-001   | P1       | open        | pi-server ready 后崩溃和旧 run 没有完整恢复流程                  | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/electron/pi-server-spawner.ts`                                                       |
+| P1-DATA-001       | P1       | open        | 删除 provider 会删除关联 run 历史                                | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`                                                            |
+| P1-UX-001         | P1       | open        | 强制滚动、无动作 slash command 和未接线设置仍暴露在 UI           | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src/chat/MessageStream.tsx`、`apps/desktop/src/chat/Composer/Composer.tsx`           |
+| P1-MESSAGE-001    | P1       | open        | 消息流计划的滚动暂停、文件变更事件、回合摘要和专项视觉场景未完成 | 2026-07-11    | post-M0                    | `docs/internal/plans/2026-07-10-message-stream.md`                                                 |
+| P1-QUALITY-001    | P1       | open        | 视觉比较默认软报告，当前有 8 张 changed 未裁决                   | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/scripts/compare-screenshots.mjs`、2026-07-11 视觉审计                                |
+| P1-RELEASE-001    | P1       | open        | 签名、公证、自动更新、LICENSE 和发布 smoke test 尚未完成         | 2026-07-11    | public-release             | `apps/desktop/electron-builder.yml`、`.github/workflows/build-desktop.yml`                         |
+| P1-EXTENSIONS-001 | P1       | open        | Skills 和 MCP 在正常产品路径中不可用                             | 2026-07-11    | post-M0                    | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/desktop/src/settings/SettingsView.tsx` |
+| P1-A11Y-001       | P1       | open        | 键盘、焦点、状态播报和长内容操作尚未完成系统审计                 | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src`                                                                                 |
+| P1-DOCS-001       | P1       | in-progress | 门禁已实现，staged 深审阻断和 GitHub 强制配置仍待完成            | 2026-07-12    | M0-trustworthy-local-alpha | `scripts/docs-check.mjs`、`.github/workflows/docs-gate.yml`                                        |
+
+<!-- issue-inventory:end -->
+
+## 验证基线
+
+在 `1199645` 上完成的根级验证：
+
+| Check                | Result                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `pnpm test`          | 通过；423 个测试，1 个需要真实 MiniMax 凭据的 live test 默认跳过                                       |
+| `pnpm typecheck`     | 通过                                                                                                   |
+| `pnpm lint`          | 通过                                                                                                   |
+| `pnpm format:check`  | 通过                                                                                                   |
+| `pnpm build`         | 通过；renderer 和 PDF worker 仍有大 bundle 警告                                                        |
+| `pnpm verify:visual` | 截图完成；32 张中 24 unchanged、8 changed、0 errors。默认命令未启用 fail-on-diff，因此不能记为视觉通过 |
+
+本次快照没有验证签名安装包、客户机启动、自动更新或真实 provider 的完整对话链路。
+
+### 本次治理变更的候选树验证
+
+产品行为基线仍固定在 `1199645`。在此基础上，本次治理 closeout 时已对包含治理变更的候选树运行 `pnpm verify`：文档检查、格式、lint、类型检查、449 项测试和构建通过，1 项真实 MiniMax 测试跳过。该结果是本地候选树证据，不代表 GitHub required check 已配置或已经过真实 PR 验证。
+
+## M0 退出条件
+
+- 本机 API 有进程级认证，CORS 只允许明确来源。
+- Agent 文件和命令能力有可验证的 workspace 边界；symlink、绝对路径和 shell 语义均有回归测试。
+- 权限切换不会复用不兼容的 AgentSession；Ask 和 Read-only 的产品文案与实际约束一致。
+- 同一 session 只有一个受控 run，切换视图、停止、断连和 server 崩溃都有确定终态。
+- Provider secret 不再以明文放在 SQLite，Electron renderer 启用 sandbox 并通过 packaged smoke test。
+- 正式文档、API inventory、Superpowers closeout 和 PR 文档影响检查成为必过门禁。
+- 当前 8 张视觉差异完成逐张裁决。
+
+公开发布还需要签名、公证、自动更新、LICENSE、跨平台安装测试和发布回滚方案；这些条件不并入 M0 的本地 Alpha 定义。

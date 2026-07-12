@@ -1,3 +1,44 @@
+---
+type: plan
+record_id: PLAN-P1-APPROVAL-BACKBONE-001
+status: archived
+source_spec_id: SPEC-P1-CHAT-CORE-001
+created: 2026-07-09
+updated: 2026-07-11
+target_milestone: M0-trustworthy-local-alpha
+owner: repository-maintainers
+docs_impact:
+  user:
+    - docs/user/guide.md
+    - docs/user/concepts.md
+  developer:
+    - docs/developer/api.md
+    - docs/developer/development.md
+  product_status: true
+archived_at: 2026-07-11
+outcome: completed
+implementation_refs:
+  - 9204d05
+  - 6713ec3
+  - 5047a58
+  - 79958a4
+  - 9ead828
+  - d8668fc
+  - 49ef826
+  - cd97f9b
+  - 4b8d3e6
+  - 704fb5e
+  - e8daea7
+  - 77da0fb
+  - 498eb9f
+  - afa85f9
+  - 9e7993b
+  - c9879cf
+  - 887cfc1
+  - d73a7ff
+  - 96bf76e
+---
+
 # P1-A 审批权限骨架 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -3138,3 +3179,37 @@ git commit -m "feat(desktop): approval screenshot scenario + scripted fake agent
 2. `ask` 档真实运行（非 fake）验证一次：在测试 workspace 让 agent 写一个已存在文件 → 审批卡出现 → 拒绝附理由 → 模型收到理由继续；批准路径文件落盘。
 3. `pnpm verify:visual` 通过，approval-flow 四张截图 blessed。
 4. 重开会话后审批终态可见（denied 理由保留）。
+
+## Implementation Outcome
+
+### 实际完成
+
+- 实现 ask 权限策略、diff 预览、ApprovalGateway、阻塞式 pi extension，以及审批事件与原始 pi 事件的有序合流。
+- 增加 approvals 表、SSE 请求/决策信封、审批列表和决策 API、断连过期处理。
+- 桌面端完成审批 API、stream hook、DiffView、ApprovalCard、ToolCard 内联状态和重开会话还原。
+- 增加 scripted fake agent、approval-flow 四张基线截图，并同步 README、用户审批说明、API 和开发调试文档。
+- 后续修复审批时间戳、损坏 payload 解析、live/fetched 状态合并、审批出现时滚动，以及 pi `edits` 数组形态的 diff。
+
+### 未完成或未留存的验收
+
+- 仓库没有保存完成定义第 2 项所要求的真实 agent 人工流程记录，因此不能追溯当时是否完整验证了“拒绝理由回传后继续”和批准落盘两条真实路径。
+- 2026-07-11 的视觉复核中，approval-flow 有三张截图相对基线发生变化；当前 `verify:visual` 仍是软门禁，不能把退出码 0 解释为视觉已批准。
+
+### 与 source spec 的偏差和遗留风险
+
+- source spec 要求默认 `ask`，当前 desktop store 和 server fallback 仍为 `full`。
+- session registry 命中缓存时忽略新的 tools/model config，`full` 切换为 `readonly` 可能继续持有完整工具集。
+- bash 前缀判定不能安全解析命令替换等 shell 语法；例如只读前缀可以包裹有副作用的子命令，未达到“无法确定时必须审批”的要求。
+- workspace 边界仍存在新建文件经缺失子路径 symlink 写出目录的风险。审批能力已经实现，但尚不能作为发布级安全边界。
+- diff 实现按已记录偏差使用 `diff` 包；精确替换失败时展示近似预览，不等价于 pi 的 fuzzy matcher。
+
+### 验证证据
+
+- 相关自动测试包括 approval policy、diff preview、gateway、extension、resource loader、pi client、repository、SSE flow、scripted fake，以及 desktop API/hook/DiffView/ApprovalCard/ToolCard/ChatView restore。
+- 2026-07-11 在提交 `1199645` 上复核：`pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm format:check` 和 `pnpm build` 通过；测试共 423 项，另有 1 项真实 MiniMax 测试跳过。
+- approval-flow 的四张截图基线位于 `apps/desktop/screenshots-baseline/approval-flow/`。
+
+### 正式文档与遗留工作
+
+- 已更新 `README.md`、`docs/user/concepts.md`、`docs/user/guide.md`、`docs/developer/api.md` 和 `docs/developer/development.md`。
+- 默认权限、缓存 session 权限切换、shell 判定、workspace 边界和视觉硬门禁转入 2026-07-11 product readiness audit；关闭本计划不代表这些发布阻断已经解决。

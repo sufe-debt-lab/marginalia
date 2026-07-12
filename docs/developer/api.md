@@ -1,10 +1,47 @@
 # pi-server HTTP API 参考
 
-pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.1` 上一个**系统分配的随机端口**（不对外开放）。所有路由定义在 `apps/pi-server/src/app.ts`。
+pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.1` 上一个系统分配的随机端口。所有路由定义在 `apps/pi-server/src/app.ts`。
 
 桌面端通过 `ApiClient`（`apps/desktop/src/api/client.ts`）调用这些接口，启动时由 main 进程把实际 URL（`http://127.0.0.1:<port>`）传给 renderer。
 
-请求/响应均为 JSON（除文件 raw 流和 SSE 流外）。错误统一返回 `{ "error": "<message>" }` + 对应状态码。
+除 raw 文件和 SSE 外，业务路由主要使用 JSON。多数显式错误返回 `{ "error": "<message>" }`，但当前没有全局 error schema。
+
+当前服务没有认证 middleware，并通过 CORS 反射请求 origin。随机 loopback 端口不是授权边界；在认证修复前，这套 API 只适合 Alpha 开发和评估。
+
+## Route inventory
+
+以下区间是服务端路由的机器可读清单。检查器只读取 Method 和 Path 两列，并与 `createApp()` 中的字符串字面量注册点做集合全等比较。
+
+<!-- route-inventory:start -->
+
+| Method | Path                                         | Description                   |
+| ------ | -------------------------------------------- | ----------------------------- |
+| GET    | `/health`                                    | 健康检查                      |
+| GET    | `/workspaces`                                | 列出 workspace                |
+| POST   | `/workspaces`                                | 创建 workspace                |
+| PATCH  | `/workspaces/:id/open`                       | 标记最近打开                  |
+| DELETE | `/workspaces/:id`                            | 删除 workspace 及关联记录     |
+| GET    | `/workspaces/:id/sessions`                   | 列出 workspace session        |
+| GET    | `/workspaces/:id/files`                      | 列出文件                      |
+| GET    | `/workspaces/:id/files/content`              | 读取文本预览                  |
+| GET    | `/workspaces/:id/files/raw`                  | 读取原始字节                  |
+| GET    | `/workspaces/:id/files/search`               | 搜索文件名和文本              |
+| PUT    | `/workspaces/:id/files/content`              | 创建或覆盖文本文件            |
+| POST   | `/sessions`                                  | 创建 session                  |
+| PATCH  | `/sessions/:sessionId`                       | 更新 session model            |
+| GET    | `/sessions/:sessionId/messages`              | 读取消息                      |
+| POST   | `/sessions/:sessionId/messages`              | 追加消息                      |
+| POST   | `/sessions/:sessionId/approvals/:approvalId` | 提交审批决定                  |
+| GET    | `/sessions/:sessionId/approvals`             | 列出审批记录                  |
+| POST   | `/quick-chat`                                | 创建 quick chat session       |
+| GET    | `/providers`                                 | 列出 provider                 |
+| POST   | `/providers`                                 | 创建 provider                 |
+| POST   | `/providers/:id/test`                        | 检查本地模型可用状态          |
+| PATCH  | `/providers/:id`                             | 更新 provider                 |
+| DELETE | `/providers/:id`                             | 删除 provider、key 和关联 run |
+| POST   | `/sessions/:sessionId/runs`                  | 启动 SSE agent run            |
+
+<!-- route-inventory:end -->
 
 ## 健康检查
 
@@ -34,7 +71,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 ## 文件 / 文档
 
-所有文件接口都限制在 workspace 的 `rootDir` 内（`files/path-sandbox.ts` 的 `resolveWorkspacePath`，越界返回 `403 Path escapes workspace`）。
+文件接口通过 `files/path-sandbox.ts` 做 lexical path 和已存在目标 realpath 检查。当前新文件写入没有校验最近存在父目录的 realpath，可通过 workspace 内的 symlink parent 写到目录外，见[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。Agent 默认 coding tools 不复用这层检查。
 
 | 方法 | 路径                                       | 说明                                                                      |
 | ---- | ------------------------------------------ | ------------------------------------------------------------------------- |
@@ -42,8 +79,21 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 | GET  | `/workspaces/:id/files/content?path=<rel>` | 读取文档文本预览，返回 `DocumentContent`。                                |
 | GET  | `/workspaces/:id/files/raw?path=<rel>`     | 原始字节流（PDF/图片预览用），带 `content-type` / `content-disposition`。 |
 | GET  | `/workspaces/:id/files/search?q=<query>`   | 搜索，返回 `{ path, match: "name" \| "content" }[]`。                     |
+| PUT  | `/workspaces/:id/files/content`            | 创建或覆盖 UTF-8 文本文件。                                               |
 
 `DocumentContent`（`apps/pi-server/src/files/document-reader.ts#DocumentContent`）：`{ path, mime, text, language, lineCount, lineCountExact, truncated, bytesRead, bytesTotal, rawOnly? }`。读取限制（大小、行数 cap、二进制处理）见[配置](../user/configuration.md#文档读取限制)。预览失败按错误码返回对应状态：`not_found`(404)、`file_too_large`、`binary_not_previewable` 等。
+
+文件写入 Body：
+
+```jsonc
+{
+  "path": "notes/summary.md",
+  "content": "# Summary\n",
+  "overwrite": false
+}
+```
+
+新文件返回 `201`，覆盖返回 `200`；目标存在但 `overwrite` 不是 `true` 时返回 `409 { "error": "file exists" }`。它只写 UTF-8 文本，不是通用二进制上传接口。
 
 ## Sessions 与消息
 
@@ -68,9 +118,11 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 | POST   | `/providers`          | 创建。Body `{ name, apiKey, baseUrl?, defaultModel }`，返回 `201`。API key 存入 `env_vars` 并注册到 pi 运行时（`authStorage.setRuntimeApiKey`）。                                                                                                                 |
 | PATCH  | `/providers/:id`      | 更新。Body 任意子集 `{ name?, apiKey?, baseUrl?, defaultModel?, enabled? }`，返回更新后的 provider（不含 API key）。省略 `apiKey` 则保留原 key；改名会同步重命名 `env_vars` 键并把 pi 运行时 key 从旧 `piProviderId` 迁到新的；`enabled:false` 会移除运行时 key。 |
 | DELETE | `/providers/:id`      | 删除 provider 及其 `env_vars` 记录，并清除 pi 运行时 key，返回 `204`。                                                                                                                                                                                            |
-| POST   | `/providers/:id/test` | 测试可用性，返回可用性检查结果。                                                                                                                                                                                                                                  |
+| POST   | `/providers/:id/test` | 检查 provider/model 是否存在于本地可用模型列表，不发真实网络请求。                                                                                                                                                                                                |
 
-`Provider`（对客户端）：`{ id, name, baseUrl?, defaultModel, enabled? }`。`name` 会经 `piProviderId()`（`agent/provider-id.ts`）映射到 pi 运行时的 provider id，例如 `"MiniMax"` → `"minimax-cn"`、`"OpenAI"` → `"openai"`。预设列表见[配置](../user/configuration.md#provider-预设)。
+`Provider`（对客户端）：`{ id, name, baseUrl?, defaultModel, enabled? }`。`name` 会经 `piProviderId()`（`agent/provider-id.ts`）映射到 pi 运行时的 provider id，例如 `"MiniMax"` → `"minimax-cn"`、`"OpenAI"` → `"openai"`。当前 GLM 和 Xiaomi MiMo 预设会分别映射到 registry 中不存在的 `glm`、`xiaomi-mimo`。Run 只把 provider/model ID 交给 `getModel()`，数据库中的 `baseUrl` 没有进入模型请求；Test 只检查本地 registry 和是否配置凭据，不验证 key 或网络。
+
+删除 provider 时，repository 会先删除关联 runs，随后删除 provider 和 `env_vars` key。它不是保留历史记录的 soft delete。
 
 ## 运行对话（SSE 流式）
 
@@ -107,7 +159,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 1. `run_started` — `payload: { model }`。
 2. 若干 `agent_event` — `payload: { event }`，其中 `event` 是 **原样转发的原始 pi 事件**（message_start、文本/思考增量、工具调用、message_end 等）。客户端从这些原始事件派生所有 UI。
-3. `ask` 权限下，写副作用的工具调用（`bash`、`edit`、`write`）在真正执行前会插入一对 `approval_requested` / `approval_resolved`（见下一节），流会在 `approval_requested` 处暂停，直到收到决策。
+3. `ask` 权限下，审批策略认为需要确认的工具调用会插入 `approval_requested` / `approval_resolved`，并在请求事件处暂停。当前部分 shell 前缀和新文件 write 自动放行，不会产生审批事件。
 4. 结束：`run_completed`（无 payload）；或 `run_failed` — `payload: { error }`（agent 返回 `message_end` 且 `stopReason === "error"`，或抛异常时）。
 
 > 设计约定：pi-server **不**把 pi 事件重映射成 desktop 专用形状，只加 run 级信封。详见[系统架构 · 单一事实源](./architecture.md#单一事实源single-source-of-truth)。
@@ -117,6 +169,8 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 ### 审批（`ask` 档）
 
 判定某次工具调用是否需要审批的纯函数见 `apps/pi-server/src/agent/approval-policy.ts`；暂停/恢复流程（含挂起态管理、断连时的自动拒绝）见 `apps/pi-server/src/agent/approval-gateway.ts`；把两者接到 pi 工具调用钩子上的 extension 见 `apps/pi-server/src/agent/approval-extension.ts`。
+
+当前策略：read/grep/find/ls 直接放行；bash 按命令分段和首 token allowlist 判断；edit 必审；write 只在目标已存在时审批；未知工具使用命令卡审批。这个字符串判断不解析完整 shell 语义，审批不是安全沙箱。
 
 两类 SSE 信封（`payload.approval` 形状见 `apps/pi-server/src/agent/agent-client.ts#ApprovalRequestedEvent`/`ApprovalResolvedEvent`）：
 
@@ -176,7 +230,7 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 ## 数据模型（SQLite）
 
-schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置见[配置 · 存储位置](../user/configuration.md#存储位置)。
+schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置和 secret 边界见[配置](../user/configuration.md)。
 
 | 表                  | 关键列                                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -189,7 +243,7 @@ schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置见[配置 · 存
 | `env_vars`          | `id, key, value, scope, workspace_id, created_at`（存 provider API key 等）                              |
 | `schema_migrations` | `version, applied_at`                                                                                    |
 
-外键启用 `ON DELETE CASCADE`：删除 workspace 会级联清理其 session/message/run。
+删除 workspace 时 repository 在 transaction 中显式清理 message/run/session，再删除 workspace。数据库外键也对 session/message 的部分关系启用 cascade。删除 provider 会清理关联 runs。
 
 > 说明：`ApiClient` 中存在 `getBranch()` / `GET /workspaces/:id/branch`，但该路由在当前 pi-server 中**尚未实现**；客户端在请求失败时静默返回 `null`，对应版本快照功能仍属路线图（见[术语](../user/concepts.md)）。
 

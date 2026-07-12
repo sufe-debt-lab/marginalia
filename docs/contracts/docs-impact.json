@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "server-http-contract",
+      "paths": ["apps/pi-server/src/app.ts"],
+      "requireAll": ["docs/developer/api.md"]
+    },
+    {
+      "id": "sse-contract",
+      "paths": ["apps/pi-server/src/agent/agent-client.ts", "apps/desktop/src/api/sse-stream.ts"],
+      "requireAll": ["docs/developer/api.md"]
+    },
+    {
+      "id": "desktop-api-client",
+      "paths": ["apps/desktop/src/api/**"],
+      "requireAll": ["docs/developer/api.md"]
+    },
+    {
+      "id": "database-contract",
+      "paths": ["apps/pi-server/src/db/**"],
+      "requireAll": ["docs/developer/api.md", "docs/user/configuration.md"]
+    },
+    {
+      "id": "provider-config",
+      "paths": [
+        "apps/pi-server/src/providers/**",
+        "apps/pi-server/src/agent/provider-id.ts",
+        "apps/desktop/src/settings/**"
+      ],
+      "requireAll": ["docs/user/configuration.md", "docs/developer/api.md"]
+    },
+    {
+      "id": "runtime-config",
+      "paths": [
+        "apps/pi-server/src/index.ts",
+        "apps/pi-server/src/db/connection.ts",
+        "apps/desktop/electron/pi-server-spawner.ts",
+        "apps/desktop/electron/main.ts"
+      ],
+      "requireAll": ["docs/user/configuration.md", "docs/developer/development.md"]
+    },
+    {
+      "id": "permissions-and-files",
+      "paths": [
+        "apps/pi-server/src/agent/agent-client.ts",
+        "apps/pi-server/src/agent/agent-session-registry.ts",
+        "apps/pi-server/src/agent/approval-*.ts",
+        "apps/pi-server/src/agent/document-tools.ts",
+        "apps/pi-server/src/agent/pi-coding-agent-client.ts",
+        "apps/pi-server/src/files/**",
+        "apps/desktop/src/chat/ApprovalCard.tsx",
+        "apps/desktop/src/chat/Composer/PermissionChip.tsx"
+      ],
+      "requireAll": [
+        "docs/user/guide.md",
+        "docs/user/configuration.md",
+        "docs/developer/architecture.md"
+      ]
+    },
+    {
+      "id": "desktop-permission-state",
+      "paths": [
+        "apps/desktop/src/store/**",
+        "apps/desktop/src/chat/ChatView.tsx",
+        "apps/desktop/src/chat/Composer/**"
+      ],
+      "requireAll": [
+        "docs/user/guide.md",
+        "docs/user/configuration.md",
+        "docs/developer/architecture.md"
+      ]
+    },
+    {
+      "id": "desktop-ipc-contract",
+      "paths": [
+        "apps/desktop/electron/**",
+        "apps/desktop/src/lib/open-external.ts",
+        "apps/desktop/src/lib/save-file.ts"
+      ],
+      "requireAll": ["docs/developer/api.md", "docs/developer/architecture.md"]
+    },
+    {
+      "id": "server-user-boundary",
+      "paths": ["apps/pi-server/src/app.ts"],
+      "changedLinePattern": "(provider|apiKey|baseUrl|defaultModel|permission|approval|rootDir|workspaceRoot|files|resolveWorkspacePath)",
+      "requireAll": [
+        "docs/user/guide.md",
+        "docs/user/configuration.md",
+        "docs/developer/architecture.md"
+      ]
+    },
+    {
+      "id": "developer-commands",
+      "paths": ["package.json", "pnpm-workspace.yaml", "scripts/**"],
+      "requireAll": ["docs/developer/development.md", "docs/developer/contributing.md"]
+    },
+    {
+      "id": "documentation-contracts",
+      "paths": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "scripts/docs-check*.mjs",
+        "docs/contracts/**",
+        ".github/CODEOWNERS",
+        ".github/pull_request_template.md",
+        ".github/workflows/ci.yml",
+        ".github/workflows/docs-gate.yml"
+      ],
+      "requireAll": ["docs/developer/documentation-lifecycle.md", "docs/developer/contributing.md"]
+    },
+    {
+      "id": "desktop-release",
+      "paths": [
+        "apps/desktop/electron/**",
+        "apps/desktop/electron-builder.yml",
+        "apps/desktop/package.json",
+        ".github/workflows/**"
+      ],
+      "requireAll": ["docs/developer/build-and-release.md"]
+    },
+    {
+      "id": "agent-extensions",
+      "paths": [
+        "apps/pi-server/src/agent/pi-coding-agent-client.ts",
+        "apps/desktop/src/settings/SettingsView.tsx"
+      ],
+      "requireAll": ["docs/product/status.md", "docs/developer/architecture.md"]
+    }
+  ]
+}

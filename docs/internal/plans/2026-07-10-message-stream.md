@@ -1,3 +1,38 @@
+---
+type: plan
+record_id: PLAN-P1-MESSAGE-STREAM-001
+status: archived
+source_spec_id: SPEC-P1-CHAT-CORE-001
+created: 2026-07-10
+updated: 2026-07-11
+target_milestone: M0-trustworthy-local-alpha
+owner: repository-maintainers
+docs_impact:
+  user:
+    - docs/user/guide.md
+  developer:
+    - docs/developer/api.md
+    - docs/developer/architecture.md
+    - docs/developer/development.md
+  product_status: true
+archived_at: 2026-07-11
+outcome: cancelled
+implementation_refs:
+  - 7d34b8b
+  - 1eef5ec
+  - 23a98a0
+  - 8691f72
+  - 16783ad
+  - 90d982c
+  - ffadd29
+  - 0cca020
+  - 2f23bf3
+  - de018bc
+  - 85a6d8b
+  - adacac2
+  - 1199645
+---
+
 # P1-B 消息流渲染 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -1818,3 +1853,45 @@ git commit -m "feat(desktop): message-stream screenshot scenario + docs"
 6. 滚动：向上滚动暂停跟随并出胶囊，点击或流式结束恢复。
 7. 变更摘要：ask 批准、full 直通、新建文件三种路径的 edit/write 都进汇总条，展开见逐文件 diff；重开会话摘要仍在。
 8. live 与重开渲染一致（thinking 降级形态、摘要聚合形态按任务内注明的规格）。
+
+## Implementation Outcome
+
+### 实际完成
+
+本计划完成了 Task 1–11，并保留这些已交付能力：
+
+- 工具摘要和完整结果辅助、`partialResult` 消费、可展开 ToolCard 与 bash 实时输出尾部。
+- thinking 移入助手气泡并支持完成后折叠。
+- 代码块语言标签与复制、长文排版、三项以上标题时的消息目录和锚点跳转。
+- 助手消息复制全文、通过 Electron 保存 `.md`、写入 workspace，以及同名文件 409 后的覆盖确认。
+- 保存对话框两张截图基线已加入 seeded-workspace 场景。
+
+对应实现提交为 `7d34b8b`、`1eef5ec`、`23a98a0`、`8691f72`、`16783ad`、`90d982c`、`ffadd29`、`0cca020`、`2f23bf3`、`de018bc`、`85a6d8b`、`adacac2` 和 `1199645`。
+
+### 未完成和取消内容
+
+- Task 12 未实施：消息流仍在尾部内容变化时强制跟随，没有“用户上滚后暂停”和“回到底部”胶囊。
+- Task 13 未实施：没有 `file_changed` envelope、`auto` 状态持久化或相应 server 测试。
+- Task 14 未实施：没有 TurnSummary、逐文件 diff 汇总或重开还原。
+- Task 15 未实施：没有 message-stream scripted scenario、七张目标截图、视觉基线裁决和完整正式文档同步。
+
+这些工作转入 product readiness audit 的 `P1-MESSAGE-001`；本次 `outcome: cancelled` 表示原计划在部分交付后关闭，不撤销 Task 1–11 的实现，也不把 Task 12–15 伪记为完成。
+
+### 与 source spec 的偏差
+
+- 代码高亮保留现有 highlight.js，没有采用 spec 中倾向的 Shiki；这是计划开始前已记录的依赖取舍。
+- 目录只解析助手消息的第一个 text part，多 text part 回答不会生成完整目录。
+- 计划标题沿用了“P1-B”，但 source spec 已把 P1-B 用于并行会话 run-state 重构。历史标题保留，稳定 `record_id` 才是后续引用依据。
+- source spec 预期的回合文件变更摘要没有落地。
+
+### 验证证据
+
+- 已完成部分由 tool-format、stream progress、ToolCard、ThinkingBlock、CodeBlock、Markdown、MessageToc、MessageActions、save-file IPC、files-write 和 SaveToWorkspaceDialog 测试覆盖。
+- 2026-07-11 在提交 `1199645` 上复核：`pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm format:check` 和 `pnpm build` 通过；测试共 423 项，另有 1 项真实 MiniMax 测试跳过。
+- 当前没有 message-stream 专用截图场景，不能声称完成本计划要求的视觉验收。
+
+### 正式文档与遗留工作
+
+- `de018bc` 已同步 `docs/developer/architecture.md` 的保存文件 IPC。
+- `PUT /workspaces/:id/files/content` 已实现，但本计划要求的 API 文档、用户消息操作说明和开发 fake 关键字说明未同步。
+- 可暂停滚动、文件变更事件、TurnSummary、API/用户文档和视觉场景必须作为新的当前 issue 继续跟踪。

@@ -1,74 +1,86 @@
 # 配置
 
-本文覆盖 LLM provider 配置、存储位置、环境变量和文档读取限制。面向使用流程的说明见[使用指南](./guide.md)。
+本文记录当前 Provider、存储、环境变量和文档读取限制。Alpha 阶段的安全与发布阻断见[产品状态](../product/status.md)。
 
 ## Provider 配置
 
-Marginalia 自带一套 provider 快捷预设（`apps/desktop/src/settings/provider-catalog.ts`）。在设置页选择预设后填入 API key 即可；预设决定了 `baseUrl`、可选模型和默认模型。
+Settings -> Providers 可以创建、编辑、启停、测试和删除 provider。编辑时 API key 留空只会保留旧值，当前 UI 没有单独清除 key 的操作；删除 provider 会同时清除 key 和关联 run 历史。直接调用 PATCH API 时，`apiKey: ""` 才表示清除数据库值和运行时 override。
 
-设置页 → 服务商可以对每个已配置 provider：**测试**连接、**编辑**（改名称/Base URL/默认模型，或重置 API key —— 编辑时 API key 留空表示保留原值）、**删除**（删除前需确认，会一并清除本地保存的 key）、用开关**启用/禁用**。表单里的「申请 API key」链接会在系统默认浏览器中打开，而非应用内窗口。
+### 内置预设
 
-### Provider 预设
+预设来自 `apps/desktop/src/settings/provider-catalog.ts`：
 
-| 预设               | provider.name | Base URL                                         | 默认模型        | 计费       |
-| ------------------ | ------------- | ------------------------------------------------ | --------------- | ---------- |
-| OpenAI             | `OpenAI`      | `https://api.openai.com/v1`                      | `gpt-5.1`       | 按量       |
-| 智谱 GLM（中国区） | `GLM`         | `https://open.bigmodel.cn/api/anthropic`         | `glm-4.6`       | 编程套餐   |
-| MiniMax（中国区）  | `MiniMax`     | `https://api.minimaxi.com/anthropic`             | `MiniMax-M2.7`  | Token 套餐 |
-| 小米 MiMo          | `Xiaomi MiMo` | `https://token-plan-cn.xiaomimimo.com/anthropic` | `mimo-v2.5-pro` | Token 套餐 |
+| Preset             | `provider.name` | Saved Base URL                                   | Default model   | Current registry result          |
+| ------------------ | --------------- | ------------------------------------------------ | --------------- | -------------------------------- |
+| OpenAI             | `OpenAI`        | `https://api.openai.com/v1`                      | `gpt-5.1`       | 映射为 `openai`                  |
+| 智谱 GLM（中国区） | `GLM`           | `https://open.bigmodel.cn/api/anthropic`         | `glm-4.6`       | 错误映射为不存在的 `glm`         |
+| MiniMax（中国区）  | `MiniMax`       | `https://api.minimaxi.com/anthropic`             | `MiniMax-M2.7`  | 映射为 `minimax-cn`              |
+| 小米 MiMo          | `Xiaomi MiMo`   | `https://token-plan-cn.xiaomimimo.com/anthropic` | `mimo-v2.5-pro` | 错误映射为不存在的 `xiaomi-mimo` |
 
-申请 API key 的链接随预设附带（见 `provider-catalog.ts` 的 `apiKeyUrl`）。
+这些 URL 当前会保存和显示，但 pi-server 发起 run 时只把规范化 provider ID 和 model ID 传给 `getModel()`，没有把数据库中的 `baseUrl` 注入请求。当前 pi registry 使用 `zai` 和 `xiaomi`/`xiaomi-token-plan-cn` 等 ID，现有 GLM 与小米 name 映射没有对齐；GLM 默认的 `glm-4.6` 也不在当前 registry。不能把表中的 URL 或预设存在本身当作已验证可用。
 
-### name → pi provider id 映射
+### Name 到 pi provider ID
 
-创建 provider 时填的 `name` 会经 `piProviderId()`（`apps/pi-server/src/agent/provider-id.ts#piProviderId`）规范化，映射到 pi 运行时的 provider id：
+`piProviderId()` 会把 name 规范化：
 
-- 大小写无关、空格/下划线转连字符；
-- `OpenAI` / `openai` / `open-ai` → `openai`；
-- `MiniMax` / `minimax-cn` → `minimax-cn`，`minimax-global` → `minimax`；
-- 其余按规范化结果原样使用（如 `GLM` → `glm`）。
+- 大小写无关，空格和下划线转成连字符；
+- `OpenAI`、`openai`、`open-ai` 映射到 `openai`；
+- `MiniMax`、`minimax-cn` 映射到 `minimax-cn`，`minimax-global` 映射到 `minimax`；
+- 其他名称按规范化结果使用，比如 `GLM` 变成 `glm`。
 
-选预设时 `name` 已选成能正确映射的值，因此通常无需关心。
+自定义 name 和 model 必须已经被 pi 模型注册表识别。自定义 Base URL 尚未接通，因此当前 UI 不能创建任意 OpenAI-compatible endpoint。
 
-### 自定义 provider
+### Test 按钮
 
-也可以不走预设，创建自定义 provider。自定义项必须能被 `piProviderId()` 映射到 pi 支持的 provider，且默认模型必须被 pi 运行时识别；否则发起对话时会失败。HTTP API 细节见 [API 参考 · Providers](../developer/api.md#providers)。
+Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/model 是否在 registry 中，并过滤没有配置凭据的项目。它不会发送网络请求，也不能验证 key 是否有效、DNS、TLS、余额、限流、Base URL 或真实推理响应。真实对话可能产生服务商费用。
 
-## 存储位置
+## Secret 与存储
 
-| 内容             | 路径                                   | 说明                                                                                                   |
-| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| SQLite 数据库    | `~/.marginalia/db.sqlite`              | workspace/session/message/provider/run 等（`apps/pi-server/src/db/connection.ts`）。                   |
-| Provider API key | SQLite `env_vars` 表                   | 创建 provider 时写入本地数据库，并在 pi-server 启动时注册到 pi 运行时。                                |
-| AuthStorage      | `~/.marginalia/auth.json`              | pi 的 auth storage 路径（`apps/pi-server/src/app.ts#DEFAULT_AUTH_PATH`），与独立 pi CLI 默认目录隔离。 |
-| UI 偏好          | Electron localStorage `marginalia-app` | 语言、侧栏状态、权限、推理档位、上次模型等（`apps/desktop/src/store/app-store.ts`）。                  |
+| Data             | Path or table                          | Notes                                                       |
+| ---------------- | -------------------------------------- | ----------------------------------------------------------- |
+| SQLite           | `~/.marginalia/db.sqlite`              | workspace、session、message、provider、run、approval 等     |
+| Provider API key | SQLite `env_vars.value`                | 当前为明文，没有使用 OS keychain 或应用层加密               |
+| pi AuthStorage   | `~/.marginalia/auth.json`              | pi 运行时独立目录；不要与 SQLite 中的 provider key 混为一处 |
+| UI preferences   | Electron localStorage `marginalia-app` | 语言、布局、权限、推理档位、上次模型和 resume toggle        |
 
-`defaultDbPath()` 使用 `os.homedir()` 解析用户目录，避免在 Windows 上因 `HOME` 缺失而回退到 cwd。需要隔离测试或临时数据时，用 `MARGINALIA_DB_PATH` 覆盖。
+`defaultDbPath()` 通过 `os.homedir()` 解析用户目录。测试或临时运行可以用 `MARGINALIA_DB_PATH` 覆盖数据库路径。
+
+数据库、备份和崩溃采集都可能包含明文 key。应用当前也没有本机 API 认证，不适合保存高价值凭据。
 
 ## 环境变量
 
-| 变量                                                              | 作用域           | 说明                                                                                                                                                                 |
-| ----------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARGINALIA_DB_PATH`                                              | pi-server        | 覆盖 SQLite 文件路径（`apps/pi-server/src/db/connection.ts#openDatabase`）。                                                                                         |
-| `MARGINALIA_NODE_PATH`                                            | 桌面壳（dev）    | 开发模式下指定用哪个 `node` 二进制启动 pi-server（`apps/desktop/electron/pi-server-spawner.ts#MARGINALIA_NODE_PATH`）。                                              |
-| `VITE_DEV_SERVER_URL`                                             | 桌面壳（dev）    | 设置后 Electron 从该 URL 加载 renderer（Vite dev server），否则加载打包的 `dist/index.html`（`apps/desktop/electron/main.ts#devServerUrl`）。`pnpm dev` 会自动设置。 |
-| `MARGINALIA_SCREENSHOT_VERIFY`                                    | 截图验证         | `verify:screenshots` 内部使用，显式启用截图验证隔离模式。                                                                                                            |
-| `MARGINALIA_USER_DATA_DIR`                                        | 截图验证         | `verify:screenshots` 内部使用，覆盖 Electron `userData` 目录。                                                                                                       |
-| `MINIMAX_CN_API_KEY` / `MINIMAX_CN_BASE_URL` / `MINIMAX_CN_MODEL` | 截图验证（live） | `verify:screenshots:live` 的真实 MiniMax 场景使用；默认 gate 不需要。                                                                                                |
-| `CSC_IDENTITY_AUTO_DISCOVERY`                                     | 打包/CI          | 设为 `false` 阻止 macOS 自动签名（当前未签名 spike 构建用）。                                                                                                        |
+| Variable                       | Scope                  | Behavior                                                             |
+| ------------------------------ | ---------------------- | -------------------------------------------------------------------- |
+| `MARGINALIA_DB_PATH`           | pi-server              | 覆盖 SQLite 文件路径                                                 |
+| `MARGINALIA_NODE_PATH`         | desktop dev            | 指定开发模式启动 pi-server 的 Node binary                            |
+| `VITE_DEV_SERVER_URL`          | desktop dev            | 让 Electron 加载指定的 loopback Vite URL；`pnpm dev` 自动设置        |
+| `MARGINALIA_FAKE_AGENT`        | screenshot/local debug | 设为 `1` 时使用脚本化 fake agent，不连接真实模型；不要用于打包或生产 |
+| `MARGINALIA_SCREENSHOT_VERIFY` | screenshot             | 启用隔离和确定性截图模式                                             |
+| `MARGINALIA_USER_DATA_DIR`     | screenshot             | 覆盖 Electron `userData` 目录                                        |
+| `MINIMAX_CN_API_KEY`           | live screenshot        | 真实 MiniMax opt-in 场景使用                                         |
+| `MINIMAX_CN_BASE_URL`          | live screenshot        | 覆盖 live 场景 URL                                                   |
+| `MINIMAX_CN_MODEL`             | live screenshot        | 覆盖 live 场景 model                                                 |
+| `CSC_IDENTITY_AUTO_DISCOVERY`  | packaging/CI           | 设为 `false`，阻止当前未签名构建自动发现 macOS identity              |
 
 ## 文档读取限制
 
-文档预览由 `apps/pi-server/src/files/document-reader.ts` 处理，限制如下：
+`apps/pi-server/src/files/document-reader.ts` 的当前限制：
 
-- **大小上限**：10 MB（超出返回 `file_too_large`）。
-- **行数 cap**（按扩展名）：`md`/`mdx`/`txt` 50,000 行，`log`/`csv`/`tsv` 10,000 行，其余默认 1,000 行；绝对上限 100,000 行。超出会 `truncated: true`。
-- **二进制检测**：前 4KB 采样判定；不可预览的二进制返回 `binary_not_previewable`。
-- **PDF / 图片**：通过 `/files/raw` 走原始字节流预览，文本预览接口对其标记 `rawOnly`。支持的 MIME 见 `document-reader.ts` 的 `mimeTypes`（pdf、png/jpg/jpeg/gif/webp/avif/svg/ico 等）。
+- 文本大小上限 10 MB，超出返回 `file_too_large`。
+- Markdown、MDX、TXT 最多收集 50,000 行；LOG、CSV、TSV 为 10,000 行；其他文本默认为 1,000 行；绝对上限 100,000 行。
+- 前 4 KB 用于二进制检测；不可作为文本预览的文件返回 `binary_not_previewable`。
+- PDF、图片、音视频和 Office 扩展名标记为 `rawOnly`，不进入文本抽取。
+- PDF 由 renderer 中的 pdf.js 视觉渲染；图片、音视频使用 raw URL；Office 当前显示不支持预览。
 
-这些限制适用于桌面端文档面板预览，以及用户把文件作为 `@文件` 上下文加入对话时的读取过程。`apps/pi-server/src/agent/document-tools.ts` 中也有同一读取器的工具合约，但当前生产 run 尚未把这些工具直接注入 agent。
+文本限制同时作用于文档面板和显式加入请求的上下文。Agent 默认 coding tools 走 pi 自己的文件实现，不受这组预览行数限制，也没有复用 HTTP 文件 sandbox。
+
+## 本机 API
+
+pi-server 监听 `127.0.0.1` 的随机端口。当前除随机端口外没有认证，并反射请求 origin。Loopback 只限制网络接口，不负责授权。完整路由和已知边界见[API 参考](../developer/api.md)。
 
 ## 相关文档
 
-- 这些值在请求/响应中的呈现：[API 参考](../developer/api.md)
-- 存储路径在打包后的差异：[打包与发布](../developer/build-and-release.md)
+- [使用指南](./guide.md)
+- [产品状态](../product/status.md)
+- [系统架构](../developer/architecture.md)
+- [打包与发布](../developer/build-and-release.md)

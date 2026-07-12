@@ -1,43 +1,43 @@
 # 核心术语
 
-本文说明 Marginalia 的产品边界和常用术语，并标注当前实现状态。历史路线图归档在 `docs/internal/`，只作背景参考。
+Marginalia 是本地优先的桌面端 AI 文档协作器，主要处理文章解读和基于资料的写作。代码和 shell 是可选的 agent 工具，不是产品的 IDE 入口。当前实现状态以[产品状态](../product/status.md)为准，历史 spec 只作背景参考。
 
-## 产品定位
+## 产品边界
 
-Marginalia 是**本地优先的桌面端 AI 文档协作器**。它把本机 workspace、文档预览、会话历史和模型 provider 配置放进一个桌面应用，由本机 agent 协助文档精读与写作。目标用户先聚焦个人重度文档工作者。
+- 不做 IDE、Language Server、完整终端或 PTY。
+- 不做专业 Git UI。
+- 不做 GUI 或浏览器自动化。
+- 不做多人协作、云账号或自动更新。
+- Skills 和 MCP 是规划能力，当前产品路径禁用。
+- Agent tools 使用当前系统用户权限；现有 Workspace 和审批不是安全沙箱。
 
-### 非目标
-
-- 不做 IDE、代码编辑器入口、Language Server。
-- 命令执行采用副作用分级审批（见[使用指南](./guide.md#审批)）；不做完整终端/PTY 体验。
-- 不做专业 Git UI（branch/merge/rebase/push/pull）。
-- 不做 GUI / 浏览器自动化。
-- MVP 不做多人协作、云账号、自动更新、Skills 市场。
+“本地优先”表示资料目录、数据库和会话默认保存在本机。它不表示所有内容都留在本机：提示、显式附件和 agent 工具结果会发送给所选模型服务商。
 
 ## 术语
 
-| 术语                    | 含义                                                            | 状态                                                              |
-| ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Workspace / project** | 用户的资料目录 + 其下的会话集合。                               | ✅ 已实现（`workspaces` 表 + 文件接口）                           |
-| **Session**             | 一次 agent 对话，属于某个 workspace。                           | ✅ 已实现（`sessions` 表）                                        |
-| **Quick chat**          | 临时对话，自动归属到最近打开的 workspace。                      | 部分实现（后端 `POST /quick-chat` 已有，桌面端暂无独立入口）      |
-| **Provider**            | LLM 服务商配置（key/baseUrl/模型）。                            | ✅ 已实现（见[配置](./configuration.md)）                         |
-| **Run**                 | 一次 agent 执行，以 SSE 流式返回事件。                          | ✅ 已实现（`runs` 表 + `POST …/runs`）                            |
-| **Approval**            | `ask` 档下对副作用操作（命令执行、文件写入）的逐条批准记录。    | ✅ 已实现（`approvals` 表，见[使用指南 · 审批](./guide.md#审批)） |
-| **Agent output**        | agent 创建的普通文件，额外用 SQLite 元数据标记来源。            | 🚧 路线图                                                         |
-| **Snapshot**            | 用户视角的版本快照，底层可用 Git commit 实现。                  | 🚧 路线图（`/branch` 接口尚未实现）                               |
-| **Remote control**      | 外部入口（手机/Web/IM）控制本机 agent，执行仍在本机 pi-server。 | 🚧 路线图（P1）                                                   |
-| **MCP server**          | 接入外部资料源/数据库的 MCP 服务。                              | 🚧 路线图                                                         |
+| Term                | Meaning                                   | Current state                                             |
+| ------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| Workspace / project | 本地资料目录及其 session 集合             | partial；CRUD 和文件接口可用，隔离边界仍有 P0             |
+| Session             | 属于某个 workspace 的 agent 对话          | implemented；并发 run 与恢复仍不完整                      |
+| Quick chat          | 自动归属最近打开 workspace 的临时 session | partial；后端 API 已有，桌面端无独立入口                  |
+| Provider            | 模型服务商、key 和默认模型配置            | partial；GLM/小米预设映射不可用，Base URL/Test 语义不完整 |
+| Run                 | 一次 agent 执行及其 SSE 事件和数据库状态  | partial；可停止当前请求，没有服务端 single-flight         |
+| Approval            | Ask 档下部分工具调用的暂停、决定和记录    | partial；字符串启发式和新文件直通使其不能作为安全边界     |
+| Context file        | 用户显式附到 prompt 的 workspace 文件     | 文本可内联；PDF、Office 等不抽正文                        |
+| Saved answer        | 用户把助手回答导出或保存为 `.md`          | implemented；不等于自动 Agent output 元数据               |
+| Agent output        | Agent 自动创建并额外标记来源的文件        | planned                                                   |
+| Snapshot            | 用户视角的版本快照，可由 Git 等机制实现   | planned；`/branch` 服务端路由未实现                       |
+| Skill               | 按任务加载的专业指令和资源                | disabled；运行时设置 `noSkills: true`                     |
+| MCP server          | 向 agent 提供外部数据和工具的 MCP 服务    | disabled；无配置、连接或注入链路                          |
+| Remote control      | 从手机、Web 或 IM 控制本机 agent          | planned；没有已确认里程碑                                 |
 
-> 状态以当前代码为准。「路线图」项在内部 spec 中有设计，但尚未在本仓库实现——文档不会把它们描述成已有能力。
+## 历史资料
 
-## 路线图背景
-
-历史 spec 曾把产品拆成可独立交付的小闭环：本机壳与 server → workspace/session/quick chat → provider 与流式 chat → 文档读取上下文 → agent 写文件/权限/diff → 一个 MCP server POC → 版本快照 → settings/debug/recovery → skills → 远程控制。
-
-这些 spec 现在归档在 `docs/internal/specs/marginalia/`，仅作背景参考；当前能力以本文状态列和源码为准。
+`docs/internal/` 保存早期路线图、spec、plan 和设计资产。Internal 中的阶段名和完成描述不代表当前状态；需要继续执行的工作应出现在产品状态、developer issue 或活跃 Superpowers 文档中。
 
 ## 相关文档
 
+- [使用指南](./guide.md)
+- [配置](./configuration.md)
+- [产品状态](../product/status.md)
 - [系统架构](../developer/architecture.md)
-- [API 参考](../developer/api.md)
