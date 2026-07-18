@@ -71,6 +71,24 @@ worktree `.git` 文件时包含该 Git root 后停止，没有 Git marker 时继
 `.marginalia` 与 `.pi` 不向 workspace 祖先查找。若某个 ancestor root 经 realpath 解析后等于
 `~/.agents/skills`，它会从 workspace 来源排除，只在 priority 6 出现一次。缺失的目录会被安静忽略。
 
+### Skills catalog 状态与刷新
+
+发现后的每个文件先通过 realpath 得到 canonical path；同一文件经多个 symlink 或 source alias 被发现
+时只保留发现顺序中的第一个。启停 preference 以这个 exact canonical path 为 key，不跟随 symlink
+路径保存，也不会在文件消失后自动删除。Symlink 改指向新文件后，旧 canonical path 不再是当前
+catalog member，旧 preference 只作为 tombstone 保留。
+
+Catalog 按 discovery 顺序处理 candidate。Invalid candidate 优先标为 `invalid`，有效但停用的 candidate
+标为 `disabled`；两者都不占用 Skill name。第一个 enabled valid 同名 candidate 成为 `effective`，
+后续同名 candidate 标为 `shadowed` 并记录 winner 的 canonical path。因此停用或删除 winner 后，下一个
+enabled valid candidate 会在刷新时接替，不会把旧选择自动改绑到新 path。
+
+Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现和解析；当前没有 filesystem watcher。
+磁盘编辑、创建、删除和 symlink retarget 会在下一次显式 refresh 时体现。重复刷新同一磁盘与 preference
+状态不会改变 revision：管理可见 candidate、diagnostic、preview 或 enabled/status 变化会更新
+`catalogRevision`；只有 effective Skill 的 metadata、canonical path、顺序或正文 hash 变化才更新
+`effectiveRevision`。
+
 ## 环境变量
 
 | Variable                       | Scope                  | Behavior                                                                |

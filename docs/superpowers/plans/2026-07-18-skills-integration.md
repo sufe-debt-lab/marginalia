@@ -1228,7 +1228,7 @@ export class SkillCandidateNotFoundError extends Error {
 }
 ```
 
-- [ ] **Step 1: 写 reducer 与 refresh 失败测试**
+- [x] **Step 1: 写 reducer 与 refresh 失败测试**
 
 Table cases 必须固定 status precedence 和 first-wins：
 
@@ -1247,7 +1247,7 @@ const cases = [
 不变；旧 generation 不能覆盖新 snapshot；global-only 与 workspace cache 隔离；symlink retarget 后
 旧 canonical selection 不再属于新 snapshot。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -1257,7 +1257,7 @@ pnpm --filter @marginalia/pi-server test -- skill-catalog
 
 Expected: FAIL，Catalog 不存在。
 
-- [ ] **Step 3: 实现纯 snapshot reducer**
+- [x] **Step 3: 实现纯 snapshot reducer**
 
 先 realpath identity 去重，再一次读取 `preferences.list()` 构造 Map；对全部 parsed candidates
 应用 `invalid > disabled > collision`：
@@ -1286,20 +1286,20 @@ for (const candidate of candidates) {
 effective `LoadSkillsResult` 直接由第一阶段保存的 Pi `Skill` objects 和聚合 diagnostics 组成，不
 再次读盘、不把 Pi 已 collision 后的结果拿来反向过滤。
 
-- [ ] **Step 4: 实现 revision 与串行 refresh**
+- [x] **Step 4: 实现 revision 与串行 refresh**
 
 对稳定 JSON projection 用 SHA-256；projection 数组保持 discovery 顺序，object key 手工固定。
 每个 canonical workspace root（global 用固定 key）维护 promise chain + generation。只有当前最高
 generation 可 `snapshots.set(key, deepFreeze(snapshot))`；失败不覆盖上一份成功 snapshot，但当前
 调用仍 reject，让 picker 禁止新增。
 
-- [ ] **Step 5: 同步概念和配置文档**
+- [x] **Step 5: 同步概念和配置文档**
 
 `docs/user/concepts.md` 把 Skills 从 disabled 概念改为 effective/shadowed/disabled/invalid 和
 explicit-only；`docs/user/configuration.md` 记录 canonical path preference、winner 接替、refresh
 触发与无 watcher；architecture 记录两阶段解析与双 revision。
 
-- [ ] **Step 6: focused 验证**
+- [x] **Step 6: focused 验证**
 
 Run:
 
@@ -1311,7 +1311,34 @@ pnpm docs:check
 
 Expected: PASS；相同磁盘状态在乱序 readdir 下产生相同 revisions。
 
-- [ ] **Step 7: 提交**
+**Task 7 results (2026-07-18):**
+
+- 实际完成：新增 immutable Skill catalog service 与类型。Reducer 先按 canonical path first-wins
+  去重，再用单次 preference `list()` map 按 invalid、disabled、collision precedence 发布完整
+  candidate、effective Pi Skill clones 和聚合 diagnostics；invalid/disabled 不占 name，shadowedBy
+  固定指向 canonical winner。
+- Revision 与 cache：稳定 fixed-key JSON projection 生成 SHA-256 `catalogRevision` 和
+  `effectiveRevision`；前者覆盖管理可见 candidate/diagnostic/preference/preview，后者只覆盖 effective
+  metadata/path/order/body hash。Canonical workspace/global cache 分区，per-key promise chain 与
+  generation 阻止旧 refresh 发布；失败 reject 且保留既有 snapshot。
+- Immutability 与 mutation：snapshot 深拷贝 loader-owned Pi Skill/sourceInfo/diagnostics 后递归冻结，
+  不冻结上游共享对象，也不重新读盘或 parse。`setEnabled()` 执行 refresh、exact canonical membership、
+  preference upsert、refresh；缺失或 symlink retarget 后旧 path 抛 `skill_candidate_not_found`。
+- RED：规定 `skill-catalog` command exit 1，Vitest 因 `catalog.js` 尚不存在而在收集前失败。GREEN：
+  catalog 21/21；Task 4–7 focused suite 63/63，pi-server typecheck 和 `pnpm docs:check` 全通过。
+- 全门禁：`pnpm verify` 通过，包含 docs 28、chat-core 14、pi-server 219（另 1 个 opt-in smoke skip）、
+  desktop 330 tests，以及 formatting、lint、typecheck 和全部 builds。
+- 正式文档：更新 user concepts/configuration 与 developer architecture，记录四状态、explicit-only、
+  canonical preference/winner handoff、显式 refresh/无 watcher、两阶段 reducer 和双 revision。
+- Review：deep security pass 提出 workspace root TOCTOU、unbounded candidate loads 与 cold-cache staged
+  success 三项；修复前 focused RED 为 3 failed/18 passed，修复后 21/21。现在每次 refresh 只 canonicalize
+  workspace root 一次并贯穿 key/discovery/snapshot，以固定四 worker 加载 candidate，并在最新 generation
+  失败时发布最近 staged success。Canonical alias 仍在 Task 6 load 后去重，避免破坏 per-descriptor invalid
+  diagnostics 契约。最终 base/architecture/adversarial re-review 无 finding。
+- 偏差与遗留：无实现偏差或新增依赖。Task 7 无 UI-visible change，不运行 visual verification。Task 5/6
+  已记录的 Pi discovery 同步无界读取、symlink cycle 和单文件完整读取 residual risks 保持不变。
+
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/pi-server/src/skills apps/pi-server/test/skill-catalog.test.ts docs/user docs/developer/architecture.md

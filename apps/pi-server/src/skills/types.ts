@@ -46,6 +46,43 @@ export type ParsedSkillCandidate = DiscoveredSkillFile & {
   previewTruncated: boolean;
 };
 
+export type SkillStatus = "effective" | "shadowed" | "disabled" | "invalid";
+
+export type SkillCandidate = ParsedSkillCandidate & {
+  enabled: boolean;
+  effective: boolean;
+  status: SkillStatus;
+  shadowedBy: string | null;
+};
+
+export type SkillCatalogSnapshot = Readonly<{
+  workspaceId: string | null;
+  workspaceRoot: string | null;
+  catalogRevision: string;
+  effectiveRevision: string;
+  refreshedAt: number;
+  candidates: readonly SkillCandidate[];
+  effectiveSkills: readonly Skill[];
+  diagnostics: readonly SkillDiagnostic[];
+}>;
+
+export interface SkillCatalogService {
+  refresh(input: {
+    workspaceId: string | null;
+    workspaceRoot: string | null;
+  }): Promise<SkillCatalogSnapshot>;
+  current(input: {
+    workspaceId: string | null;
+    workspaceRoot: string | null;
+  }): SkillCatalogSnapshot | null;
+  setEnabled(input: {
+    workspaceId: string | null;
+    workspaceRoot: string | null;
+    path: string;
+    enabled: boolean;
+  }): Promise<SkillCatalogSnapshot>;
+}
+
 export type SkillDiscoveryOptions = {
   workspaceRoot?: string | null;
   homeDir: string;

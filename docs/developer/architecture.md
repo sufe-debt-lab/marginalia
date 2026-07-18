@@ -122,8 +122,8 @@ SQLite schema 由 `migrate()`（`apps/pi-server/src/db/migrations.ts#migrate`）
 `skill_preferences`。`createSkillPreferenceStore()`
 （`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）以调用方已解析的 canonical
 path 原字符串保存启停状态，缺省为启用，并通过单次 `list()` 为后续 Catalog 构造偏好 map。Store 不
-检查文件是否仍存在，也不自动清理记录，因此被删除 Skill 的偏好会作为 tombstone 保留。Catalog
-和 HTTP 接入仍由后续任务实现。
+检查文件是否仍存在，也不自动清理记录，因此被删除 Skill 的偏好会作为 tombstone 保留。Catalog 在
+每次 refresh 中只调用一次 `list()` 构造内存 map；HTTP 接入仍由后续任务实现。
 
 ### Skill discovery descriptor
 
@@ -161,7 +161,39 @@ bytes 用 UTF-8 解码，`bytesTotal` 和大小限制始终按 Buffer bytes 判�
 含 XML 1.0 不允许的字符时，candidate 仍保留 Pi metadata 和 preview，但
 `explicitEligible: false`、`rawContent: null`。`disable-model-invocation` 直接映射为 `explicitOnly`，
 完整稳定内容用 SHA-256 `contentHash` 标识。Preference、canonical identity 去重、同名 collision 和
-effective winner 仍属于后续 Catalog 阶段。
+effective winner 由下一阶段 Catalog reducer 处理。
+
+### Skill catalog snapshot
+
+`createSkillCatalogService()`（`apps/pi-server/src/skills/catalog.ts#createSkillCatalogService`）把 discovery
+和 candidate parsing 组成两阶段 pipeline。第一阶段对每个 descriptor 独立调用 Task 6 loader，并保留
+该稳定读取产生的 Pi Skill metadata、content hash、preview 与 diagnostics；reducer 不重新读盘或调用
+Pi parser，也不使用 Pi 多路径加载后的 collision 结果反推 winner。
+
+Reducer 先按 canonical path 保留 discovery 顺序中的第一个 alias，再通过一次 preference `list()` 构造
+map。状态 precedence 是 invalid、disabled、name collision：没有 Pi Skill 的 candidate 为 `invalid`；
+有效但 preference 关闭的 candidate 为 `disabled`；第一个 enabled valid name 为 `effective`，后续同名
+candidate 为 `shadowed`，`shadowedBy` 指向 winner canonical path。Invalid 和 disabled candidate 不占
+name，允许后续 candidate 接替。Snapshot 中的 candidate、diagnostic、Pi Skill 和 `sourceInfo` 都是
+loader-owned 值的深拷贝并递归冻结，发布后不可变，同时不会冻结上游共享对象。
+
+每个 snapshot 有两个稳定 SHA-256 revision。`catalogRevision` 的手工固定-key projection 覆盖 workspace
+identity 以及全部管理可见 candidate 状态，包括 metadata、diagnostics、preference 结果、preview、
+collision 和 content identity；`effectiveRevision` 只投影 discovery 顺序中的 effective Skill metadata、
+canonical path 与正文 hash。`refreshedAt` 不进入 revision，因此同一状态重复 refresh 的 revision 不变；
+非 effective candidate 或仅 diagnostic/preview 变化不会重建 runtime identity。
+
+Refresh 开始时只解析一次 canonical workspace root，并把同一个值用于 cache key、discovery 和 snapshot，
+避免排队期间 workspace symlink retarget 把新 target 的 candidate 发布到旧 key。Global-only 使用独立固定
+key。Candidate descriptor 仍全部经过 Task 6 stable loader 后才按 canonical identity first-wins 去重，避免
+提前丢掉 invalid/diagnostic candidate；loader 使用固定四 worker 并保持 descriptor result 顺序，限制并发
+read/parse 数量。
+
+每个 cache key 有 promise chain 和递增 generation：refresh 串行执行，只有调用时最高 generation 可以
+发布到 `current()`；每次完成的成功结果也会在内部暂存。如果较新的 generation 失败，它向上 reject，并
+保留或发布最近一次成功结果；stale success 仍不能覆盖 newer success。`setEnabled()` 先 refresh，再按
+exact canonical path 验证当前 membership，只在命中后写 preference 并再次 refresh。Workspace symlink
+或 candidate symlink retarget 后，旧 canonical selection 不再命中新 snapshot。
 
 ## Agent session 与资源
 

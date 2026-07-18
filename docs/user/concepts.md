@@ -8,7 +8,7 @@ Marginalia 是本地优先的桌面端 AI 文档协作器，主要处理文章�
 - 不做专业 Git UI。
 - 不做 GUI 或浏览器自动化。
 - 不做多人协作、云账号或自动更新。
-- Skills 和 MCP 是规划能力，当前产品路径禁用。
+- Skills catalog 已能发现和分类本地候选，但桌面管理入口与 run 注入仍未接通；MCP 仍是规划能力。
 - Agent tools 使用当前系统用户权限；现有 Workspace 和审批不是安全沙箱。
 
 “本地优先”表示资料目录、数据库和会话默认保存在本机。它不表示所有内容都留在本机：提示、显式附件和 agent 工具结果会发送给所选模型服务商。
@@ -27,9 +27,18 @@ Marginalia 是本地优先的桌面端 AI 文档协作器，主要处理文章�
 | Saved answer        | 用户把助手回答导出或保存为 `.md`          | implemented；不等于自动 Agent output 元数据               |
 | Agent output        | Agent 自动创建并额外标记来源的文件        | planned                                                   |
 | Snapshot            | 用户视角的版本快照，可由 Git 等机制实现   | planned；`/branch` 服务端路由未实现                       |
-| Skill               | 按任务加载的专业指令和资源                | disabled；运行时设置 `noSkills: true`                     |
+| Skill               | 按任务加载的专业指令和资源                | partial；catalog 可用，桌面入口与运行时注入尚未实现       |
 | MCP server          | 向 agent 提供外部数据和工具的 MCP 服务    | disabled；无配置、连接或注入链路                          |
 | Remote control      | 从手机、Web 或 IM 控制本机 agent          | planned；没有已确认里程碑                                 |
+
+Skill candidate 有四种 catalog 状态：`effective` 是当前按发现顺序生效的同名首个候选；`shadowed`
+是被更高优先级同名候选遮蔽的候选；`disabled` 是按 canonical path 显式停用的有效候选；`invalid` 是
+无法解析为 Pi Skill 的候选。Invalid 和 disabled candidate 都不占用名称，因此后续 enabled valid
+candidate 可以接替成为 winner。
+
+`disable-model-invocation` 会映射为 `explicit-only`：candidate 仍可成为 effective，但不会进入模型可
+自动发现的 Skill 提示，只允许用户显式选择。当前 catalog 状态不代表 desktop 已提供选择器，也不
+代表 run 已注入 Skill；运行时仍保持 `noSkills: true`，这些接线属于后续阶段。
 
 ## 历史资料
 
