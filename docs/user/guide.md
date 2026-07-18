@@ -130,7 +130,9 @@ explicit-only、来源及 diagnostics。选择任意行（包括 Invalid）才�
 本轮。Desktop 不追加用户或错误气泡，也不清正文、附件和 chips；Composer 内联修复栏只把响应中 exact
 canonical path 匹配的 chips 标红。可以刷新当前 workspace catalog、只移除指定 path，或打开
 Settings -> Skills；切回对话时 scoped draft 会完整恢复。刷新成功只按最新 snapshot 清除已经恢复的红色
-状态，不自动删除、替换或改绑 chip，最终发送仍由服务端重新 preflight。
+状态，不自动删除、替换或改绑 chip；若刷新期间又发送并得到新的 blocked response，旧刷新不会改写新
+状态。chip 的移除按钮与修复栏动作至少提供 40×40 px 目标，且不使用会与相邻控件重叠的负 margin。
+最终发送仍由服务端重新 preflight。
 
 `session_busy`、401、413 和普通 pre-start EOF 也只在 Composer 内联显示，并保留完整草稿，但不会触发
 catalog refresh 或显示普通 Retry。普通 Retry 只属于已经收到 `run_started` 的失败轮，并始终重发当时冻结

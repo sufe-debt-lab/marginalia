@@ -21,7 +21,7 @@ Marginalia 是本地优先的桌面端 AI 文档协作器，主要处理文章�
 | Session             | 属于某个 workspace 的 agent 对话          | implemented；并发 run 与恢复仍不完整                      |
 | Quick chat          | 自动归属最近打开 workspace 的临时 session | partial；后端 API 已有，桌面端无独立入口                  |
 | Provider            | 模型服务商、key 和默认模型配置            | partial；GLM/小米预设映射不可用，Base URL/Test 语义不完整 |
-| Run                 | 一次 agent 执行及其 SSE 事件和数据库状态  | partial；可停止当前请求，没有服务端 single-flight         |
+| Run                 | 一次 agent 执行及其 SSE 事件和数据库状态  | partial；同进程同 session single-flight 可用，恢复未完成  |
 | Approval            | Ask 档下部分工具调用的暂停、决定和记录    | partial；字符串启发式和新文件直通使其不能作为安全边界     |
 | Context file        | 用户显式附到 prompt 的 workspace 文件     | 文本可内联；PDF、Office 等不抽正文                        |
 | Saved answer        | 用户把助手回答导出或保存为 `.md`          | implemented；不等于自动 Agent output 元数据               |

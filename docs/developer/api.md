@@ -83,6 +83,11 @@ Settings 则保留旧行并显示重试。Settings 的 toggle 调用 `setSkillEn
 toggle pending 时，错误 Retry 被禁用且 handler 也拒绝发起 GET。内容和 toggle 还以 request ID、workspace
 和 exact path 丢弃迟到响应。
 
+ChatView 的 blocked repair 在 catalog controller 之外另有 UI operation generation。每次 Refresh 捕获
+owner、workspace 和 blocked object identity；新 submit/pre-start error、Remove、owner/workspace 切换或
+unmount 都使旧 UI operation 失效。因此 controller 仍可接受权威 snapshot，但迟到的 A 响应不能过滤或清除
+较新的 B blocked state。
+
 `request()`、204 response helper 和 `runChat()` 的非成功 response 共用结构化错误解码。JSON object
 响应会完整保存在 `ApiError.details`，同时公开 HTTP `status`、body 的字符串 `error` 作为 `code`，以及
 body 的字符串 `message`（缺省为 `code`）。非 JSON 或非 object response 稳定降级为

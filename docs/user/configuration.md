@@ -138,7 +138,10 @@ store 负责。Settings -> Skills 也使用同一 snapshot API：进入或重新
 exact canonical paths 标记 invalid chips。修复 Refresh 只用于这类 Skill precondition failure，调用当前
 owner workspace 的同一个 catalog controller；成功后仅在最新 candidate 仍为同 name/path 且 effective、
 enabled、explicit-eligible 时清除红色状态，不替换或删除 selection。Remove 只删除指定 path，打开 Settings
-再返回仍读取同一内存草稿。`session_busy`、401、413 和普通 pre-start EOF 不会错误触发 catalog refresh。
+再返回仍读取同一内存草稿。Refresh 绑定发起时的 owner、workspace 和 blocked version；新 send/error、
+Remove、owner/workspace 切换或 unmount 后，旧响应只更新 catalog controller，不修改当前 blocked UI。
+当前草稿已没有某个 invalid path 时，成功刷新会清除对应 stale entry。`session_busy`、401、413 和普通
+pre-start EOF 不会错误触发 catalog refresh。
 
 Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
 预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的

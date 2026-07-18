@@ -85,6 +85,9 @@ describe("SkillChip", () => {
     expect(chip).toHaveAttribute("data-invalid", "true");
     expect(chip).toHaveAttribute("aria-invalid", "true");
     expect(chip).toHaveClass("border-danger", "bg-danger-soft");
+    const remove = screen.getByRole("button", { name: "Remove Skill pdf" });
+    expect(remove).toHaveClass("h-10", "w-10", "shrink-0");
+    expect(remove).not.toHaveClass("-m-2");
     expect(
       chip.className.replace("border-danger bg-danger-soft", "border-border bg-surface-2")
     ).toBe(stableClasses);

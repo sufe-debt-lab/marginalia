@@ -15,6 +15,14 @@ async function* events(items: RunEvent[]) {
   for (const e of items) yield e;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 const textDelta = (delta: string): RunEvent => ({
   type: "agent_event",
   payload: {
@@ -299,6 +307,75 @@ describe("ChatView", () => {
       { name: "valid", path: validPath }
     ]);
     expect(screen.getByTestId(`skill-chip-${reviewPath}`)).toHaveAttribute("data-invalid", "false");
+  });
+
+  it("does not let an older blocked refresh clear a newer blocked response", async () => {
+    const path = "/skills/renamed";
+    const refresh = deferred<SkillCatalogSnapshot>();
+    const api = makeApi();
+    (api.listSkills as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(skillSnapshot([skillCandidate("old-name", path)]))
+      .mockReturnValueOnce(refresh.promise);
+    (api.runChat as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(
+        new ApiError("Old selection changed", 409, "skill_precondition_failed", {
+          invalidSelections: [{ name: "old-name", path, reason: "name_mismatch" }]
+        })
+      )
+      .mockRejectedValueOnce(
+        new ApiError("New selection changed", 409, "skill_precondition_failed", {
+          invalidSelections: [{ name: "new-name", path, reason: "disabled" }]
+        })
+      );
+    const store = useAppStore.getState();
+    store.setTurnText("session:s1", "keep this turn");
+    store.addTurnSkill("session:s1", { name: "old-name", path });
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByRole("button", { name: "Remove unavailable Skill old-name" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh Skills" }));
+    await waitFor(() => expect(api.listSkills).toHaveBeenCalledTimes(2));
+    useAppStore.getState().replaceTurnSkills("session:s1", [{ name: "new-name", path }]);
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByRole("button", { name: "Remove unavailable Skill new-name" });
+
+    await act(async () => refresh.resolve(skillSnapshot([skillCandidate("new-name", path)])));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh Skills" })).not.toBeDisabled()
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Remove unavailable Skill new-name" })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId(`skill-chip-${path}`)).toHaveAttribute("data-invalid", "true");
+  });
+
+  it("drops an invalid entry on refresh when its current draft chip is already absent", async () => {
+    const path = "/skills/removed-elsewhere";
+    const api = makeApi();
+    (api.listSkills as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(skillSnapshot([skillCandidate("removed", path)]))
+      .mockResolvedValueOnce(skillSnapshot([]));
+    (api.runChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError("Selection removed", 409, "skill_precondition_failed", {
+        invalidSelections: [{ name: "removed", path, reason: "missing" }]
+      })
+    );
+    const store = useAppStore.getState();
+    store.setTurnText("session:s1", "keep this turn");
+    store.addTurnSkill("session:s1", { name: "removed", path });
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByRole("button", { name: "Remove unavailable Skill removed" });
+
+    useAppStore.getState().removeTurnSkill("session:s1", path);
+    await userEvent.click(screen.getByRole("button", { name: "Refresh Skills" }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(useAppStore.getState().getTurnDraft("session:s1").skills).toEqual([]);
   });
 
   it.each([

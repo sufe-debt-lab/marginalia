@@ -53,7 +53,7 @@ export function SkillChip({ skill, candidate, invalid = false, onRemove }: Props
         type="button"
         aria-label={`${t("composer.removeSkill")} ${skill.name}`}
         onClick={() => onRemove(skill.path)}
-        className="flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-[background-color,color,transform] hover:bg-surface-3 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-text-muted transition-[background-color,color,transform] hover:bg-surface-3 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
       >
         <X className="h-3 w-3" strokeWidth={2.2} />
       </button>

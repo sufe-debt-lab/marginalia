@@ -2654,6 +2654,18 @@ git commit -m "feat(desktop): recover blocked Skill turns"
   scenarios、七张 Skills baselines 和 active records 归档；MCP、Skill 安装/编辑生态及整体
   `P0-SEC-001` 继续 open。
 
+**Formal review follow-up (Task 15, 2026-07-18):**
+
+- Important：blocked Refresh 增加 owner/workspace/operation generation 与 blocked object identity guard；新
+  submit、pre-start error、Remove、owner/workspace 切换和 unmount 都会 invalidate。Deferred regression
+  证明旧 A Refresh 不能清除新 B blocked response。
+- Minor：Refresh 将当前 draft 已不存在的 path 视为已修复并清除 stale invalid entry；Skill chip Remove
+  target 改为无负 margin、互不重叠的 40×40 px；concepts、readiness audit 与 product status 清除过时的
+  single-flight、Skills-disabled 和 run-only capability 描述。
+- TDD：三项行为在生产修复前分别得到预期 RED；修复后 Task 15 focused 16 files / 110 tests 与 desktop
+  typecheck、targeted ESLint 通过。完整仓库与视觉门禁结果记录在本任务 report，并由 Task 16 closeout
+  汇总 commit SHA。
+
 ---
 
 ### Task 16: Electron 视觉覆盖、仓库门禁与记录归档

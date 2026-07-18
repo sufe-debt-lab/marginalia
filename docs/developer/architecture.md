@@ -135,7 +135,9 @@ PATCH 的 generation 失效并重新发布旧 snapshot。
 
 ChatView 把 pre-start failure 保存为 typed `BlockedTurn`，与 accepted run error 分离。Skill precondition
 从 `ApiError.details.invalidSelections` 读取 exact canonical identities，只标记 matching chips；其 Refresh
-复用当前 owner controller，并仅按最新 snapshot 清除已恢复 identity，不改绑或删除 selection。
+复用当前 owner controller，并仅按最新 snapshot 清除已恢复 identity，不改绑或删除 selection。每次 blocked
+Refresh 捕获 owner、workspace、operation generation 与 blocked object identity；新 submit、pre-start error、
+Remove、owner/workspace 切换和 unmount 都使旧操作失效，迟到响应不能改写较新的 blocked state。
 `session_busy`、401、413 和普通 EOF 只显示 Composer alert，不触发 catalog refresh。Retry 只在失败属于当前已接受轮且
 `lastSent` 已由该轮 acceptance 更新时出现；后续 pre-start 401/409/413/EOF 会保留新草稿并隐藏 Retry，
 不会重发更早的 accepted snapshot。Retry 也只在新请求收到 `run_started` 后替换旧失败气泡；若 retry

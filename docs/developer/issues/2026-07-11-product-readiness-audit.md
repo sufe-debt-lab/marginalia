@@ -147,7 +147,7 @@ PDF、图片、音视频和 Office 文件被标记为 `rawOnly`。PDF 可在 ren
 
 ## P1-UX-001: 多个 UI 控件没有完整行为
 
-MessageStream 在尾部内容变化时始终调用 `scrollIntoView()`，用户向上阅读时会被拉回底部。Slash menu 选择命令后只删除 token；resume last session toggle 没有接到启动流程；数据 import/export 和 MCP/Skills 控件处于禁用状态。没有 provider 时 New chat 仍可创建 session 并保存 pending prompt，缺少明确引导。
+MessageStream 在尾部内容变化时始终调用 `scrollIntoView()`，用户向上阅读时会被拉回底部。Slash menu 选择命令后只删除 token；resume last session toggle 没有接到启动流程；数据 import 与 MCP 控件仍处于禁用状态，Skills v1 已提供 picker、blocked repair 和只读管理。没有 provider 时 New chat 仍可创建 session 并保存 pending prompt，缺少明确引导。
 
 修复目标：完成已暴露控件的行为，或在实现前移除入口；滚动改成跟随、暂停和回到底部三态。
 

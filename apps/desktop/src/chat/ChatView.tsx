@@ -166,6 +166,23 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const clearSnapshotRef = useRef<TurnDraft | null>(null);
   const lastSentRef = useRef<TurnDraft | null>(null);
   const retryCleanupRef = useRef<string[] | null>(null);
+  const blockedRepairGenerationRef = useRef(0);
+  const blockedRepairMountedRef = useRef(true);
+  const blockedRepairContextRef = useRef({ owner, workspaceId: activeWorkspaceId });
+  blockedRepairContextRef.current = { owner, workspaceId: activeWorkspaceId };
+
+  function invalidateBlockedRepair() {
+    blockedRepairGenerationRef.current += 1;
+  }
+
+  useEffect(() => {
+    blockedRepairMountedRef.current = true;
+    invalidateBlockedRepair();
+    return () => {
+      blockedRepairMountedRef.current = false;
+      invalidateBlockedRepair();
+    };
+  }, [owner, activeWorkspaceId]);
 
   // Approvals keyed by toolCallId so a ToolCard can look up its own decision state.
   const [approvals, setApprovals] = useState<Map<string, Approval>>(new Map());
@@ -264,6 +281,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     },
     onError: (streamError, accepted) => {
       if (!accepted) {
+        invalidateBlockedRepair();
         clearSnapshotRef.current = null;
         retryCleanupRef.current = null;
         setError(null);
@@ -338,6 +356,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   }
 
   function submit(turn: TurnDraft) {
+    invalidateBlockedRepair();
     if (!actualProviderId) {
       setError(null);
       setBlockedTurn(null);
@@ -362,6 +381,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   useEffect(() => {
     const pending = pendingTurnRef.current;
     if (!pending || !actualProviderId) return;
+    invalidateBlockedRepair();
     pendingTurnRef.current = null;
     setError(null);
     setBlockedTurn(null);
@@ -375,6 +395,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
 
   function retry() {
     if (!error?.retryable || !lastSent) return;
+    invalidateBlockedRepair();
     setError(null);
     setBlockedTurn(null);
     setPreStartError(null);
@@ -386,6 +407,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   }
 
   function removeSkill(path: string) {
+    invalidateBlockedRepair();
     removeTurnSkill(owner, path);
     setBlockedTurn((current) => {
       if (current?.code !== "skill_precondition_failed") return current;
@@ -396,16 +418,31 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
 
   async function refreshBlockedSkills() {
     if (blockedTurn?.code !== "skill_precondition_failed" || skillCatalog.loading) return;
+    const blockedAtStart = blockedTurn;
+    const token = {
+      generation: blockedRepairGenerationRef.current,
+      owner,
+      workspaceId: activeWorkspaceId
+    };
+    const isCurrent = () => {
+      const context = blockedRepairContextRef.current;
+      return (
+        blockedRepairMountedRef.current &&
+        blockedRepairGenerationRef.current === token.generation &&
+        context.owner === token.owner &&
+        context.workspaceId === token.workspaceId
+      );
+    };
     const snapshot = await skillCatalog.refresh();
-    if (!snapshot) return;
+    if (!snapshot || !isCurrent()) return;
     setBlockedTurn((current) => {
-      if (current?.code !== "skill_precondition_failed") return current;
+      if (current !== blockedAtStart || !isCurrent()) return current;
       const selectedByPath = new Map(
         getTurnDraft(owner).skills.map((selection) => [selection.path, selection])
       );
       const remaining = current.invalidSelections.filter((invalid) => {
         const selection = selectedByPath.get(invalid.path);
-        return !selection || !selectionRecovered(selection, snapshot);
+        return selection ? !selectionRecovered(selection, snapshot) : false;
       });
       return remaining.length === 0 ? null : { ...current, invalidSelections: remaining };
     });
