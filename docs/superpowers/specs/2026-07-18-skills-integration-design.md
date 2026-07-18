@@ -1,7 +1,7 @@
 ---
 type: spec
 record_id: SPEC-P2-SKILLS-001
-status: draft
+status: approved
 created: 2026-07-18
 updated: 2026-07-18
 target_milestone: post-M0
@@ -19,7 +19,7 @@ docs_impact:
 
 # Codex 风格 Skills 集成设计
 
-日期：2026-07-18 · 状态：设计与评审修订已由用户逐节确认，等待书面规格复核
+日期：2026-07-18 · 状态：书面规格已由用户确认，可进入实施计划
 
 ## 背景
 
