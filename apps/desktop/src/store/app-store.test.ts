@@ -5,6 +5,8 @@ describe("useAppStore", () => {
   beforeEach(() => {
     useAppStore.setState({
       view: "new-thread",
+      settingsEntryTab: "general",
+      settingsEntryRevision: 0,
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
@@ -209,6 +211,8 @@ describe("useAppStore", () => {
     expect(state.activeSessionId).toBeUndefined();
     expect(state.pendingTurn).toBeUndefined();
     expect(state.view).toBeUndefined();
+    expect(state.settingsEntryTab).toBeUndefined();
+    expect(state.settingsEntryRevision).toBeUndefined();
   });
 
   it("togglePin adds and removes workspace ids", () => {

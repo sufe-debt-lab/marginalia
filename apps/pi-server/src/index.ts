@@ -1,19 +1,20 @@
-import { serve } from "@hono/node-server";
-import { createApp } from "./app.js";
-import { ScriptedFakeAgentClient } from "./agent/scripted-fake-agent.js";
+import { consumeCapabilityEnvironment } from "./security/capability.js";
+
+const capability = consumeCapabilityEnvironment(process.env);
+const [{ serve }, { createApp }, { ScriptedFakeAgentClient }] = await Promise.all([
+  import("@hono/node-server"),
+  import("./app.js"),
+  import("./agent/scripted-fake-agent.js")
+]);
 
 // Dev/screenshot-only escape hatch: swaps in a deterministic scripted agent
 // instead of the real pi-coding-agent client. See docs/developer/development.md.
 const agentClient =
   process.env.MARGINALIA_FAKE_AGENT === "1" ? new ScriptedFakeAgentClient() : undefined;
 
-const allowedOrigin = process.env.MARGINALIA_ALLOWED_ORIGIN;
 const app = createApp({
   agentClient,
-  capability: {
-    token: process.env.MARGINALIA_CAPABILITY_TOKEN ?? null,
-    allowedOrigins: new Set(allowedOrigin ? [allowedOrigin] : [])
-  }
+  capability
 });
 
 const server = serve(

@@ -1,7 +1,7 @@
 ---
 type: plan
 record_id: PLAN-P2-SKILLS-001
-status: archived
+status: approved
 source_spec_id: SPEC-P2-SKILLS-001
 created: 2026-07-18
 updated: 2026-07-18
@@ -16,42 +16,8 @@ docs_impact:
     - docs/developer/api.md
     - docs/developer/architecture.md
     - docs/developer/development.md
+    - docs/developer/build-and-release.md
   product_status: true
-archived_at: 2026-07-18
-outcome: completed
-implementation_refs:
-  - 0fc70e2
-  - 62bb2e6
-  - 3e673ca
-  - 7cda2b3
-  - 9a1164d
-  - f4d7102
-  - 723f528
-  - 6e2548a
-  - b76895c
-  - 45e1c9b
-  - cbaacac
-  - bea3b4a
-  - acef94c
-  - 061ab73
-  - ec26457
-  - e51e83d
-  - bbaf2b5
-  - 8357b46
-  - 2eda76a
-  - fb8ede7
-  - 4010a68
-  - 73cf180
-  - 6698120
-  - 7a0e89d
-  - c602ce4
-  - e838e32
-  - b72b260
-  - f36b229
-  - 67bac67
-  - 7a778ae
-  - same_change
-same_change: true
 ---
 
 # Codex 风格 Skills 集成 Implementation Plan
@@ -2802,7 +2768,7 @@ pnpm verify:visual
 Expected: `pnpm verify` 全绿；visual report 为 `changed=0 new=0 orphan=0 errors=0`。即使命令 exit 0，
 也再次打开 report 确认七张 skills-flow 和所有既有 scenario 都是 unchanged。
 
-- [x] **Step 7: 写 Implementation Outcome 并归档 active records**
+- [ ] **Step 7: 写 Implementation Outcome 并归档 active records**
 
 先收集本计划实际实现 commits：
 
@@ -2842,7 +2808,7 @@ pnpm docs:check
 Expected: worktree clean；任务 commits 与归档引用一致；docs check PASS。不要 push、开 PR 或发布，
 除非用户另行明确要求。
 
-## Implementation Outcome
+## Implementation Progress
 
 - 实际完成：Task 1–15 通过 30 个独立 Conventional Commits 交付 server capability/lease/catalog/API、
   chat-core history normalization、desktop API/draft/picker/Settings/blocked repair 和正式产品文档。
@@ -2865,10 +2831,30 @@ Expected: worktree clean；任务 commits 与归档引用一致；docs check PAS
   全部 build 通过）；`pnpm verify:visual` 通过，报告为 39 unchanged、
   `changed=0 new=0 orphan=0 errors=0`。Task 16 report 保存完整 RED→GREEN 与七张裁决。
 - 正式文档：既有 Task 15 已同步 user guide/concepts/configuration、developer API/architecture、product status
-  与 readiness audit；Task 16 同步 screenshot harness README，并把 spec/plan、active/internal indexes 按
-  documentation lifecycle 同一 change 归档。
+  与 readiness audit；Task 16 同步 screenshot harness README。首次 closeout 尝试归档 spec/plan，后续
+  lifecycle 审查确认相对真实 base 的状态跳转不合法，因此本次把 records 和 indexes 恢复为 active 工作。
 - 偏差：保留各 task 已记录的运行时、请求 cap、retry 与 UI race 收紧；Task 16 只新增 picker 高度与
   test harness root containment 修复，没有扩大 V1 功能或新增运行时依赖。
 - 遗留问题：MCP、Skill create/import/install/edit/update 生态与整体 loopback `P0-SEC-001` 继续 open。
   已批准 Pi discovery 同步无界读取、directory symlink cycle、out-of-root symlink、eligibility 前完整读取，
   以及保守 history provenance normalization residual risks 均保持记录，不因归档关闭。
+
+## Task 16 Closeout Deviation
+
+- `c4d56f7` 已交付 deterministic screenshots、七张 baseline、完整 gates 和首次 closeout 文本，但该次
+  same-change archive 相对真实 base `ad07b03` 违反生命周期：spec 的 base 状态是 approved，plan 的 base
+  状态是 draft，不能直接关闭为 completed。
+- Broad final review 还发现四个需修复的边界：pi-server capability 环境必须在 app/agent 模块加载前消费并
+  阻断真实 Pi Bash child 继承；browser fallback token 必须从 query 移到读取后立即清除的 fragment；W1
+  deferred session 创建完成前切换 W2 时必须恢复 W1 并保留 W2 draft；blocked Open Settings 必须直达
+  Skills，而普通入口即使在同页也必须回 General。每项行为/安全变更均先得到目标 RED 再实现 GREEN。
+- 本次修正只采用合法前向状态：spec 为 active，plan 为 approved；删除 archive/outcome/same_change
+  frontmatter，并把两个 records 和 active index 恢复到 `docs/superpowers/`。实现进度与验证证据保留在
+  本文，不冒充已完成的归档。
+- 最终复核：desktop focused 12 files / 98 tests、pi-server capability 2 files / 10 tests、两包 typecheck、
+  docs static + `--base ad07b03`、format 和 diff-check 通过；fresh `pnpm verify` 为 docs 28、chat-core 37、
+  pi-server 272 + 1 opt-in skip、desktop 422，lint/typecheck/build 全绿。`pnpm verify:visual` 的 39 条报告
+  已逐行检查，全部 unchanged，`changed=0 new=0 orphan=0 errors=0`。
+- 后续 closeout 必须分阶段：先让 plan 在一个进入 base 的 change 中从 approved 转 active；之后新的
+  change 才能补最终 Implementation Outcome、精确 implementation refs、completed metadata 和 internal
+  archive。MCP、整体 `P0-SEC-001` 与全部已批准 residual risks 在此期间继续 open。

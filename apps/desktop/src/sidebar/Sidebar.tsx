@@ -23,6 +23,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setView = useAppStore((s) => s.setView);
+  const openSettings = useAppStore((s) => s.openSettings);
   const pinnedIds = useAppStore((s) => s.pinnedWorkspaceIds);
 
   const pinnedSet = new Set(pinnedIds);
@@ -111,7 +112,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
             "w-full justify-start gap-2 rounded-md active:scale-[0.99]",
             view === "settings" && "bg-select text-foreground"
           )}
-          onClick={() => setView("settings")}
+          onClick={() => openSettings("general")}
           aria-label={t("common.settings")}
         >
           <Settings className="h-4 w-4" />

@@ -19,7 +19,7 @@ export function FirstRunView({ api }: { api: ApiClient }) {
   const workspaces = useWorkspaces(api);
   const providers = useProviders(api);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
-  const setView = useAppStore((s) => s.setView);
+  const openSettings = useAppStore((s) => s.openSettings);
 
   const hasWorkspace = workspaces.data.length > 0;
   const hasProvider = providers.data.length > 0;
@@ -73,7 +73,7 @@ export function FirstRunView({ api }: { api: ApiClient }) {
           title={t("firstRun.step2Title")}
           desc={t("firstRun.step2Desc")}
           action={
-            <Button variant="outline" size="sm" onClick={() => setView("settings")}>
+            <Button variant="outline" size="sm" onClick={() => openSettings("general")}>
               {t("firstRun.step2Action")}
             </Button>
           }

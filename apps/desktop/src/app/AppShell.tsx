@@ -24,6 +24,8 @@ export function AppShell({
   const view = useAppStore((s) => s.view);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const activeSessionTitle = useAppStore((s) => s.activeSessionTitle);
+  const settingsEntryTab = useAppStore((s) => s.settingsEntryTab);
+  const settingsEntryRevision = useAppStore((s) => s.settingsEntryRevision);
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
   const rightCollapsed = useAppStore((s) => s.rightPanelCollapsed);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
@@ -74,7 +76,9 @@ export function AppShell({
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
           {view === "settings" ? (
             <SettingsView
+              key={settingsEntryRevision}
               api={api}
+              initialTab={settingsEntryTab}
               skillsWorkspace={
                 activeWorkspace ? { id: activeWorkspace.id, name: activeWorkspace.name } : null
               }

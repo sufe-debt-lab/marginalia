@@ -13,16 +13,18 @@ type UiStatus = PiServerStatus & { health?: Health };
 function getBridge() {
   if (window.marginalia) return window.marginalia;
   const params = new URLSearchParams(window.location.search);
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
   const serverUrl = params.get("serverUrl");
-  const capabilityToken = params.get("capabilityToken");
+  const capabilityToken = fragment.get("capabilityToken");
+  const hasLegacyQueryToken = params.has("capabilityToken");
+  params.delete("capabilityToken");
   if (import.meta.env.DEV && serverUrl && capabilityToken) {
     params.delete("serverUrl");
-    params.delete("capabilityToken");
     const remainingQuery = params.toString();
     window.history.replaceState(
       window.history.state,
       "",
-      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${window.location.hash}`
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}`
     );
     return {
       getPiServerStatus: async () => ({
@@ -36,6 +38,14 @@ function getBridge() {
         capabilityToken
       })
     };
+  }
+  if (hasLegacyQueryToken || capabilityToken) {
+    const remainingQuery = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${capabilityToken ? "" : window.location.hash}`
+    );
   }
   return null;
 }

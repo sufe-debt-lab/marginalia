@@ -64,7 +64,9 @@ Electron 截图验证不再通过 renderer IPC；统一由
 
 pi-server 是一个独立的 Node 进程，入口 `apps/pi-server/src/index.ts`：用 `@hono/node-server` 在 `127.0.0.1:0`（端口 0 = 由系统分配空闲端口）起服务，就绪后向 stdout 打印一行 JSON `{"type":"ready","port":<n>}`。
 
-main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）每次启动用 32 字节随机数生成 base64url capability token，通过 child environment 的 `MARGINALIA_CAPABILITY_TOKEN` 注入；开发模式还只把经过 loopback 校验的 Vite URL `.origin` 作为 `MARGINALIA_ALLOWED_ORIGIN` 注入。token 不进入 ready stdout、日志或 SQLite。解析 ready 行后，main 内部状态变为 `{ status: "ready", url: "http://127.0.0.1:<port>", capabilityToken, process }`，经 preload 序列化给 renderer 时移除 `process`、保留 token。10 秒内未就绪则判定 `failed`。
+main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）每次启动用 32 字节随机数生成 base64url capability token，通过 child environment 的 `MARGINALIA_CAPABILITY_TOKEN` 注入；开发模式还只把经过 loopback 校验的 Vite URL `.origin` 作为 `MARGINALIA_ALLOWED_ORIGIN` 注入。pi-server 入口在 agent client、Pi loader 或工具初始化前把两者复制进进程内 capability policy，并立即从 `process.env` 删除；之后启动的 Bash 工具子进程不会继承它们。token 不进入 ready stdout、日志或 SQLite。解析 ready 行后，main 内部状态变为 `{ status: "ready", url: "http://127.0.0.1:<port>", capabilityToken, process }`，经 preload 序列化给 renderer 时移除 `process`、保留 token。10 秒内未就绪则判定 `failed`。
+
+删除 Node 的 `process.env` 只保证后续子进程不再继承变量，不是对父进程地址空间或操作系统启动环境的安全擦除保证。尤其在 Linux 上，`/proc/<pid>/environ` 可能仍暴露进程启动时的原始环境字节，具体取决于 runtime 与 kernel 行为；因此 capability 仍按短生命周期 bearer 处理，不能把环境清理描述成彻底抹除 secret。
 
 当前 exit listener 只解决“启动前退出”。进程在 ready 后崩溃时，main 中的 `serverStatus` 可能继续显示 ready，直到普通 API 调用失败；完整恢复见 readiness issue `P1-RECOVERY-001`。
 

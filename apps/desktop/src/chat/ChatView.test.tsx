@@ -97,6 +97,8 @@ describe("ChatView", () => {
     useAppStore.setState((s) => ({
       ...s,
       view: "chat",
+      settingsEntryTab: "general",
+      settingsEntryRevision: 0,
       activeWorkspaceId: "w1",
       activeSessionId: "s1",
       turnDrafts: {},
@@ -288,6 +290,9 @@ describe("ChatView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Open Skills settings" }));
     expect(useAppStore.getState().view).toBe("settings");
+    expect(
+      (useAppStore.getState() as unknown as { settingsEntryTab?: string }).settingsEntryTab
+    ).toBe("skills");
     expect(useAppStore.getState().getTurnDraft("session:s1").contextFiles).toEqual(["/docs/a.md"]);
     useAppStore.getState().setView("chat");
 

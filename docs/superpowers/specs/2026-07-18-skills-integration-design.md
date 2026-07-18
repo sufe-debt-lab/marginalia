@@ -1,7 +1,7 @@
 ---
 type: spec
 record_id: SPEC-P2-SKILLS-001
-status: archived
+status: active
 created: 2026-07-18
 updated: 2026-07-18
 target_milestone: post-M0
@@ -14,47 +14,14 @@ docs_impact:
   developer:
     - docs/developer/api.md
     - docs/developer/architecture.md
+    - docs/developer/development.md
+    - docs/developer/build-and-release.md
   product_status: true
-archived_at: 2026-07-18
-outcome: completed
-implementation_refs:
-  - 0fc70e2
-  - 62bb2e6
-  - 3e673ca
-  - 7cda2b3
-  - 9a1164d
-  - f4d7102
-  - 723f528
-  - 6e2548a
-  - b76895c
-  - 45e1c9b
-  - cbaacac
-  - bea3b4a
-  - acef94c
-  - 061ab73
-  - ec26457
-  - e51e83d
-  - bbaf2b5
-  - 8357b46
-  - 2eda76a
-  - fb8ede7
-  - 4010a68
-  - 73cf180
-  - 6698120
-  - 7a0e89d
-  - c602ce4
-  - e838e32
-  - b72b260
-  - f36b229
-  - 67bac67
-  - 7a778ae
-  - same_change
-same_change: true
 ---
 
 # Codex 风格 Skills 集成设计
 
-日期：2026-07-18 · 状态：已完成并归档
+日期：2026-07-18 · 状态：实现完成，生命周期收口待后续变更
 
 ## 背景
 
@@ -690,7 +657,7 @@ Task 9 deep security review 确认两项必须收紧的边界，已由 repositor
 语义。后续任何目录规则、API、持久化、认证、历史展示或大小限制变化，仍必须先更新本节并重新确认
 相应正式文档。
 
-## Implementation Outcome
+## Implementation Progress
 
 - 实际完成：实现六级目录发现、Pi-compatible 候选解析、不可变 workspace/global Catalog、canonical
   path 偏好、冲突诊断、只读 HTTP API、run preflight 与 per-session lease；Desktop 提供 Settings 管理、
@@ -710,8 +677,11 @@ Task 9 deep security review 确认两项必须收紧的边界，已由 repositor
 - 正式文档：同步 `docs/user/guide.md`、`docs/user/concepts.md`、
   `docs/user/configuration.md`、`docs/developer/api.md`、`docs/developer/architecture.md`、
   `docs/developer/development.md`、`docs/product/status.md`、readiness audit 与 screenshot harness README。
-- 实现引用：frontmatter 保存从实际 ancestry base `ad07b03` 后的全部 Task 1–15 commits；Task 16 代码、
-  baseline、归档和索引位于同一 closeout commit，因此使用受限机器值 `same_change`。
+- 实现引用：实际 ancestry base `ad07b03` 后的 Task 1–15 commits 为 `0fc70e2` 至 `7a778ae`；Task 16
+  代码、baseline 和首次 closeout 尝试位于 `c4d56f7`。这些 SHA 只作进度证据，不是归档 frontmatter。
+- 生命周期状态：相对 `ad07b03`，spec 只能从 approved 转 active；本记录因此继续留在
+  `docs/superpowers/`。实现已经完成，但归档必须等待 plan 在后续 base 先从 approved 合法转 active，
+  再由新的 change 同时把 spec/plan 转 completed 并迁入 `docs/internal/`。
 - 遗留问题：MCP 与 Skill 创建、安装、编辑、更新生态仍不在 V1；整体 loopback API 的
   `P0-SEC-001` 仍 open。已批准 residual risks 保持不变，包括 Pi discovery 的同步无界读取与目录
   symlink cycle、canonical out-of-root Skill symlink、512 KiB eligibility 前完整文件读取，以及历史

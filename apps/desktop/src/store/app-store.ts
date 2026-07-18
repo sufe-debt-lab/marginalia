@@ -3,6 +3,7 @@ import { createJSONStorage, persist, type StateStorage } from "zustand/middlewar
 import type { SkillSelection } from "@/api/client.js";
 
 export type AppView = "new-thread" | "chat" | "settings";
+export type SettingsEntryTab = "general" | "skills";
 export type Locale = "en" | "zh";
 export type AgentPermission = "full" | "ask" | "readonly";
 export type AgentReasoning = "low" | "medium" | "high" | "xhigh";
@@ -26,6 +27,8 @@ interface AppState {
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
   activeSessionTitle: string | null;
+  settingsEntryTab: SettingsEntryTab;
+  settingsEntryRevision: number;
   turnDrafts: Partial<Record<TurnOwner, TurnDraft>>;
   pendingTurn: PendingTurn | null;
   leftSidebarCollapsed: boolean;
@@ -41,6 +44,7 @@ interface AppState {
   resumeLastSession: boolean;
 
   setView: (v: AppView) => void;
+  openSettings: (tab: SettingsEntryTab) => void;
   setLocale: (v: Locale) => void;
   setActiveWorkspace: (id: string | null) => void;
   setActiveSession: (id: string | null) => void;
@@ -126,6 +130,8 @@ export const useAppStore = create<AppState>()(
       activeWorkspaceId: null,
       activeSessionId: null,
       activeSessionTitle: null,
+      settingsEntryTab: "general",
+      settingsEntryRevision: 0,
       turnDrafts: {},
       pendingTurn: null,
       leftSidebarCollapsed: false,
@@ -140,6 +146,12 @@ export const useAppStore = create<AppState>()(
       resumeLastSession: false,
 
       setView: (v) => set({ view: v }),
+      openSettings: (tab) =>
+        set((state) => ({
+          view: "settings",
+          settingsEntryTab: tab,
+          settingsEntryRevision: state.settingsEntryRevision + 1
+        })),
       setLocale: (v) => set({ locale: v }),
       setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
       setActiveSession: (id) =>

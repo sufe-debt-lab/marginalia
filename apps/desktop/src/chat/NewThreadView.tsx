@@ -67,14 +67,17 @@ export function NewThreadView({ api }: { api: ApiClient }) {
 
   async function submit(turn: TurnDraft) {
     if (!activeWorkspaceId || submittingRef.current) return;
+    const submittedWorkspaceId = activeWorkspaceId;
+    const submittedOwner = owner;
     submittingRef.current = true;
     try {
       const session = await api.createSession({
-        workspaceId: activeWorkspaceId,
+        workspaceId: submittedWorkspaceId,
         title: turn.text.slice(0, 32)
       });
-      const moved = moveTurnDraft(owner, `session:${session.id}`, turn);
+      const moved = moveTurnDraft(submittedOwner, `session:${session.id}`, turn);
       setPendingTurn({ sessionId: session.id, turn: moved });
+      setActiveWorkspace(submittedWorkspaceId);
       setActiveSession(session.id);
       setActiveSessionTitle(session.title);
       setView("chat");

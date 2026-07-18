@@ -138,7 +138,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const reasoning = useAppStore((s) => s.reasoning);
   const setPermission = useAppStore((s) => s.setPermission);
   const setReasoning = useAppStore((s) => s.setReasoning);
-  const setView = useAppStore((s) => s.setView);
+  const openSettings = useAppStore((s) => s.openSettings);
   const skillCatalog = useSkillCatalog(api, activeWorkspaceId);
 
   const enabledProviders = providers.enabled;
@@ -470,7 +470,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
         refreshing={skillCatalog.loading}
         onRefresh={() => void refreshBlockedSkills()}
         onRemove={removeSkill}
-        onOpenSettings={() => setView("settings")}
+        onOpenSettings={() => openSettings("skills")}
       />
     ) : blockedMessage ? (
       <div

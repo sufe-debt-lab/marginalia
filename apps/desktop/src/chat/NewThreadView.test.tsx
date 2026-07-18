@@ -188,6 +188,43 @@ describe("NewThreadView", () => {
     expect(useAppStore.getState().getTurnDraft("new:w1").text).toBe("later edit");
   });
 
+  it("restores the submitted workspace before activating a deferred session", async () => {
+    const api = fakeApi();
+    let finishCreate: ((session: Awaited<ReturnType<ApiClient["createSession"]>>) => void) | null =
+      null;
+    (api.createSession as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishCreate = resolve;
+        })
+    );
+    const store = useAppStore.getState();
+    store.setTurnText("new:w1", "submit from w1");
+    render(<NewThreadView api={api} />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+    store.setActiveWorkspace("w2");
+    store.setTurnText("new:w2", "keep the w2 draft");
+
+    await act(async () => {
+      finishCreate?.({
+        id: "w1Session",
+        workspaceId: "w1",
+        title: "submit from w1",
+        origin: "ui",
+        model: null
+      });
+    });
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe("chat"));
+    expect(useAppStore.getState().activeWorkspaceId).toBe("w1");
+    expect(useAppStore.getState().activeSessionId).toBe("w1Session");
+    expect(useAppStore.getState().getTurnDraft("new:w2").text).toBe("keep the w2 draft");
+    expect(useAppStore.getState().getTurnDraft("session:w1Session").text).toBe("submit from w1");
+  });
+
   it("deduplicates the same canonical Skill selected twice", async () => {
     const api = fakeApi();
     render(<NewThreadView api={api} />);

@@ -3,6 +3,7 @@ import { KeyRound, Settings as SettingsIcon, Sparkles, Wrench } from "lucide-rea
 import type { ApiClient } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
+import type { SettingsEntryTab } from "@/store/app-store.js";
 import { GeneralPane } from "./GeneralPane.js";
 import { ProvidersPane } from "./ProvidersPane.js";
 import { SkillsPane } from "./SkillsPane.js";
@@ -11,13 +12,15 @@ type SettingsTab = "general" | "providers" | "mcp" | "skills";
 
 export function SettingsView({
   api,
-  skillsWorkspace = null
+  skillsWorkspace = null,
+  initialTab = "general"
 }: {
   api: ApiClient;
   skillsWorkspace?: { id: string; name: string } | null;
+  initialTab?: SettingsEntryTab;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [animateTab, setAnimateTab] = useState(false);
 
   function selectTab(next: SettingsTab) {

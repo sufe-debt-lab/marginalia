@@ -5,6 +5,17 @@ export type CapabilityPolicy = {
 
 export type CapabilityFailure = 401 | 403;
 
+export function consumeCapabilityEnvironment(environment: NodeJS.ProcessEnv): CapabilityPolicy {
+  const token = environment.MARGINALIA_CAPABILITY_TOKEN ?? null;
+  const allowedOrigin = environment.MARGINALIA_ALLOWED_ORIGIN;
+  delete environment.MARGINALIA_CAPABILITY_TOKEN;
+  delete environment.MARGINALIA_ALLOWED_ORIGIN;
+  return {
+    token,
+    allowedOrigins: new Set(allowedOrigin ? [allowedOrigin] : [])
+  };
+}
+
 export function isAllowedOrigin(origin: string | null, policy: CapabilityPolicy): boolean {
   return origin === null || origin === "null" || policy.allowedOrigins.has(origin);
 }

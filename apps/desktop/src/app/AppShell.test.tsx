@@ -9,6 +9,8 @@ describe("AppShell", () => {
     cleanup();
     useAppStore.setState({
       view: "new-thread",
+      settingsEntryTab: "general",
+      settingsEntryRevision: 0,
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
@@ -128,6 +130,79 @@ describe("AppShell", () => {
         expect.objectContaining({ headers: expect.any(Object) })
       )
     );
+  });
+
+  it("opens the requested Skills settings pane without losing the active session draft", async () => {
+    useAppStore.setState({
+      view: "settings",
+      activeWorkspaceId: "ws-1",
+      activeSessionId: "session-1",
+      turnDrafts: {
+        "session:session-1": {
+          text: "keep this draft",
+          contextFiles: ["/repo/spec.md"],
+          skills: [{ name: "review", path: "/skills/review/SKILL.md" }]
+        }
+      },
+      settingsEntryTab: "skills"
+    } as Parameters<typeof useAppStore.setState>[0]);
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/workspaces")) {
+        return new Response(JSON.stringify([{ id: "ws-1", name: "Research", rootDir: "/repo" }]), {
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/skills")) {
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws-1",
+            catalogRevision: "catalog-1",
+            effectiveRevision: "effective-1",
+            refreshedAt: 1,
+            candidates: [],
+            diagnostics: []
+          }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    });
+
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+
+    expect(await screen.findByText("Disk Skills")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        "http://x/skills?workspaceId=ws-1",
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+    );
+    expect(useAppStore.getState().getTurnDraft("session:session-1")).toEqual({
+      text: "keep this draft",
+      contextFiles: ["/repo/spec.md"],
+      skills: [{ name: "review", path: "/skills/review/SKILL.md" }]
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      await screen.findByText("Locale, startup behavior and local storage.")
+    ).toBeInTheDocument();
+  });
+
+  it("reopens General from the normal Settings entry after an in-view tab change", async () => {
+    useAppStore.setState({ view: "settings", settingsEntryTab: "general" });
+
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(await screen.findByText("Disk Skills")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      await screen.findByText("Locale, startup behavior and local storage.")
+    ).toBeInTheDocument();
   });
 
   it("falls back to global-only Skills when the active workspace id is stale", async () => {
