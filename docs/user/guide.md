@@ -86,14 +86,30 @@ Save to workspace 是用户直接触发的写入，不经过 agent 审批卡。�
 | UI preferences   | Electron localStorage `marginalia-app` | 保存语言、布局、权限、推理档位和模型选择                |
 
 本机 pi-server 监听随机 loopback 端口。每个 Electron server 进程会生成独立 capability token，
-所有 run 请求必须同时通过 bearer 和 Origin 检查；CORS 不再反射任意网页来源。但 workspace、
-provider、文件、审批等既有 route 仍未认证，缺少 Origin 的本地请求也不受 CORS 约束。
-`127.0.0.1` 和这项局部 run 防护都不是整套 API 的授权边界；在 `P0-SEC-001` 完整修复前，
-不要把 Alpha 版本用于高敏感资料。
+所有 run 和 Skills 管理请求必须同时通过 bearer 和 Origin 检查；CORS 不再反射任意网页来源。但
+workspace、provider、文件、审批等既有 route 仍未认证，缺少 Origin 的本地请求也不受 CORS 约束。
+`127.0.0.1` 和这项局部防护都不是整套 API 的授权边界；在 `P0-SEC-001` 完整修复前，不要把 Alpha
+版本用于高敏感资料。
+
+## Skills 管理后端
+
+pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate，以及读取 candidate 的截断预览。
+这些能力目前只存在于受 capability 保护的管理 API；Settings 中的 Skills 页、Composer picker、显式
+调用和 agent runtime 接入尚未完成，因此普通桌面流程仍不能管理或使用 Skills。
+
+管理后端只发现磁盘上已经存在的 Skill。它不提供创建、导入、安装、编辑或删除文件的能力。省略
+workspace 时只查看三个 user/global roots；指定 workspace 时还加入该 workspace 的三个来源，详细目录
+和优先级见[配置](./configuration.md#skills-磁盘发现)。
+
+内容预览只能命中刚刷新 snapshot 中的 exact canonical path，返回的是该 snapshot 已保存的 preview，
+不会按客户端提交的 path 重新读文件。未知、其他 workspace 或任意宿主 path 返回 not found。发现阶段
+仍沿用 Pi 的 symlink 语义：如果磁盘上已经存在可发现、指向 source root 外文件的 Skill symlink，它的
+canonical target 可以成为 snapshot member；因此不要在 Skills roots 中放置指向敏感文件的 symlink。
+单独向 API 提交任意 path 不会创建这种 membership。
 
 ## 当前不可用
 
-- Skills：运行时设置 `noSkills: true`，设置入口禁用。
+- Skills 桌面流程：管理 API 已存在，但 Settings 入口仍禁用，agent runtime 仍设置 `noSkills: true`。
 - MCP：没有 server 配置、连接或工具注入，设置入口禁用。
 - 独立 Quick chat 入口、版本快照、自动更新和数据导入导出仍未完成。
 - Slash menu 会显示 clear/help/model，但选择后当前不会执行对应动作。

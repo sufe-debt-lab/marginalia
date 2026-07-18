@@ -1466,6 +1466,22 @@ Expected: PASS；token 持有者也不能读取 snapshot 外 path。
 - 偏差与遗留：新增 `400 invalid request` runtime schema guard 以落实 documented request shape；其余无实现
   偏差、无新增依赖、无 UI-visible change，因此不运行 visual verification。
 
+**Formal review fixes (Task 8 documentation lifecycle):**
+
+- RED：`pnpm docs:check -- --base acef94c` exit 1，精确命中 `skills-management`、
+  `server-user-boundary` 和 `documentation-contracts` 三条规则，缺少 review 指定的 user guide/configuration、
+  developer architecture/lifecycle/contributing 与 product status 更新。
+- 正式文档修复：记录 backend-only 可用性、三个管理 route、capability/exact-Origin、global/workspace
+  discovery、snapshot-only preview、无 create/import/install/edit，以及 out-of-root Skill symlink residual；
+  Desktop Settings/Composer 与 agent runtime 仍不可用。Product status 将 `CAP-SKILLS-001` 从 disabled 更新为
+  partial，并以 runtime commit `061ab73` 作为验证证据。
+- Lifecycle contract：`documentation-lifecycle.md` 与 `contributing.md` 明确 `skills-management` patterns、五份
+  required docs 和本地 `pnpm docs:check -- --base <base-sha>` 用法；无豁免时不要求 declaration，也不以
+  exemption 代替正式文档。
+- GREEN：static `pnpm docs:check` 与 exact `pnpm docs:check -- --base acef94c` 均通过；Skills
+  API/catalog/capability focused suite 52/52、pi-server typecheck 与完整 `pnpm verify` 通过。Formal review
+  fix 不修改 runtime，也不产生 UI-visible change。
+
 - [x] **Step 7: 提交**
 
 ```bash

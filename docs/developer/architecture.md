@@ -123,7 +123,7 @@ SQLite schema 由 `migrate()`（`apps/pi-server/src/db/migrations.ts#migrate`）
 （`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）以调用方已解析的 canonical
 path 原字符串保存启停状态，缺省为启用，并通过单次 `list()` 为后续 Catalog 构造偏好 map。Store 不
 检查文件是否仍存在，也不自动清理记录，因此被删除 Skill 的偏好会作为 tombstone 保留。Catalog 在
-每次 refresh 中只调用一次 `list()` 构造内存 map；HTTP 接入仍由后续任务实现。
+每次 refresh 中只调用一次 `list()` 构造内存 map；Skills HTTP 管理路由通过同一个 store 更新 preference。
 
 ### Skill discovery descriptor
 
@@ -202,6 +202,30 @@ read/parse 数量。
 exact canonical path 验证当前 membership，只在命中后写 preference 并再次 refresh。Workspace symlink
 或 candidate symlink retarget 后，旧 canonical selection 不再命中新 snapshot。
 
+### Skills HTTP 管理边界
+
+`createApp()`（`apps/pi-server/src/app.ts#createApp`）允许注入 `SkillCatalogService`；正常启动在数据库
+migration 后用 `createSkillPreferenceStore()` 构造默认 Catalog。`GET /skills`、
+`PATCH /skills/state` 和 `GET /skills/content` 都先执行进程 capability 与 exact-Origin 判定，再读取
+query/body、查询 workspace 或调用 Catalog。缺失 `workspaceId` 固定解析为 global-only input，只扫描
+三个 user roots；提供 ID 时只通过 `getWorkspace()` 取得 server-owned root，客户端不能指定 root。
+
+两个 GET 每次都调用 `refresh()`。List route 通过 `toPublicSkillCatalogSnapshot()`
+（`apps/pi-server/src/skills/catalog.ts#toPublicSkillCatalogSnapshot`）逐字段复制公开 DTO，不 spread 内部
+candidate，也不发布 workspace root、preview/body、content hash、Pi Skill object 或 effective Skills。
+Content route 在刚刷新的 `candidates` 中以 request path 做 exact canonical membership lookup，响应的
+path、preview、截断状态和字节总数全部取自匹配 candidate；它不会对 request path 调用文件读取，也不会
+在响应时重读 canonical target。
+
+State route 只接受 `{ path: string, enabled: boolean, workspaceId?: string }`，再委托 Catalog 完成 refresh
+→ membership → preference upsert → refresh。Typed missing member 映射为 404；Catalog/internal failure
+统一映射为不含内部 path/bytes 的错误。该 API 只管理已经发现的文件，不创建、导入、安装、编辑或删除
+Skill。
+
+Desktop 尚未调用这三个 route：Settings Skills 入口仍禁用，Composer 没有 picker，agent resource loader
+仍使用 `noSkills: true`。因此 Task 8 建立的是管理后端和信任边界，不是已可用的用户工作流或 runtime
+Skills 集成。
+
 ## Agent session 与资源
 
 `PiCodingAgentClient.prepare()` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension，并取得已配置的 AgentSession；此阶段不会调用 prompt。`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的事件流和始终可等待的 `settled` Promise。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。
@@ -218,6 +242,9 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - BrowserWindow 使用 context isolation 和 `nodeIntegration: false`，但 `sandbox: false`。
 - Full 和 Ask 使用 pi 默认 coding tools。Workspace 只作为 cwd，工具可接收绝对路径，bash 使用宿主用户权限。
 - HTTP 文件接口检查 lexical path 和已存在目标 realpath，但新目标的 symlink parent 仍可逃逸。
+- Skill discovery 沿用 Pi symlink 语义，不要求 canonical target 留在 source root。持有 capability 的调用方
+  只有在外部 target 已通过预先存在、可发现的 Skill symlink 成为当前 snapshot member 时才能取得其
+  snapshot preview；单独提交任意 path 不会触发读取，content route 也不重读 target。
 - Ask 审批按字符串前缀判断 shell，新文件 write 默认直通；Read-only 还受缓存 session 配置影响。
 - Provider key 以明文写入 SQLite。
 

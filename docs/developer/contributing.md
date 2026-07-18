@@ -60,14 +60,24 @@ pnpm verify:visual
 文档影响检查可以显式指定 base 和本地声明：
 
 ```bash
+pnpm docs:check -- --base <base-sha>
 pnpm docs:check -- --base <base-sha> --declaration <json-file>
 ```
+
+没有豁免时运行第一条即可；只有确实属于内部重构且准备提交机器可读豁免时才使用 declaration。不要用
+豁免代替缺失的正式文档更新。
 
 diff 检查对二进制变更（如截图基线 PNG）安全：changed-line 提取使用有损 UTF-8 解码，二进制不会让检查崩溃，其中的 ASCII 内容仍会被 `changedLinePattern` 规则匹配到。
 
 ## Docs impact
 
 PR 模板要求填写受影响的正式文档、产品状态、活跃 spec/plan 和验证结果。高信号代码路径由 `docs/contracts/docs-impact.json` 映射到必须更新的文档。
+
+`skills-management` 规则覆盖 pi-server Skills catalog，以及 desktop 的 `useSkillCatalog`、Composer、
+Settings 和 store 相关路径。无论改动处于 backend 还是 UI 阶段，同一 diff 都要更新使用指南、用户配置、
+developer API、系统架构和产品状态，并准确区分“后端已实现”和“用户工作流已可用”。修改
+`docs/contracts/docs-impact.json` 本身会命中 `documentation-contracts`，需要同步本文与文档生命周期，
+记录 pattern 和贡献者应运行的 diff-impact 命令。
 
 纯内部重构可以声明豁免：
 

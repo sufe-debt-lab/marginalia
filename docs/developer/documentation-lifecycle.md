@@ -142,6 +142,11 @@ same_change: true
 
 高信号代码路径与必须同步的正式文档保存在 `docs/contracts/docs-impact.json`。CI 以 PR base 和 HEAD 的 merge-base 计算三点 diff。规则命中后，`requireAll` 中每个文件都必须出现在 diff 中。
 
+Skills 的 `skills-management` 规则覆盖 server catalog、desktop `useSkillCatalog` hook、Composer、Settings
+和 store。命中后必须在同一 diff 更新使用指南、用户配置、developer API、系统架构和产品状态；backend
+阶段也要明确 UI/runtime 尚不可用，不能等到后续桌面任务再首次补文档。修改 impact mapping 本身会命中
+`documentation-contracts`，因此必须同步本文和贡献指南，说明新增 pattern、必需文档与本地验证方式。
+
 纯内部重构可以豁免，但 PR body 最多只能有一个机器可读声明：
 
 ```html
@@ -152,9 +157,13 @@ same_change: true
 
 `.github/workflows/docs-gate.yml` 通过 `pull_request_target` 使用目标分支中的 checker 和影响映射，检查事件中精确的 PR head，不安装依赖或执行 PR 提供的脚本。workflow 的仓库内容权限只读，额外的 `statuses: write` 只用于把 `trusted-docs` 结果发布到精确的 PR head SHA；runner 自身的 check 不作为 required check。同一 PR 的事件使用 concurrency 串行收敛并取消旧 run，避免旧批准覆盖新的失败状态。`.github/CODEOWNERS` 保护 checker、contracts、workflow 和 agent 规则；仓库还必须把 commit status `trusted-docs` 配为 required check，并开启 Code Owner review，门禁才形成外部强制约束。
 
-本地 diff 检查使用 base 和声明文件。它分别比较 merge-base 到 Git index、Git index 到工作树，再并入未跟踪文件；因此暂存改动即使被工作树反向覆盖也不会消失。二进制变更（如截图基线 PNG）不会让检查崩溃：changed-line 提取按有损 UTF-8 解码，无效字节替换为占位符，其中的 ASCII 内容仍参与 `changedLinePattern` 匹配，二进制无法绕过规则：
+本地 diff 检查至少指定维护者给出的 base；只有确实需要受审豁免时才附 declaration 文件。它分别比较
+merge-base 到 Git index、Git index 到工作树，再并入未跟踪文件；因此暂存改动即使被工作树反向覆盖也
+不会消失。二进制变更（如截图基线 PNG）不会让检查崩溃：changed-line 提取按有损 UTF-8 解码，无效
+字节替换为占位符，其中的 ASCII 内容仍参与 `changedLinePattern` 匹配，二进制无法绕过规则：
 
 ```bash
+pnpm docs:check -- --base <base-sha>
 pnpm docs:check -- --base <base-sha> --declaration <json-file>
 ```
 

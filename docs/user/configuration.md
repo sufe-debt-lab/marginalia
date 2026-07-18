@@ -89,6 +89,31 @@ Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现
 `catalogRevision`；只有 effective Skill 的 metadata、canonical path、顺序或正文 hash 变化才更新
 `effectiveRevision`。
 
+### Skills 管理 API 与当前可用性
+
+pi-server 已提供三个管理接口：刷新并列出公开 snapshot、按 exact canonical path 更新启停 preference、
+以及读取当前 snapshot member 的 preview。省略 `workspaceId` 时只扫描 priority 4–6 的三个 user/global
+roots；提供 workspace 时，服务端通过自己的 workspace 记录取得 root，再按 priority 1–6 扫描。客户端
+不能提交任意 root。
+
+每个 GET 都强制 refresh。启停操作执行 refresh、current membership、preference upsert、再次 refresh，
+返回 preference 更新后的 revision。内容接口只从刷新结果中精确匹配 canonical path，并返回 snapshot
+保存的 preview、截断标记和总字节数；它不会把请求 path 交给文件读取。Unknown、cross-workspace 和
+snapshot 外 path 都返回 not found。
+
+三个接口都要求 Electron 每进程 capability bearer；浏览器 Origin 还必须是 packaged 的缺省/`null`，
+或本次开发启动明确允许的 exact loopback origin。公开 snapshot 不包含完整 body、content hash、Pi
+Skill object 或 runtime effective collection。Catalog/internal failure 只返回通用错误，不返回内部 path
+或 bytes。
+
+这套后端不创建、导入、安装、编辑或删除 Skill 文件。当前桌面 Settings/Composer 尚未接入，agent
+runtime 仍使用 `noSkills: true`，所以它还不是用户可操作的正常产品流程。
+
+Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
+预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的
+preview 会成为 snapshot 数据。读取仍要求 capability 和 snapshot membership，单独提交任意 path 不会
+读盘；但应把 Skills roots 视为可信配置目录，不要放置指向敏感文件的 symlink。
+
 ## 环境变量
 
 | Variable                       | Scope                  | Behavior                                                                |
@@ -120,8 +145,8 @@ Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现
 
 ## 本机 API
 
-pi-server 监听 `127.0.0.1` 的随机端口。Electron 为每个 server 进程生成 capability token；run
-请求要求 bearer，浏览器请求还要匹配 packaged `null`/缺省 Origin 或已校验的开发 origin。
+pi-server 监听 `127.0.0.1` 的随机端口。Electron 为每个 server 进程生成 capability token；run 和
+Skills 管理请求要求 bearer，浏览器请求还要匹配 packaged `null`/缺省 Origin 或已校验的开发 origin。
 CORS 不再反射任意来源，但 workspace、provider、文件、审批等既有 route 仍未认证，Origin
 缺失的本地客户端也可以调用它们。Loopback 只限制网络接口，不负责完整授权。完整路由和已知
 边界见[API 参考](../developer/api.md)。
