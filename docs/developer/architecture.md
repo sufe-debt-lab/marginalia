@@ -145,6 +145,24 @@ canonical file identity 去重、preference、name collision 或 effective winne
 Catalog pipeline。输出固定按 source priority、ancestor depth、relative path 的 Unicode code-point
 顺序排列，不依赖 `readdir` 顺序。
 
+### Skill candidate 稳定解析
+
+`loadSkillCandidate()`（`apps/pi-server/src/skills/candidate-loader.ts#loadSkillCandidate`）一次只处理
+一个 discovery descriptor。每次尝试严格执行 discovered path realpath、读取 bytes A、以 canonical
+path 单独调用 Pi `loadSkills()`、再次 realpath、读取 bytes B；Pi 调用固定
+`skillPaths: [canonicalPath]` 和 `includeDefaults: false`。只有两次 canonical path 相等且 bytes 的
+SHA-256 相等时，才发布夹在两次读取之间得到的 Pi metadata、diagnostics 与 bytes B。路径或内容不一致
+最多重试三次；持续变化、realpath、读取或 parser 失败只把当前 candidate 变成 invalid diagnostic，
+不会使整个 Catalog refresh reject。
+
+Pi 返回 `Skill` 即保留为 valid，即使同时返回 warning；Pi 没有返回 `Skill` 才是解析 invalid。稳定
+bytes 用 UTF-8 解码，`bytesTotal` 和大小限制始终按 Buffer bytes 判断。显式调用的正文上限为 512 KiB
+（边界包含），preview 上限为 256 KiB；超过正文上限或 name、canonical path、canonical base directory
+含 XML 1.0 不允许的字符时，candidate 仍保留 Pi metadata 和 preview，但
+`explicitEligible: false`、`rawContent: null`。`disable-model-invocation` 直接映射为 `explicitOnly`，
+完整稳定内容用 SHA-256 `contentHash` 标识。Preference、canonical identity 去重、同名 collision 和
+effective winner 仍属于后续 Catalog 阶段。
+
 ## Agent session 与资源
 
 `PiCodingAgentClient.prepare()` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension，并取得已配置的 AgentSession；此阶段不会调用 prompt。`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的事件流和始终可等待的 `settled` Promise。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。

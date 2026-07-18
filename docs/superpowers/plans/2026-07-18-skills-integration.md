@@ -1050,7 +1050,7 @@ export function loadSkillCandidate(
 ): Promise<ParsedSkillCandidate>;
 ```
 
-- [ ] **Step 1: 写稳定读取失败测试**
+- [x] **Step 1: 写稳定读取失败测试**
 
 用 injectable deps 精确控制 A/parse/B：
 
@@ -1074,7 +1074,7 @@ it("publishes unstable_file after exactly three attempts", async () => {
 保留 preview、`disable-model-invocation`、realpath 前后改变，以及 name/path/baseDir 含 XML 1.0
 禁用控制字符。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -1084,7 +1084,7 @@ pnpm --filter @marginalia/pi-server test -- skill-candidate-loader
 
 Expected: FAIL，loader 不存在。
 
-- [ ] **Step 3: 实现三次稳定读取协议**
+- [x] **Step 3: 实现三次稳定读取协议**
 
 每次 attempt 严格执行：`realpath A → read A → parse(canonical A) → realpath B → read B`；只有
 realpath 和 SHA-256 都相同时接受该 parsed result 与 B bytes。默认 parser：
@@ -1102,7 +1102,7 @@ const parse = (filePath: string): LoadSkillsResult =>
 每个 candidate 独立调用，不能先按 name/collision/disabled 跳过。三次都不稳定时返回 invalid
 candidate，而不是 reject 整个 refresh。
 
-- [ ] **Step 4: 固定 valid/warning/size/control-char 判定**
+- [x] **Step 4: 固定 valid/warning/size/control-char 判定**
 
 Pi 返回 `skill` 即 valid，即使 diagnostics 有 warning；`skill === null` 才 invalid。正文用 UTF-8
 decode；eligible candidate 保留最多 512 KiB 的完整 `rawContent`，其他只留 256 KiB prefix。
@@ -1122,7 +1122,7 @@ export function hasUnsupportedXmlChar(value: string): boolean {
 }
 ```
 
-- [ ] **Step 5: 更新稳定 snapshot 契约并验证**
+- [x] **Step 5: 更新稳定 snapshot 契约并验证**
 
 Run:
 
@@ -1134,7 +1134,33 @@ pnpm docs:check
 
 Expected: PASS；warning candidate 仍 valid，第三次不稳定只影响该 candidate。
 
-- [ ] **Step 6: 提交**
+**Task 6 results (2026-07-18):**
+
+- 实际完成：新增 `ParsedSkillCandidate`、512 KiB 显式正文与 256 KiB preview byte 常量，以及单
+  candidate loader。每次最多三次严格执行 realpath A、read A、Pi parse(canonical A)、realpath B、
+  read B；只有 canonical path 与 SHA-256 同时相等才发布夹在稳定 reads 之间的 parsed result 和 bytes
+  B。失败或三次不稳定返回当前 invalid candidate diagnostic，不 reject 整体 refresh。
+- Pi 与内容语义：默认 parser 每次只传一个 canonical path 且 `includeDefaults: false`；Pi warning 加
+  `Skill` 仍 valid，只有没有 `Skill` 才 invalid。正文按 UTF-8 decode，所有大小决定按 Buffer bytes；
+  512 KiB 边界可显式调用，超限只留 256 KiB preview；`disable-model-invocation` 映射
+  `explicitOnly`。Name、canonical path 或 canonical base directory 含 XML 1.0 不支持字符时保留 Pi
+  metadata、禁止显式调用并产生 `unsupported_identifier`。
+- RED：prescribed focused command exit 1；Vitest 无法加载尚不存在的
+  `apps/pi-server/src/skills/candidate-loader.ts`，1 个 suite 按预期失败且未收集测试。
+- GREEN：focused suite 20/20 通过；pi-server typecheck 和 `pnpm docs:check` 通过。最终
+  `pnpm verify` 通过，包含 docs 28、chat-core 14、pi-server 193（另 1 个 opt-in smoke skip）、
+  desktop 330 tests 及全部 formatting、lint、typecheck 和 builds。
+- 正式文档：更新 `docs/developer/architecture.md`，记录 per-candidate stable read/Pi parse、failure
+  isolation、byte limits、identifier validation 和本阶段不处理 preference/collision/effective 的边界。
+- Review：base 与 architecture pass 无 Task 6 contract finding。Security/adversarial pass 提出两项
+  design-accepted residual risk：canonical Skill symlink target 可位于 source root 外；稳定性协议和 Pi
+  parser 会在 512 KiB eligibility 判定前完整读取文件。前者是 spec 明确的 Pi-compatible symlink
+  语义，后者延续 Task 5 已记录的 upstream Pi 同步无界读取风险；source-root containment 或 bounded
+  pre-read 都会破坏已确认契约，因此本任务不修改。最终 broad review 应继续跟踪。
+- 偏差与遗留：无实现偏差；除上述 design-accepted residual risks 外无新增遗留。Task 6 没有 UI
+  变化，不需要 visual verification。
+
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/pi-server/src/skills apps/pi-server/test/skill-candidate-loader.test.ts docs/developer/architecture.md

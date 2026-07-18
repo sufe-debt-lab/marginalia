@@ -1,3 +1,8 @@
+import type { Skill } from "@earendil-works/pi-coding-agent";
+
+export const SKILL_EXPLICIT_BYTES = 512 * 1024;
+export const SKILL_PREVIEW_BYTES = 256 * 1024;
+
 export type SkillSource =
   | "workspace_marginalia"
   | "workspace_pi"
@@ -25,6 +30,20 @@ export type DiscoveredSkillFile = {
   mode: SkillDiscoveryMode;
   sourcePriority: number;
   ancestorDepth: number;
+};
+
+export type ParsedSkillCandidate = DiscoveredSkillFile & {
+  canonicalPath: string;
+  canonicalBaseDir: string;
+  skill: Skill | null;
+  diagnostics: SkillDiagnostic[];
+  bytesTotal: number;
+  contentHash: string;
+  explicitEligible: boolean;
+  explicitOnly: boolean;
+  rawContent: string | null;
+  previewContent: string;
+  previewTruncated: boolean;
 };
 
 export type SkillDiscoveryOptions = {
