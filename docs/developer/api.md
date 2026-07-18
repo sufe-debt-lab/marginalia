@@ -74,11 +74,12 @@ document、approval 等普通 method 仍只发送 JSON header。Skills list/cont
 selection 按调用方顺序序列化。
 
 renderer 的 `useSkillCatalog` 在 Composer 挂载、workspace 切换和每次新打开 `$` 或 `/` 菜单时调用
-`listSkills()`。它用 request generation 与 requested workspace 拒绝迟到响应；当前请求返回 workspace
-不匹配的 snapshot 时则记录为 refresh failure。失败都保留最后成功 snapshot，但 picker 进入 error/retry
-状态，不能从旧 snapshot 新增 selection。
-当前 Composer 不调用 `setSkillEnabled()` 或 `readSkillContent()`；这两个 method 留给尚未实现的 Settings
-管理界面。
+`listSkills()`；Settings -> Skills 在页面挂载/重新进入、workspace 切换和手动刷新时也调用它。Hook 用
+request generation 与 requested workspace 拒绝迟到响应；当前请求返回 workspace 不匹配的 snapshot 时
+记录为 refresh failure。失败保留最后成功 snapshot，Composer picker 不允许从旧 snapshot 新增 selection，
+Settings 则保留旧行并显示重试。Settings 的 toggle 调用 `setSkillEnabled()`，只用响应 snapshot 替换状态，
+不做乐观更新；选中行后才调用 `readSkillContent()`。内容和 toggle 还以 request ID、workspace 和 exact path
+丢弃迟到响应。
 
 `request()`、204 response helper 和 `runChat()` 的非成功 response 共用结构化错误解码。JSON object
 响应会完整保存在 `ApiError.details`，同时公开 HTTP `status`、body 的字符串 `error` 作为 `code`，以及

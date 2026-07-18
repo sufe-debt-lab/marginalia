@@ -98,7 +98,7 @@ workspace、provider、文件、审批等既有 route 仍未认证，缺少 Orig
 `127.0.0.1` 和这项局部防护都不是整套 API 的授权边界；在 `P0-SEC-001` 完整修复前，不要把 Alpha
 版本用于高敏感资料。
 
-## Skills 选择与管理后端
+## Skills 选择与管理
 
 pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate、读取 candidate 的截断预览，
 并在受 capability 保护的 run API 中按 exact `{ name, canonical path }` 显式调用 Skill。每个 run 都会
@@ -116,7 +116,13 @@ warning diagnostic 和 explicit-only 状态也会显示。磁盘上名为 `skill
 Catalog 会在 Composer 挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜单时刷新。加载、请求失败或
 响应 workspace 不匹配时，菜单不会允许从旧 snapshot 新增 Skill，而已有 snapshot 和已选 chips 会保留；
 可在菜单中重试。当前只允许选择 `name` 非空、enabled、status 为 `effective` 且 `explicitEligible` 的
-candidate。Settings 中的 Skills 管理页仍未接入。
+candidate。
+
+Settings -> Skills 现在提供只读磁盘管理页。页面根据当前 workspace 展示 workspace 与 user/global 的全部
+candidate；当前 workspace 无法从已加载列表解析时只展示 user/global 来源。可以按名称、描述、发现路径或
+canonical path 搜索，并查看 Effective、Enabled · Shadowed、Disabled、Invalid 四种状态、warning、
+explicit-only、来源及 diagnostics。选择任意行（包括 Invalid）才会按需加载服务端保存的内容预览；截断
+内容会明确提示。启停不会乐观更新，而是以服务端返回的新 snapshot 为准；刷新、预览或启停失败均可重试。
 
 Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。显式 block 单项
 最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB。选择失效和 payload 超限分别返回稳定的
@@ -135,7 +141,7 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 
 ## 当前不可用
 
-- Skills Settings 管理页与 blocked selection 修复流程仍未接入；Composer 已可选择和移除 eligible Skill。
+- Blocked selection 修复流程仍未接入；Settings 已可管理磁盘上已发现 Skill 的启停并预览内容。
 - MCP：没有 server 配置、连接或工具注入，设置入口禁用。
 - 独立 Quick chat 入口、版本快照、自动更新和数据导入导出仍未完成。
 - Slash menu 会显示 clear/help/model，但选择后当前不会执行对应动作。

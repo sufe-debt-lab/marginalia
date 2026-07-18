@@ -124,6 +124,12 @@ Commands 与 Skills 作为视觉分区，但使用同一个 flat selectable row 
 两个入口都提交 exact `{ name, canonicalPath }`，删除触发 token，并由 scoped turn draft store 按 canonical
 path 去重；Composer 保持 ordered chips，不建立桌面专用 `/skill:*` 协议。
 
+Settings 的 Skills pane 复用 `useSkillCatalog`，但展示 snapshot 中的全部 candidate。`AppShell` 只把能从已
+加载 workspace 列表解析出的 active workspace 传给 pane，否则用 global-only context。列表按名称、描述、
+discovered/canonical path 过滤；详情选择触发 `readSkillContent()`，toggle 触发 `setSkillEnabled()` 并以返回
+snapshot 为唯一状态源。Catalog、content 和 toggle 都以 request generation、workspace identity 和 exact
+canonical path 防止跨行或跨 workspace 的迟到响应污染当前视图。
+
 ChatView 的错误状态同时记录 `accepted` 与派生的 `retryable`。Retry 只在失败属于当前已接受轮且
 `lastSent` 已由该轮 acceptance 更新时出现；后续 pre-start 401/409/413/EOF 会保留新草稿并隐藏 Retry，
 不会重发更早的 accepted snapshot。Retry 也只在新请求收到 `run_started` 后替换旧失败气泡；若 retry
@@ -276,9 +282,9 @@ State route 只接受 `{ path: string, enabled: boolean, workspaceId?: string }`
 统一映射为不含内部 path/bytes 的错误。该 API 只管理已经发现的文件，不创建、导入、安装、编辑或删除
 Skill。
 
-Desktop Composer 已通过 `GET /skills` 接入 picker，并把 exact selection 交给 run API；它不会调用 state
-或 content route。Settings Skills 入口仍禁用，因此启停 preference、内容预览和 invalid/blocked candidate
-修复仍不是普通桌面流程可操作的功能。
+Desktop Composer 已通过 `GET /skills` 接入 picker，并把 exact selection 交给 run API。Settings Skills
+入口使用 list/state/content route 展示全部 candidate、管理启停 preference，并允许预览 invalid candidate；
+它不创建、导入、安装、编辑或删除文件。Blocked selection 修复仍不是普通桌面流程可操作的功能。
 
 ## Agent session 与资源
 

@@ -39,10 +39,11 @@ export function AppShell({
   const setRightWidth = useAppStore((s) => s.setRightPanelWidth);
   const workspaces = useWorkspaces(api);
   const noWorkspaces = !workspaces.loading && workspaces.data.length === 0;
-  const activeWorkspaceName = useMemo(
-    () => workspaces.data.find((w) => w.id === activeWorkspaceId)?.name ?? null,
+  const activeWorkspace = useMemo(
+    () => workspaces.data.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [workspaces.data, activeWorkspaceId]
   );
+  const activeWorkspaceName = activeWorkspace?.name ?? null;
   const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
 
   const title =
@@ -72,7 +73,12 @@ export function AppShell({
         </aside>
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
           {view === "settings" ? (
-            <SettingsView api={api} />
+            <SettingsView
+              api={api}
+              skillsWorkspace={
+                activeWorkspace ? { id: activeWorkspace.id, name: activeWorkspace.name } : null
+              }
+            />
           ) : noWorkspaces ? (
             <FirstRunView api={api} />
           ) : view === "chat" && activeSessionId ? (

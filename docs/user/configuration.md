@@ -127,7 +127,9 @@ Skill object 或 runtime effective collection。Catalog/internal failure 只返�
 旧 path 或 name mismatch 不会自动改绑。Loader 使用 `noSkills: true` 关闭自身磁盘 discovery，
 再通过 pinned override 注入 snapshot，并非禁用 runtime Skills。Composer 已通过 `listSkills()` 接入
 eligible candidate，并在 `$` 与 `/` 两个入口写入同一 ordered turn selection；canonical path 去重由 draft
-store 负责。Settings 的启停和内容预览界面尚未接入。
+store 负责。Settings -> Skills 也使用同一 snapshot API：进入或重新进入页面、切换 workspace、手动刷新时
+重新列出全部 candidate；内容按选中 canonical path 延迟读取，启停只接受服务端返回的新 snapshot，不做
+乐观更新。无法从已加载 workspace 列表解析的 active ID 按 global-only 请求处理。
 
 Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
 预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的

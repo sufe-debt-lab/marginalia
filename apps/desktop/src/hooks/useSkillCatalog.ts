@@ -21,12 +21,18 @@ export function useSkillCatalog(
   loading: boolean;
   error: ApiError | Error | null;
   refresh(): Promise<SkillCatalogSnapshot | null>;
+  setEnabled(path: string, enabled: boolean): Promise<SkillCatalogSnapshot | null>;
 } {
   const [snapshot, setSnapshot] = useState<SkillCatalogSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [stateWorkspaceId, setStateWorkspaceId] = useState(workspaceId);
   const requestId = useRef(0);
+  const mutationRef = useRef<{
+    requestId: number;
+    workspaceId: string | null;
+    path: string;
+  } | null>(null);
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
 
@@ -57,6 +63,52 @@ export function useSkillCatalog(
     }
   }, [api, workspaceId]);
 
+  const setEnabled = useCallback(
+    async (path: string, enabled: boolean) => {
+      const id = ++requestId.current;
+      const requestedWorkspace = workspaceId;
+      const requestedPath = path;
+      mutationRef.current = { requestId: id, workspaceId: requestedWorkspace, path: requestedPath };
+      const isCurrentMutation = () => {
+        const mutation = mutationRef.current;
+        return (
+          id === requestId.current &&
+          workspaceRef.current === requestedWorkspace &&
+          mutation?.requestId === id &&
+          mutation.workspaceId === requestedWorkspace &&
+          mutation.path === requestedPath
+        );
+      };
+      setStateWorkspaceId(requestedWorkspace);
+      setLoading(true);
+      try {
+        const next = await api.setSkillEnabled({
+          path: requestedPath,
+          enabled,
+          workspaceId: requestedWorkspace
+        });
+        if (!isCurrentMutation()) return null;
+        if (next.workspaceId !== requestedWorkspace) {
+          setError(new Error("Skill catalog response workspace mismatch"));
+          return null;
+        }
+        setSnapshot(next);
+        setError(null);
+        return next;
+      } catch (failure) {
+        if (isCurrentMutation()) {
+          setError(asError(failure));
+        }
+        return null;
+      } finally {
+        if (isCurrentMutation()) {
+          setLoading(false);
+        }
+      }
+    },
+    [api, workspaceId]
+  );
+
   useEffect(() => {
     requestId.current += 1;
     setStateWorkspaceId(workspaceId);
@@ -70,7 +122,7 @@ export function useSkillCatalog(
   }, [refresh, workspaceId]);
 
   if (stateWorkspaceId !== workspaceId) {
-    return { snapshot: null, loading: true, error: null, refresh };
+    return { snapshot: null, loading: true, error: null, refresh, setEnabled };
   }
-  return { snapshot, loading, error, refresh };
+  return { snapshot, loading, error, refresh, setEnabled };
 }

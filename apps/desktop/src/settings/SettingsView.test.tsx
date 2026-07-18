@@ -13,7 +13,15 @@ function fakeApi(): ApiClient {
     createProvider: vi.fn(async (input) => ({ id: "new", ...input })),
     testProvider: vi.fn(async () => ({ ok: true, message: "ok" })),
     updateProvider: vi.fn(async (id, input) => ({ id, name: "Anthropic", ...input })),
-    deleteProvider: vi.fn(async () => undefined)
+    deleteProvider: vi.fn(async () => undefined),
+    listSkills: vi.fn(async (workspaceId: string | null) => ({
+      workspaceId,
+      catalogRevision: "catalog-1",
+      effectiveRevision: "effective-1",
+      refreshedAt: 1,
+      candidates: [],
+      diagnostics: []
+    }))
   } as unknown as ApiClient;
 }
 
@@ -125,5 +133,25 @@ describe("SettingsView", () => {
     await userEvent.click(screen.getByRole("switch", { name: /anthropic/i }));
 
     expect(api.updateProvider).toHaveBeenCalledWith("anthropic", { enabled: false });
+  });
+
+  it("enables Skills while MCP stays disabled and refreshes whenever Skills is re-entered", async () => {
+    const api = fakeApi();
+    render(<SettingsView api={api} skillsWorkspace={{ id: "w1", name: "Research" }} />);
+    const skills = screen.getByRole("button", { name: /^skills$/i });
+    const mcp = screen.getByRole("button", { name: /^mcp$/i });
+
+    expect(skills).toBeEnabled();
+    expect(mcp).toBeDisabled();
+    await userEvent.click(skills);
+    await waitFor(() => expect(api.listSkills).toHaveBeenCalledWith("w1"));
+    expect(screen.getByText("Research")).toBeInTheDocument();
+    const skillsPane = screen.getByTestId("settings-pane-width");
+    expect(skillsPane).toHaveClass("max-w-[920px]");
+
+    await userEvent.click(screen.getByRole("button", { name: /^general$/i }));
+    expect(screen.getByTestId("settings-pane-width")).toHaveClass("max-w-[440px]");
+    await userEvent.click(skills);
+    await waitFor(() => expect(api.listSkills).toHaveBeenCalledTimes(2));
   });
 });

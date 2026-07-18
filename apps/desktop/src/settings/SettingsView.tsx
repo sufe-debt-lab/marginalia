@@ -5,10 +5,17 @@ import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
 import { GeneralPane } from "./GeneralPane.js";
 import { ProvidersPane } from "./ProvidersPane.js";
+import { SkillsPane } from "./SkillsPane.js";
 
 type SettingsTab = "general" | "providers" | "mcp" | "skills";
 
-export function SettingsView({ api }: { api: ApiClient }) {
+export function SettingsView({
+  api,
+  skillsWorkspace = null
+}: {
+  api: ApiClient;
+  skillsWorkspace?: { id: string; name: string } | null;
+}) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<SettingsTab>("general");
   const [animateTab, setAnimateTab] = useState(false);
@@ -38,8 +45,7 @@ export function SettingsView({ api }: { api: ApiClient }) {
     {
       id: "skills",
       label: t("settings.navSkills"),
-      icon: <Sparkles className="h-3.5 w-3.5" />,
-      disabled: true
+      icon: <Sparkles className="h-3.5 w-3.5" />
     }
   ];
 
@@ -56,7 +62,7 @@ export function SettingsView({ api }: { api: ApiClient }) {
             disabled={it.disabled}
             onClick={() => selectTab(it.id)}
             className={cn(
-              "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-muted",
+              "flex min-h-10 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               "disabled:cursor-not-allowed disabled:opacity-40",
               tab === it.id && "bg-select font-medium text-foreground",
               !it.disabled && tab !== it.id && "hover:bg-accent"
@@ -75,9 +81,13 @@ export function SettingsView({ api }: { api: ApiClient }) {
           animateTab && "motion-tab-panel"
         )}
       >
-        <div className="w-full max-w-[440px]">
+        <div
+          data-testid="settings-pane-width"
+          className={cn("w-full", tab === "skills" ? "max-w-[920px]" : "max-w-[440px]")}
+        >
           {tab === "general" && <GeneralPane />}
           {tab === "providers" && <ProvidersPane api={api} />}
+          {tab === "skills" && <SkillsPane api={api} workspace={skillsWorkspace} />}
         </div>
       </div>
     </div>

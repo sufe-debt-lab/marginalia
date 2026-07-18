@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/app-store.js";
@@ -30,8 +30,16 @@ describe("AppShell", () => {
       return new Response("[]", { headers: { "content-type": "application/json" } });
     });
     window.marginalia = {
-      getPiServerStatus: vi.fn(),
-      restartPiServer: vi.fn()
+      getPiServerStatus: vi.fn(async () => ({
+        status: "ready" as const,
+        url: "http://127.0.0.1:4312",
+        capabilityToken: "test-token"
+      })),
+      restartPiServer: vi.fn(async () => ({
+        status: "ready" as const,
+        url: "http://127.0.0.1:4312",
+        capabilityToken: "test-token"
+      }))
     };
   });
 
@@ -83,5 +91,82 @@ describe("AppShell", () => {
     render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     const aside = screen.getByRole("complementary", { name: /document panel/i });
     expect(aside).toHaveStyle({ width: "420px" });
+  });
+
+  it("passes only an active workspace resolved from the loaded workspace list to Skills", async () => {
+    useAppStore.setState({ view: "settings", activeWorkspaceId: "ws-1" });
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/workspaces")) {
+        return new Response(JSON.stringify([{ id: "ws-1", name: "Research", rootDir: "/repo" }]), {
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/skills")) {
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws-1",
+            catalogRevision: "catalog-1",
+            effectiveRevision: "effective-1",
+            refreshedAt: 1,
+            candidates: [],
+            diagnostics: []
+          }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    });
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    await userEvent.click(screen.getByRole("button", { name: /^skills$/i }));
+
+    expect(await screen.findAllByText("Research")).not.toHaveLength(0);
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        "http://x/skills?workspaceId=ws-1",
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+    );
+  });
+
+  it("falls back to global-only Skills when the active workspace id is stale", async () => {
+    useAppStore.setState({
+      view: "settings",
+      activeWorkspaceId: "stale",
+      leftSidebarCollapsed: true
+    });
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/workspaces")) {
+        return new Response(JSON.stringify([{ id: "ws-1", name: "Research", rootDir: "/repo" }]), {
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.endsWith("/skills")) {
+        return new Response(
+          JSON.stringify({
+            workspaceId: null,
+            catalogRevision: "global-1",
+            effectiveRevision: "global-effective-1",
+            refreshedAt: 1,
+            candidates: [],
+            diagnostics: []
+          }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    });
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    await userEvent.click(screen.getByRole("button", { name: /^skills$/i }));
+
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        "http://x/skills",
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+    );
   });
 });
