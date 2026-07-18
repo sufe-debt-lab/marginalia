@@ -99,6 +99,10 @@ pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate�
 通过显式 selection 调用。Settings 中的 Skills 页和 Composer picker 尚未接入，因此普通桌面流程仍
 不能选择或管理 Skills。
 
+Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。显式 block 单项
+最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB。选择失效和 payload 超限分别返回稳定的
+409/413；其他 run preparation 内部失败只返回通用 500，不包含内部 path、byte count 或异常消息。
+
 管理后端只发现磁盘上已经存在的 Skill。它不提供创建、导入、安装、编辑或删除文件的能力。省略
 workspace 时只查看三个 user/global roots；指定 workspace 时还加入该 workspace 的三个来源，详细目录
 和优先级见[配置](./configuration.md#skills-磁盘发现)。

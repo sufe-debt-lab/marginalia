@@ -521,7 +521,7 @@ export function createApp(options: AppOptions = {}) {
       if (error instanceof SkillPayloadTooLargeError) {
         return c.json({ error: "skill_payload_too_large" }, 413);
       }
-      return c.json({ error: (error as Error).message }, 500);
+      return c.json({ error: "run_preparation_failed" }, 500);
     }
 
     return streamSSE(c, async (sse) => {

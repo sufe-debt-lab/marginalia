@@ -282,13 +282,17 @@ Skill 可以被显式选择，但 Pi 会把它从隐式 system prompt 的可用�
 }
 ```
 
-Raw selections 超过 16、selection identity field 超限、单个 XML block 超过 512 KiB 或全部 block 合计
-超过 2 MiB 时返回
+Raw selections 超过 16、selection identity field 超限、单个 XML block 超过 512 KiB 或全部 block 按
+`blocks.join("\n\n")` 实际序列化后的 UTF-8 大小（包含 block 间分隔符）超过 2 MiB 时返回
 `413 { "error": "skill_payload_too_large" }`，同样发生在 preparation 和 run insert 之前。Block 只由
 immutable snapshot 中保存的 `rawContent` 构建，使用 Pi 0.75.5 的 newline/frontmatter body 规则；
 XML 1.0 不支持的 control character 会 fail closed。最终用户 prompt 顺序固定为：连续 Skill blocks →
 用户 `message` → trailing `<attached_files>` envelope（如果有附件）。Prompt start 强制关闭 Pi 的原生
 Skill/template expansion，因此用户文本 `/skill:name` 不会重新读磁盘或绕过上述 preflight。
+
+Catalog refresh、message build、agent preparation 或 run insert 的非 typed 内部失败统一返回
+`500 { "error": "run_preparation_failed" }`，不会回传异常消息、内部 path 或 byte count。上述 typed
+409/413 响应保持其精确错误 body。
 
 每个 SSE `data` 是一个 JSON 信封：
 

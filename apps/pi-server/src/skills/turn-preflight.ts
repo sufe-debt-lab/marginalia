@@ -209,13 +209,13 @@ export function prepareSkillTurn(
   }
 
   const blocks = candidates.map(buildSkillBlock);
-  let totalBytes = 0;
   for (const block of blocks) {
     const bytes = Buffer.byteLength(block, "utf8");
     if (bytes > MAX_SKILL_BLOCK_BYTES) throw new SkillPayloadTooLargeError();
-    totalBytes += bytes;
   }
-  if (totalBytes > MAX_SKILL_TOTAL_BYTES) throw new SkillPayloadTooLargeError();
+  if (Buffer.byteLength(blocks.join("\n\n"), "utf8") > MAX_SKILL_TOTAL_BYTES) {
+    throw new SkillPayloadTooLargeError();
+  }
 
   return {
     selections: canonicalSelections,

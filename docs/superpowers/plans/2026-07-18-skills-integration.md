@@ -1617,8 +1617,8 @@ const loader = new DefaultResourceLoader({
 registry `resourceRevision` 使用 `effectiveRevision`。只有 diagnostics/disabled loser 等 catalog-only
 变化不会重建 session。
 
-Pi client integration test 还要读取 loader 的 `getSkills()` 和最终 system prompt fixture：effective
-Skills 被注入；`disableModelInvocation=true` 的 Skill 保留在 loader 供显式调用，但被 Pi 原生
+Pi client integration test 还要读取 loader 的 `getSkills()`，并创建 real `AgentSession` 检查最终 system
+prompt：effective Skills 被注入；`disableModelInvocation=true` 的 Skill 保留在 loader 供显式调用，但被 Pi 原生
 `formatSkillsForPrompt` 排除在隐式 system prompt 之外。
 
 - [x] **Step 6: 集成 run preflight transaction**
@@ -1689,6 +1689,17 @@ Expected: PASS；0/1/N Skills 与隐式 loader 使用同一 effectiveRevision，
 - 偏差：Task 3 已预先实现 `skillBlocks` message order 和对应 agent-message test，Task 9 直接复用且未重复
   修改这两个文件。Documentation impact gate 要求同步 brief 未列出的 guide/configuration/status/readiness
   mirror；这些正式文档已同改动更新。无行为或设计偏差。
+- Formal review fixes：总 payload 改为按 `blocks.join("\n\n")` 的实际 UTF-8 serialization 计量，新增精确
+  2 MiB 与 separator overflow RED/GREEN；bounded body reader 在 declared/actual oversize 和 read failure
+  路径 best-effort cancel，并在所有 reader 路径释放 lock，四种 cleanup contract 均有单测；Catalog
+  refresh、message/prepare/run insert 等非 typed pre-create error 统一为不含异常/path/bytes 的
+  `500 run_preparation_failed`，typed 409/413 不变。Pi 集成证据已从 standalone formatter fixture 加强为
+  real `AgentSession.systemPrompt` inclusion/exclusion。Product status 同步修正为进程内 same-session
+  single-flight 已实现，剩余风险是跨进程 ownership 与 crash/recovery。
+- Formal review verification：规定 focused + request-body + skills-api suite 82/82，pi-server typecheck、
+  static/exact-diff docs checks 与完整 `pnpm verify` 均通过；完整测试为 docs 28、chat-core 14、pi-server
+  267（另 1 个 opt-in smoke skip）、desktop 330，format/lint/typecheck/build 全部通过。无 UI-visible change，
+  未运行 visual verification。
 
 - [x] **Step 9: 提交**
 

@@ -281,9 +281,8 @@ describe("prepareSkillTurn", () => {
     }
   });
 
-  it("enforces 512 KiB per block and 2 MiB across blocks using UTF-8 bytes", () => {
+  it("enforces 512 KiB per block using UTF-8 bytes", () => {
     const itemLimit = 512 * 1024;
-    const totalLimit = 2 * 1024 * 1024;
     const location = "/tmp/bytes/SKILL.md";
     const baseBytes = blockBytes("bytes", location, "");
     const exact = candidate({
@@ -298,20 +297,33 @@ describe("prepareSkillTurn", () => {
     expect(() => prepareSkillTurn(snapshot([over]), [selection(over)])).toThrowError(
       SkillPayloadTooLargeError
     );
+  });
 
-    const totalCandidates = Array.from({ length: 5 }, (_, index) => {
+  it("accepts exactly 2 MiB of serialized blocks and rejects separator overflow", () => {
+    const totalLimit = 2 * 1024 * 1024;
+    const count = 5;
+    const separators = (count - 1) * Buffer.byteLength("\n\n", "utf8");
+    const blockBudget = totalLimit - separators;
+    const baseTarget = Math.floor(blockBudget / count);
+
+    const totalCandidates = Array.from({ length: count }, (_, index) => {
       const name = `total-${index}`;
       const itemPath = `/tmp/${name}/SKILL.md`;
-      const target =
-        index === 4 ? totalLimit - Math.floor(totalLimit / 5) * 4 + 1 : Math.floor(totalLimit / 5);
+      const target = index === count - 1 ? blockBudget - baseTarget * (count - 1) : baseTarget;
       return candidate({
         name,
         canonicalPath: itemPath,
         rawContent: "x".repeat(target - blockBytes(name, itemPath, ""))
       });
     });
+    const exact = prepareSkillTurn(snapshot(totalCandidates), totalCandidates.map(selection));
+    expect(Buffer.byteLength(exact.blocks.join("\n\n"), "utf8")).toBe(totalLimit);
+
+    const separatorOverflow = totalCandidates.map((item, index) =>
+      index === count - 1 ? { ...item, rawContent: `${item.rawContent}x` } : item
+    );
     expect(() =>
-      prepareSkillTurn(snapshot(totalCandidates), totalCandidates.map(selection))
+      prepareSkillTurn(snapshot(separatorOverflow), separatorOverflow.map(selection))
     ).toThrowError(SkillPayloadTooLargeError);
   });
 });

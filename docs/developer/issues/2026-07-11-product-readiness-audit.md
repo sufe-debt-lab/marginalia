@@ -31,7 +31,7 @@ owner: repository-maintainers
 | P0-SEC-004        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`                                                                                  |
 | P0-SEC-005        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`                                                               |
 | P0-SEC-006        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
-| P0-RUN-001        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
+| P0-RUN-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
 | P1-PROVIDER-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts`                                    |
 | P1-DOCUMENT-001   | P1       | open        | 2026-07-11    | post-M0                    | `apps/pi-server/src/files/document-reader.ts`、`apps/desktop/src/documents/DocumentViewer.tsx`                                        |
 | P1-RECOVERY-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/electron/pi-server-spawner.ts`、`apps/desktop/electron/main.ts`                                                         |
@@ -104,11 +104,11 @@ Provider API key 直接写入 SQLite `env_vars.value`。数据库副本、备份
 
 验收：SQLite 不含明文 key；迁移和删除流程可恢复；sandbox 下开发与 packaged 流程通过。
 
-## P0-RUN-001: 同一 session 可以并发执行多个 run
+## P0-RUN-001: Run 缺少跨进程稳定所有权与完整恢复
 
-服务端每次 `POST /sessions/:sessionId/runs` 都创建 run，没有 active-run coordinator。Registry 会把并发请求交给同一个 AgentSession。renderer 的 `sendingRef` 只保护当前 hook 实例，切换视图或重新挂载后没有 cleanup 自动 abort 旧请求。
+pi-server 已通过进程内 per-session lease 拒绝同一进程里的并发 run，并等待 execution `settled` 后才释放；不同进程之间仍没有稳定所有权。切换视图或重新挂载后也没有 cleanup 自动 abort 旧请求，server crash/restart 后缺少旧 run 的完整恢复语义。
 
-修复目标：服务端成为 run 所有权的唯一事实源，按 session 实施 single-flight；定义 start、stop、disconnect、replace、crash 和 restart 的状态转换。
+修复目标：在跨进程边界建立稳定 run 所有权，并定义 start、stop、disconnect、replace、crash 和 restart 的状态转换。
 
 验收：并发请求得到确定的 409 或替换语义；切换 session、卸载 ChatView、断连和 server 重启后没有孤儿 run 或交错事件。
 

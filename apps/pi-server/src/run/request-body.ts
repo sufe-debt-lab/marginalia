@@ -14,6 +14,7 @@ export async function readJsonBodyWithinLimit<T>(
 ): Promise<T> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
+    await request.body?.cancel().catch(() => undefined);
     throw new RequestBodyTooLargeError();
   }
 
@@ -22,15 +23,24 @@ export async function readJsonBodyWithinLimit<T>(
 
   const chunks: Uint8Array[] = [];
   let bytes = 0;
-  while (true) {
-    const result = await reader.read();
-    if (result.done) break;
-    bytes += result.value.byteLength;
-    if (bytes > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw new RequestBodyTooLargeError();
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      bytes += result.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new RequestBodyTooLargeError();
+      }
+      chunks.push(result.value);
     }
-    chunks.push(result.value);
+  } catch (error) {
+    if (!(error instanceof RequestBodyTooLargeError)) {
+      await reader.cancel().catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
 
   return JSON.parse(Buffer.concat(chunks, bytes).toString("utf8")) as T;

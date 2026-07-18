@@ -414,7 +414,9 @@ describe("chat runs", () => {
     };
     const refresh = vi
       .fn<SkillCatalogService["refresh"]>()
-      .mockRejectedValueOnce(new Error("refresh failed"))
+      .mockRejectedValueOnce(
+        new Error("refresh failed at /private/skills/secret/SKILL.md (8192 bytes)")
+      )
       .mockResolvedValue(catalogSnapshot());
     const skillCatalog: SkillCatalogService = {
       refresh,
@@ -425,6 +427,10 @@ describe("chat runs", () => {
 
     const refreshFailure = await runRequest(app, session.id, providerId);
     expect(refreshFailure.status).toBe(500);
+    const refreshFailureBody = await refreshFailure.text();
+    expect(JSON.parse(refreshFailureBody)).toEqual({ error: "run_preparation_failed" });
+    expect(refreshFailureBody).not.toContain("/private/skills/secret/SKILL.md");
+    expect(refreshFailureBody).not.toContain("8192");
     expect(runCount(db)).toBe(0);
     expect(prepare).not.toHaveBeenCalled();
 
@@ -441,6 +447,11 @@ describe("chat runs", () => {
     } finally {
       consoleError.mockRestore();
     }
+
+    const retry = await runRequest(app, session.id, providerId);
+    await retry.text();
+    expect(retry.status).toBe(200);
+    expect(runCount(db)).toBe(1);
   });
 
   it("aborts on disconnect but keeps the session busy until execution settles", async () => {
@@ -681,10 +692,13 @@ describe("chat runs", () => {
   it("does not create a run and releases the lease when prepare fails", async () => {
     const { db, session, providerId } = setupRun();
     let shouldFail = true;
+    const start = vi.fn(() => preparedRun([]).start());
     const agentClient = {
       async prepare() {
-        if (shouldFail) throw new Error("prepare failed");
-        return preparedRun([]);
+        if (shouldFail) {
+          throw new Error("prepare failed at /private/sessions/secret.jsonl (4096 bytes)");
+        }
+        return { sessionFile: "/tmp/retry.jsonl", start };
       },
       resolveApproval() {
         return false;
@@ -697,13 +711,19 @@ describe("chat runs", () => {
 
     const failed = await runRequest(app, session.id, providerId);
     expect(failed.status).toBe(500);
+    const failureBody = await failed.text();
+    expect(JSON.parse(failureBody)).toEqual({ error: "run_preparation_failed" });
+    expect(failureBody).not.toContain("/private/sessions/secret.jsonl");
+    expect(failureBody).not.toContain("4096");
     expect(runCount(db)).toBe(0);
+    expect(start).not.toHaveBeenCalled();
 
     shouldFail = false;
     const retry = await runRequest(app, session.id, providerId);
     await retry.text();
     expect(retry.status).toBe(200);
     expect(runCount(db)).toBe(1);
+    expect(start).toHaveBeenCalledOnce();
   });
 
   it("does not retain a run or lease when run creation fails", async () => {

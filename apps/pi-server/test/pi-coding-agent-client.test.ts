@@ -1,7 +1,16 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { formatSkillsForPrompt, type Skill } from "@earendil-works/pi-coding-agent";
+import {
+  AuthStorage,
+  ModelRegistry,
+  SessionManager,
+  createAgentSession,
+  formatSkillsForPrompt,
+  type AgentSession,
+  type Skill
+} from "@earendil-works/pi-coding-agent";
+import { getModel } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import { PiCodingAgentClient } from "../src/agent/pi-coding-agent-client.js";
 import type { AgentRunEvent, AgentSessionEvent } from "../src/agent/agent-client.js";
@@ -104,6 +113,60 @@ describe("PiCodingAgentClient", () => {
     const promptFixture = formatSkillsForPrompt(loader.getSkills().skills);
     expect(promptFixture).toContain("<name>visible</name>");
     expect(promptFixture).not.toContain("<name>manual</name>");
+  });
+
+  it("assembles the real AgentSession system prompt from pinned visible skills only", async () => {
+    const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "pi-client-skills-"));
+    const authStorage = AuthStorage.create(path.join(workspaceRoot, "auth.json"));
+    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    const model = getModel("openai", "gpt-4.1");
+    if (!model) throw new Error("test model missing");
+    let createdSession: AgentSession | undefined;
+    const registry = new RealAgentSessionRegistry({
+      authStorage,
+      modelRegistry,
+      createSession: async (options) => {
+        const result = await createAgentSession(options);
+        createdSession = result.session;
+        return result;
+      },
+      sessionManagerFor: () => SessionManager.inMemory(workspaceRoot)
+    });
+    const skill = (name: string, disableModelInvocation: boolean): Skill => ({
+      name,
+      description: `${name} description`,
+      filePath: `/tmp/${name}/SKILL.md`,
+      baseDir: `/tmp/${name}`,
+      sourceInfo: {
+        path: `/tmp/${name}/SKILL.md`,
+        source: "local",
+        scope: "project",
+        origin: "test"
+      },
+      disableModelInvocation
+    });
+    const client = new PiCodingAgentClient(registry, () => model, new ApprovalGateway());
+
+    try {
+      await client.prepare({
+        sessionId: "real-skills",
+        workspaceRoot,
+        piProviderId: "openai",
+        modelId: "gpt-4.1",
+        runtimeSkills: {
+          effectiveRevision: "effective-real",
+          loadResult: {
+            skills: [skill("visible-real", false), skill("manual-real", true)],
+            diagnostics: []
+          }
+        }
+      });
+
+      expect(createdSession?.systemPrompt).toContain("<name>visible-real</name>");
+      expect(createdSession?.systemPrompt).not.toContain("<name>manual-real</name>");
+    } finally {
+      registry.disposeAll();
+    }
   });
 
   it("does not prompt during prepare", async () => {

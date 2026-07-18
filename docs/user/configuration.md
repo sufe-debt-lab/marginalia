@@ -90,8 +90,8 @@ Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现
 `effectiveRevision`。
 
 Run request body 最多 4 MiB；最多提交 16 个 raw Skill selections，且每个 name/path 分别最多 16 KiB
-UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB，
-全部 blocks 合计最多 2 MiB。
+UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB；
+全部 blocks 按实际 prompt prefix 序列化计量（包含 block 间空行），合计最多 2 MiB。
 
 ### Skills 管理 API 与当前可用性
 

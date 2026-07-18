@@ -228,7 +228,8 @@ Desktop 尚未调用这三个管理 route，Settings Skills 入口仍禁用，Co
 
 ## Agent session 与资源
 
-每个 run 先在 capability auth 后以 bounded stream 读取最多 4 MiB body，再在持有 per-session lease 后
+每个 run 先在 capability auth 后以 bounded stream 读取最多 4 MiB body；declared/actual oversize 和
+stream read failure 都会 best-effort cancel，reader 始终释放 lock。随后在持有 per-session lease 后
 刷新一次 workspace Catalog，即使请求没有显式 Skill selection也一样。`prepareSkillTurn()`
 （`apps/pi-server/src/skills/turn-preflight.ts#prepareSkillTurn`）先在去重前限制 16 个 raw selections 和
 每个 identity field 16 KiB UTF-8，再只使用该 immutable snapshot：显式选择按 canonical path 首次去重
@@ -236,6 +237,10 @@ Desktop 尚未调用这三个管理 route，Settings Skills 入口仍禁用，Co
 block 的 body 只来自 snapshot `rawContent`，不会重新读盘。Builder 与 Pi 0.75.5 使用相同的 newline 和
 frontmatter boundary，分别转义 XML attribute/text，并拒绝 XML 1.0 不支持的 control character。Prompt
 拼接顺序固定为 Skill blocks → user text → trailing `attached_files` envelope。
+
+显式 XML block 单项最多 512 KiB；全部 blocks 以 `blocks.join("\n\n")` 实际序列化后的 UTF-8 bytes
+（包含分隔符）计量，最多 2 MiB。Pre-create typed Skill failure 保留 409/413；其他内部失败统一返回
+`500 run_preparation_failed`，不暴露异常消息、内部 path 或 byte count。
 
 同一 preflight 还产出 `{ effectiveRevision, loadResult }` runtime snapshot。`PiCodingAgentClient.prepare()`
 为 run 构造 `DefaultResourceLoader`，保持 `noSkills: true` 以关闭磁盘 discovery，同时通过

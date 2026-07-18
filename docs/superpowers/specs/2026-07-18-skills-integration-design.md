@@ -387,7 +387,8 @@ SSE disconnect 只触发 `abort()`，不能直接释放 lease。Route 的 `final
 
 `reason` 为
 `missing | disabled | invalid | shadowed | name_mismatch | too_large | unsupported_identifier`。
-数量或总展开大小超限返回 `413 skill_payload_too_large`。这些错误全部发生在 `createRun` 前，
+数量或总展开大小超限返回 `413 skill_payload_too_large`；总展开按 `blocks.join("\n\n")` 的实际 UTF-8
+序列化计量，包含 block 间分隔符。这些错误全部发生在 `createRun` 前，
 因此数据库不留下虚假的 run，`AgentClient.prepare` 之后也不会调用 `start`。
 
 ## Pi runtime 集成
@@ -529,6 +530,7 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 | 同 session 已有 run                  | `409 session_busy`；不刷新 handle、不创建 run           |
 | 已选 Skill 失效                      | `409 skill_precondition_failed`；保留完整 Composer 状态 |
 | 数量或总展开内容超限                 | `413 skill_payload_too_large`；保留完整 Composer 状态   |
+| Run pre-create 非 typed 内部失败     | `500 run_preparation_failed`；不返回异常/path/bytes     |
 | 单目录/单文件读取失败                | 作为 candidate/catalog diagnostic；其余 Skills 继续可用 |
 | Catalog 整体无法建立                 | `500`；picker 不允许新增选择，Settings 展示可重试错误   |
 | 历史 envelope 无法严格解析           | Fail closed，原样展示对应文本，不改 session             |
@@ -536,7 +538,7 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 ## 资源与隔离边界
 
 - Run request 最多 4 MiB；最多 16 个 raw 显式 selections；每个 selection name/path 最多 16 KiB
-  UTF-8；单项 block 512 KiB、总展开 2 MiB、preview 256 KiB。
+  UTF-8；单项 block 512 KiB、含分隔符的实际序列化总展开 2 MiB、preview 256 KiB。
 - Catalog refresh 按 workspace 串行；snapshot 发布后不可变。
 - AgentSession 不共享可变 loader 实例；Settings refresh 不会在运行中热改资源。
 - Global-only 与各 workspace Catalog 分开缓存，workspace key 使用 canonical workspace root。
