@@ -159,6 +159,10 @@ approval 等既有 API 不带 bearer，保持原有认证边界。
 
 消息附件构建、agent preparation 或 `runs` 记录创建在 SSE/start 之前完成。其中任一步骤失败都
 返回 JSON 错误且不保留 `runs` 记录；`start()` 之后的失败则已有一条 run，并以 `failed` 终态完成。
+完整顺序为：capability auth → session/workspace lookup → request decode/validation（含 provider）→
+session lease → message build → agent preparation → `runs` insert → SSE/start。message build、
+preparation 和 run insert 都在 lease 内；request abort listener 保持到 execution `settled` 完成后
+才移除，因此事件已结束但 execution 仍在收尾时的 disconnect 仍会触发 abort 和审批取消。
 
 请求 Body：
 

@@ -573,8 +573,8 @@ export class SessionRunLeases {
 
 - [x] **Step 4: 重排 run handler**
 
-handler 顺序固定为：auth → session/workspace/provider → `tryAcquire` → parse/body/message build →
-`agentClient.prepare` → `createRun` → return SSE。SSE callback 中：
+handler 顺序固定为：auth → session/workspace → request decode/validation（含 provider）→
+`tryAcquire` → message build → `agentClient.prepare` → `createRun` → return SSE。SSE callback 中：
 
 ```ts
 let execution: AgentRunExecution | null = null;
@@ -592,9 +592,12 @@ try {
     execution.abort();
     throw failure;
   } finally {
-    request.signal.removeEventListener("abort", onAbort);
     if (request.signal.aborted) execution.abort();
-    await execution.settled;
+    try {
+      await execution.settled;
+    } finally {
+      request.signal.removeEventListener("abort", onAbort);
+    }
   }
 } finally {
   try {
@@ -640,12 +643,16 @@ git commit -m "feat(pi-server): serialize runs per session"
   消息构建与 agent preparation，并在 execution `settled` 后释放 lease。
 - RED：修正测试 fixture 后，prescribed focused command 出现 3 个失败文件和 4 个目标失败测试；
   缺失模块、同 session 重叠仍返回 200、prepare/message failure 仍发生在 SSE 内。
-- GREEN：focused lease/message/route/approval 共 27 tests 通过；pi-server typecheck、
+- GREEN：focused lease/message/route/approval 共 29 tests 通过；pi-server typecheck、
   `pnpm docs:check` 和最终 `pnpm verify` 全通过。
 - 正式文档：更新 `docs/developer/api.md` 和 `docs/developer/architecture.md`，记录
   `409 session_busy`、pre-create 边界、disconnect abort 和 settled 后释放语义。
 - Security review：disconnect/异常 abort 路径会在等待 `settled` 前取消挂起审批，避免审批等待
   阻止 settlement，final cleanup 保持幂等。
+- Formal review fixes：request abort listener 保持到 `execution.settled` 后才移除，覆盖事件流已结束
+  但 execution 仍在收尾的 disconnect；补充 events iterator exception 的 run/lease 直接回归测试，
+  并把 route 顺序澄清为 auth → session/workspace → request/provider validation → lease → message →
+  prepare → createRun → SSE/start。
 - 偏差与遗留：provider 必须从 request body 取得 ID，因此 body JSON 解析仍先于 provider 校验；
   provider 校验后才取得 lease，消息附件构建和 preparation 均在 lease 内。无其他设计偏差；
   跨进程恢复与 ChatView 卸载后的主动停止仍由既有 readiness issues 跟踪。

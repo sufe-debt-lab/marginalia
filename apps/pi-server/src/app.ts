@@ -440,9 +440,12 @@ export function createApp(options: AppOptions = {}) {
           onAbort();
           throw failure;
         } finally {
-          c.req.raw.signal.removeEventListener("abort", onAbort);
           if (c.req.raw.signal.aborted) onAbort();
-          await execution.settled;
+          try {
+            await execution.settled;
+          } finally {
+            c.req.raw.signal.removeEventListener("abort", onAbort);
+          }
         }
 
         if (!failed) {

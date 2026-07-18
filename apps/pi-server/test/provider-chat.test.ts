@@ -270,6 +270,114 @@ describe("chat runs", () => {
     expect(next.status).toBe(200);
   });
 
+  it("observes disconnects after events end while execution is still settling", async () => {
+    const { db, session, providerId } = setupRun();
+    const eventsEnded = deferred();
+    const settled = deferred();
+    const controller = new AbortController();
+    let abortCalls = 0;
+    let cancelPendingCalls = 0;
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/settlement-window.jsonl",
+          start() {
+            return {
+              events: (async function* () {
+                eventsEnded.resolve();
+              })(),
+              abort() {
+                abortCalls += 1;
+              },
+              settled: settled.promise
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        cancelPendingCalls += 1;
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const first = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: runHeaders,
+      body: JSON.stringify({ providerId, message: "hello" }),
+      signal: controller.signal
+    });
+    const firstBody = first.text().catch(() => "");
+    await eventsEnded.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    controller.abort();
+    expect(abortCalls).toBe(1);
+    expect(cancelPendingCalls).toBe(1);
+
+    const overlap = await runRequest(app, session.id, providerId);
+    expect(overlap.status).toBe(409);
+    expect(await overlap.json()).toEqual({ error: "session_busy" });
+
+    settled.resolve();
+    await firstBody;
+    const retry = await runRequest(app, session.id, providerId);
+    expect(retry.status).toBe(200);
+    await retry.text();
+  });
+
+  it("fails the run and retains the lease until settlement when events throw", async () => {
+    const { db, session, providerId } = setupRun();
+    const settled = deferred();
+    let abortCalls = 0;
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/event-failure.jsonl",
+          start() {
+            return {
+              events: (async function* () {
+                throw new Error("events failed");
+              })(),
+              abort() {
+                abortCalls += 1;
+              },
+              settled: settled.promise
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const first = await runRequest(app, session.id, providerId);
+    const firstBody = first.text();
+    await vi.waitFor(() => expect(abortCalls).toBe(1));
+    expect(runStatuses(db)).toEqual(["running"]);
+
+    const overlap = await runRequest(app, session.id, providerId);
+    expect(overlap.status).toBe(409);
+    expect(await overlap.json()).toEqual({ error: "session_busy" });
+
+    settled.resolve();
+    expect(await firstBody).toContain('"type":"run_failed"');
+    expect(abortCalls).toBe(1);
+    expect(runStatuses(db)).toEqual(["failed"]);
+
+    const retry = await runRequest(app, session.id, providerId);
+    expect(retry.status).toBe(200);
+    await retry.text();
+  });
+
   it("allows different sessions to run concurrently", async () => {
     const { db, workspace, session, providerId } = setupRun();
     const other = createSession(db, {
