@@ -46,13 +46,13 @@ Renderer 不直接加载 Node API。Workspace 文件和 LLM 请求主要经过 p
 
 main 进程通过 `ipcMain.handle` 暴露给 renderer 的桥接：
 
-| IPC 通道                    | 作用                          | 源码                                                      |
-| --------------------------- | ----------------------------- | --------------------------------------------------------- |
-| `pi-server:status`          | 查询 pi-server 当前状态       | `apps/desktop/electron/main.ts#pi-server:status`          |
-| `pi-server:restart`         | 杀掉并重启 pi-server          | `apps/desktop/electron/main.ts#pi-server:restart`         |
-| `workspace:pick-directory`  | 打开系统目录选择框            | `apps/desktop/electron/main.ts#workspace:pick-directory`  |
-| `marginalia:open-external`  | 在系统浏览器打开 HTTP(S) URL  | `apps/desktop/electron/main.ts#marginalia:open-external`  |
-| `marginalia:save-text-file` | 弹出保存对话框，写入 .md 文件 | `apps/desktop/electron/main.ts#marginalia:save-text-file` |
+| IPC 通道                    | 作用                                                                                                                                               | 源码                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `pi-server:status`          | 查询 pi-server 当前状态                                                                                                                            | `apps/desktop/electron/main.ts#pi-server:status`          |
+| `pi-server:restart`         | 杀掉并重启 pi-server                                                                                                                               | `apps/desktop/electron/main.ts#pi-server:restart`         |
+| `workspace:pick-directory`  | 打开系统目录选择框                                                                                                                                 | `apps/desktop/electron/main.ts#workspace:pick-directory`  |
+| `marginalia:open-external`  | 在系统浏览器打开 HTTP(S) URL                                                                                                                       | `apps/desktop/electron/main.ts#marginalia:open-external`  |
+| `marginalia:save-text-file` | 弹出保存对话框，写入 .md 文件；成功返回 `{ saved: true, path }`，取消返回 `{ saved: false }`，写盘失败返回 `{ saved: false, error }` 而不是 reject | `apps/desktop/electron/main.ts#marginalia:save-text-file` |
 
 这些通道经 `electron/preload.cts` 暴露到 renderer 的 `window.marginalia`。Main 对保存输入只做 TypeScript 断言，没有完整 runtime schema；扩展 IPC 时必须验证来自 renderer 的值。
 

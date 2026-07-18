@@ -71,6 +71,8 @@ pnpm docs:check   # 文档、API inventory、状态和生命周期检查
 pnpm verify       # docs + format + lint + typecheck + test + build
 ```
 
+`docs:check` 的 diff 模式（`-- --base <ref>`）对二进制变更安全：截图基线等 PNG 不会让检查崩溃，也不能借二进制绕过 changed-line 规则。
+
 单个包用 `--filter`：
 
 ```bash

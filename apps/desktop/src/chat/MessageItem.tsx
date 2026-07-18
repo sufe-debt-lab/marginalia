@@ -22,7 +22,16 @@ function slugifyHeading(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-const FALLBACK_SAVE_NAME = "marginalia-笔记.md";
+interface MessageItemProps {
+  entry: ChatEntry;
+  model?: string;
+  streaming?: boolean;
+  toolResultsByCallId?: ReadonlyMap<string, ChatToolResult>;
+  approvalsByToolCallId?: ReadonlyMap<string, Approval>;
+  toolProgressByCallId?: ReadonlyMap<string, string>;
+  onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
+  onSaveMessage?: (markdown: string, defaultName: string) => void;
+}
 
 function MessageItemImpl({
   entry,
@@ -33,16 +42,7 @@ function MessageItemImpl({
   toolProgressByCallId,
   onDecideApproval,
   onSaveMessage
-}: {
-  entry: ChatEntry;
-  model?: string;
-  streaming?: boolean;
-  toolResultsByCallId?: ReadonlyMap<string, ChatToolResult>;
-  approvalsByToolCallId?: ReadonlyMap<string, Approval>;
-  toolProgressByCallId?: ReadonlyMap<string, string>;
-  onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
-  onSaveMessage?: (markdown: string, defaultName: string) => void;
-}) {
+}: MessageItemProps) {
   const { t } = useTranslation();
   const message = entry.message;
   // Stateless (node-derived) heading ids, so memoizing on entry.id is safe —
@@ -71,12 +71,13 @@ function MessageItemImpl({
   // concatenated, tool calls and thinking excluded (stringifyContent skips them).
   const markdown = useMemo(() => stringifyContent(message.content), [message.content]);
 
-  // Default file name for the save-to-workspace dialog: slug of the first
-  // heading in the message, or a fixed fallback when there's no heading.
+  // Default file name for both export and save-to-workspace: slug of the first
+  // heading in the message, or a localized fallback when there's no heading.
+  const fallbackName = t("message.defaultSaveName");
   const saveDefaultName = useMemo(() => {
     const slug = headings[0] ? slugifyHeading(headings[0].text) : "";
-    return slug ? `${slug}.md` : FALLBACK_SAVE_NAME;
-  }, [headings]);
+    return slug ? `${slug}.md` : fallbackName;
+  }, [headings, fallbackName]);
 
   if (message.role === "user") {
     return (
@@ -98,10 +99,12 @@ function MessageItemImpl({
         {model && <span className="lowercase"> · {model}</span>}
       </span>
       {hasMarkdown && (
-        <div className="absolute -top-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        // focus-within keeps the bar visible while any of its buttons holds
+        // keyboard focus — hover-only visibility would hide the focused control.
+        <div className="absolute -top-2 right-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <MessageActions
             markdown={markdown}
-            defaultName={`marginalia-${entry.id.slice(0, 6)}.md`}
+            defaultName={saveDefaultName}
             onSaveToWorkspace={
               onSaveMessage ? () => onSaveMessage(markdown, saveDefaultName) : undefined
             }
@@ -148,4 +151,35 @@ function MessageItemImpl({
   );
 }
 
-export const MessageItem = memo(MessageItemImpl);
+/**
+ * Prop equality for the memoized stream item. The three lookup maps get fresh
+ * identities on every streaming event, but this message only cares about the
+ * entries for its own tool calls — comparing just those lets one call's live
+ * output re-render its own bubble without re-rendering the whole stream.
+ */
+export function areMessageItemPropsEqual(prev: MessageItemProps, next: MessageItemProps): boolean {
+  if (
+    prev.entry !== next.entry ||
+    prev.model !== next.model ||
+    prev.streaming !== next.streaming ||
+    prev.onDecideApproval !== next.onDecideApproval ||
+    prev.onSaveMessage !== next.onSaveMessage
+  ) {
+    return false;
+  }
+  const message = next.entry.message;
+  if (message.role !== "assistant") return true;
+  for (const part of message.content) {
+    if (part.type !== "toolCall") continue;
+    if (
+      prev.toolResultsByCallId?.get(part.id) !== next.toolResultsByCallId?.get(part.id) ||
+      prev.approvalsByToolCallId?.get(part.id) !== next.approvalsByToolCallId?.get(part.id) ||
+      prev.toolProgressByCallId?.get(part.id) !== next.toolProgressByCallId?.get(part.id)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export const MessageItem = memo(MessageItemImpl, areMessageItemPropsEqual);

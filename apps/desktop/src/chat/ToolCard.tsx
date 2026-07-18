@@ -14,6 +14,8 @@ import type { ChatToolCall, ChatToolResult } from "@marginalia/chat-core";
 import type { Approval } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
+import { copyText } from "@/lib/clipboard.js";
+import { useFlashStatus } from "@/lib/use-flash-status.js";
 import { ApprovalCard } from "./ApprovalCard.js";
 import { DiffView } from "./DiffView.js";
 
@@ -45,6 +47,7 @@ export function ToolCard({
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [copyStatus, flashCopy] = useFlashStatus();
   const status = !result ? "running" : result.isError ? "failed" : "done";
   const dot =
     approval?.status === "pending"
@@ -92,14 +95,14 @@ export function ToolCard({
         />
       </button>
       {!result && progress && (
-        <pre className="mono max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border-soft bg-surface px-3 py-2 text-[11.5px] text-text-muted">
+        <div className="mono max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border-soft bg-surface px-3 py-2 text-[11.5px] text-text-muted">
           {progress
             .split("\n")
             .slice(-8)
             .map((line, i) => (
               <div key={i}>{line}</div>
             ))}
-        </pre>
+        </div>
       )}
       {approval?.status === "pending" && (
         <ApprovalCard
@@ -122,7 +125,9 @@ export function ToolCard({
       )}
       {expanded && (
         <div className="flex flex-col gap-2 rounded-lg border border-border-soft bg-surface px-3 py-2">
-          {fileEditPatch ? (
+          {fileEditPatch && !result?.isError ? (
+            // A failed edit's diff is what pi *intended*, not what happened —
+            // show the arguments and let the error output below tell the story.
             <DiffView patch={fileEditPatch.patch} />
           ) : (
             <pre className="mono max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11.5px] text-text-muted">
@@ -133,10 +138,17 @@ export function ToolCard({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => void navigator.clipboard.writeText(full)}
-                className="absolute right-1 top-1 rounded border border-border-soft bg-surface px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface-3"
+                onClick={() => void copyText(full).then((ok) => flashCopy(ok ? "ok" : "err"))}
+                className={cn(
+                  "absolute right-1 top-1 rounded border border-border-soft bg-surface px-1.5 py-0.5 text-[11px] hover:bg-surface-3",
+                  copyStatus === "err" ? "text-danger" : "text-text-muted"
+                )}
               >
-                {t("common.copy")}
+                {copyStatus === "ok"
+                  ? t("common.copied")
+                  : copyStatus === "err"
+                    ? t("common.copyFailed")
+                    : t("common.copy")}
               </button>
               <pre className="mono max-h-64 overflow-auto whitespace-pre-wrap break-all text-[12px]">
                 {full}

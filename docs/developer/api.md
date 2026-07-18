@@ -247,6 +247,16 @@ schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置和 secret 边界
 
 > 说明：`ApiClient` 中存在 `getBranch()` / `GET /workspaces/:id/branch`，但该路由在当前 pi-server 中**尚未实现**；客户端在请求失败时静默返回 `null`，对应版本快照功能仍属路线图（见[术语](../user/concepts.md)）。
 
+## 桌面 IPC 桥（renderer ↔ Electron main）
+
+HTTP API 之外，renderer 通过 `window.marginalia`（`apps/desktop/electron/preload.cts`）调用少量 Electron main 能力。通道清单见[系统架构](./architecture.md)；对 renderer 有契约意义的返回形状：
+
+| 通道                        | 结果契约                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `marginalia:save-text-file` | 成功 `{ saved: true, path }`；用户取消 `{ saved: false }`；写盘失败 `{ saved: false, error }`，不 reject |
+
+调用方按结果对象渲染反馈（见 `apps/desktop/src/lib/save-file.ts`）；IPC promise 拒绝不属于该契约。
+
 ## 相关文档
 
 - 数据流与事件转发设计：[系统架构](./architecture.md)

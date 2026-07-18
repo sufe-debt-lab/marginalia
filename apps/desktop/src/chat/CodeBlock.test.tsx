@@ -14,4 +14,15 @@ describe("CodeBlock", () => {
     expect(await screen.findByText(/copied|已复制/i)).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
+
+  it("shows a failure label instead of crashing when the clipboard is unavailable", async () => {
+    const writeText = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<CodeBlock code="x" language="ts" />);
+    await userEvent.click(screen.getByRole("button", { name: /copy|复制/i }));
+    expect(await screen.findByText(/copy failed|复制失败/i)).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
 });

@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { diffPngBuffers } from "./lib/image-diff.mjs";
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "../..");
 const outRoot = path.join(repoRoot, "output/desktop-screenshots");
@@ -232,6 +233,29 @@ async function apiJson(baseUrl, endpoint, init = {}) {
   return response.json();
 }
 
+// The one provider fixture every local scenario renders: its name/defaultModel
+// are what the composer chip and assistant header show, so scenarios must
+// provision the exact same shape whether they run solo or after another
+// scenario in the shared harness pass (create-or-reuse keeps reruns and the
+// shared-DB isolated passes from stacking duplicates).
+const FIXTURE_PROVIDER = {
+  name: "OpenAI",
+  apiKey: "sk-screenshot-fixture",
+  defaultModel: "gpt-5.1"
+};
+
+export async function ensureFixtureProvider(apiBase, request = apiJson) {
+  const providers = await request(apiBase, "/providers");
+  const existing = (Array.isArray(providers) ? providers : []).find(
+    (provider) => provider?.name === FIXTURE_PROVIDER.name
+  );
+  if (existing) return existing;
+  return request(apiBase, "/providers", {
+    method: "POST",
+    body: JSON.stringify(FIXTURE_PROVIDER)
+  });
+}
+
 async function waitForMain(page) {
   await page.waitForLoadState("domcontentloaded");
   await page.getByRole("main").waitFor({ timeout: 30000 });
@@ -343,6 +367,25 @@ async function startHarness(extraEnv = {}) {
 
 const STABLE_RETRY_LIMIT = 10;
 const STABLE_RETRY_DELAY_MS = 200;
+// Same notion of "different" as compare-screenshots' gate: pixelmatch at this
+// threshold ignores the compositor's sub-visible raster noise (antialiased
+// edges re-rasterizing ±1 gray level between captured frames) that byte
+// equality can never converge on, while real content changes still fail.
+const STABLE_PIXEL_THRESHOLD = 0.1;
+
+// Decide whether two consecutive captures are "the same frame". Byte equality
+// is the fast path; otherwise decode and diff. Undecodable or size-mismatched
+// buffers report unstable (diffPixels: null) instead of throwing so the retry
+// loop keeps polling.
+export function assessFramePair(previous, next) {
+  if (next.equals(previous)) return { stable: true, diffPixels: 0 };
+  try {
+    const { diffPixels } = diffPngBuffers(previous, next, { threshold: STABLE_PIXEL_THRESHOLD });
+    return { stable: diffPixels === 0, diffPixels };
+  } catch {
+    return { stable: false, diffPixels: null };
+  }
+}
 
 async function captureStablePng(page) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -355,16 +398,18 @@ async function captureStablePng(page) {
       })
   );
   let previous = await page.screenshot({ fullPage: false, scale: "css" });
-  let last = previous;
+  let lastDiffPixels = null;
   for (let attempt = 0; attempt < STABLE_RETRY_LIMIT; attempt += 1) {
     await page.waitForTimeout(STABLE_RETRY_DELAY_MS);
-    last = await page.screenshot({ fullPage: false, scale: "css" });
-    if (last.equals(previous)) return last;
-    previous = last;
+    const next = await page.screenshot({ fullPage: false, scale: "css" });
+    const { stable, diffPixels } = assessFramePair(previous, next);
+    if (stable) return next;
+    lastDiffPixels = diffPixels;
+    previous = next;
   }
   throw new Error(
     `screenshot did not become stable after ${STABLE_RETRY_LIMIT} retries ` +
-      `(last two frames: ${previous.length}B vs ${last.length}B); ` +
+      `(last pair differed by ${lastDiffPixels ?? "unmeasurable"} pixels above threshold); ` +
       "check for animation or async content not covered by data-motion=off"
   );
 }
@@ -485,6 +530,18 @@ async function writeSeedWorkspace() {
 
 async function ensureSeededWorkspace(ctx) {
   if (ctx.seed) return ctx.seed;
+
+  // Isolated passes run with clean=false and inherit the shared pass's
+  // database, so the fixture must be create-or-reuse — a second
+  // "screenshot-fixture" workspace would double the sidebar in captures.
+  const existing = (await apiJson(ctx.apiBase, "/workspaces")).find(
+    (workspace) => workspace?.name === "screenshot-fixture"
+  );
+  if (existing) {
+    await apiJson(ctx.apiBase, `/workspaces/${existing.id}/open`, { method: "PATCH" });
+    ctx.seed = { workspace: existing, sessions: [] };
+    return ctx.seed;
+  }
 
   const seedRoot = await writeSeedWorkspace();
   const workspace = await apiJson(ctx.apiBase, "/workspaces", {
@@ -713,6 +770,9 @@ async function scenarioCoreUi(ctx) {
 
 async function scenarioSeededWorkspace(ctx) {
   await ensureSeededWorkspace(ctx);
+  // Solo runs and the shared default pass must render the same composer state
+  // (provider chip + assistant model label) — never piggyback on core-ui's.
+  await ensureFixtureProvider(ctx.apiBase);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
@@ -816,19 +876,11 @@ async function scenarioSeededWorkspace(ctx) {
 // apps/pi-server/src/agent/scripted-fake-agent.ts.
 async function scenarioApprovalFlow(ctx) {
   await ensureSeededWorkspace(ctx);
-  // This scenario runs in its own isolated harness pass (see scenario.env), so —
-  // unlike seeded-workspace, which piggybacks on the provider core-ui's shared
-  // pass already added — it can't assume one exists. The composer refuses to
-  // send without a provider selected; the key/model here are never used since
-  // the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never calls a real model.
-  await apiJson(ctx.apiBase, "/providers", {
-    method: "POST",
-    body: JSON.stringify({
-      name: "OpenAI",
-      apiKey: "sk-approval-flow-fixture",
-      defaultModel: "gpt-5.1"
-    })
-  });
+  // The composer refuses to send without a provider selected; the key/model are
+  // never used since the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never
+  // calls a real model. Create-or-reuse also keeps this isolated pass from
+  // stacking a duplicate when it inherits the shared pass's database.
+  await ensureFixtureProvider(ctx.apiBase);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);

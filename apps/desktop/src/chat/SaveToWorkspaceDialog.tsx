@@ -94,6 +94,13 @@ export function SaveToWorkspaceDialog({
               disabled={saving}
               autoFocus
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                // AlertDialog has no form element, so Enter must submit explicitly.
+                if (e.key === "Enter" && !saving && name.trim()) {
+                  e.preventDefault();
+                  void handleSave();
+                }
+              }}
             />
           </div>
         )}

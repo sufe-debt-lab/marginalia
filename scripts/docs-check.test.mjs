@@ -569,6 +569,39 @@ test("changed-line rules cannot be bypassed by making a tracked source file bina
   });
 });
 
+test("invalid UTF-8 binaries (e.g. PNG baselines) do not crash the diff gate and still cannot bypass changed-line rules", () => {
+  fixture((root) => {
+    initGit(root);
+    write(root, "apps/desktop/baseline.png", "placeholder\n");
+    write(root, "apps/server/app.ts", "export const value = 1;\n");
+    const base = commitAll(root, "base");
+    // A real PNG-style payload: invalid UTF-8 lead bytes around ASCII content.
+    writeFileSync(
+      path.join(root, "apps/desktop/baseline.png"),
+      Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe]),
+        Buffer.from("\nprovider\n"),
+        Buffer.from([0xc3, 0x28, 0x00, 0xa0])
+      ])
+    );
+    const diff = readGitDiff(root, base);
+    const result = evaluateDocsImpact({
+      rules: [
+        {
+          id: "binary-provider-lines",
+          paths: ["apps/desktop/baseline.png"],
+          changedLinePattern: "provider",
+          requireAll: ["docs/user/configuration.md"]
+        }
+      ],
+      changes: diff.changes,
+      changedLines: diff.changedLines,
+      declaration: null
+    });
+    assert.match(result.errors.join("\n"), /binary-provider-lines/);
+  });
+});
+
 test("changed-line parsing preserves source lines that begin with ++ or --", () => {
   fixture((root) => {
     initGit(root);

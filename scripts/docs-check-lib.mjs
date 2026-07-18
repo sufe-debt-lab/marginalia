@@ -173,6 +173,14 @@ function decodeUtf8(buffer, label) {
   }
 }
 
+// Lossy decode reserved for changed-line extraction: binary changes (PNG
+// baselines, icons) must not crash the diff gate, and replacement characters
+// only mangle invalid sequences — any ASCII content a changedLinePattern
+// could match still decodes intact, so binaries cannot bypass those rules.
+function decodeUtf8Lossy(buffer) {
+  return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+}
+
 function read(root, relativePath) {
   return decodeUtf8(readRepoBuffer(root, relativePath), relativePath);
 }
@@ -1223,17 +1231,19 @@ export function readGitDiff(repoRoot, base) {
       const paths = [...new Set([change.oldPath, change.path])];
       const lines = [];
       for (const file of paths) {
-        const diff = execGit(repoRoot, [
-          "diff",
-          "--unified=0",
-          "--no-color",
-          "--no-ext-diff",
-          "--no-textconv",
-          "--text",
-          ...segment.diffArgs,
-          "--",
-          file
-        ]);
+        const diff = decodeUtf8Lossy(
+          execGitBuffer(repoRoot, [
+            "diff",
+            "--unified=0",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--text",
+            ...segment.diffArgs,
+            "--",
+            file
+          ])
+        );
         lines.push(...addedAndRemovedLines(diff));
       }
       addChangedLines(change.path, lines);
@@ -1243,7 +1253,10 @@ export function readGitDiff(repoRoot, base) {
   for (const file of untracked) {
     addChangedLines(
       file,
-      read(repoRoot, file).replaceAll("\r\n", "\n").split("\n").filter(Boolean)
+      decodeUtf8Lossy(readRepoBuffer(repoRoot, file))
+        .replaceAll("\r\n", "\n")
+        .split("\n")
+        .filter(Boolean)
     );
   }
   const changedLines = new Map();

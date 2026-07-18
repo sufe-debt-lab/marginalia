@@ -26,7 +26,8 @@ export const en = {
     delete: "Delete",
     cancel: "Cancel",
     copy: "Copy",
-    copied: "Copied"
+    copied: "Copied",
+    copyFailed: "Copy failed"
   },
   newThread: {
     title: "What should we build?",
@@ -188,7 +189,10 @@ export const en = {
   message: {
     copyAll: "Copy full text",
     exportMd: "Export as .md",
-    saveToWorkspace: "Save to workspace"
+    exported: "Exported",
+    exportFailed: "Export failed",
+    saveToWorkspace: "Save to workspace",
+    defaultSaveName: "marginalia-notes.md"
   },
   saveDialog: {
     title: "Save to workspace",
@@ -232,7 +236,8 @@ export const zh = {
     delete: "删除",
     cancel: "取消",
     copy: "复制",
-    copied: "已复制"
+    copied: "已复制",
+    copyFailed: "复制失败"
   },
   newThread: {
     title: "我们要做点什么？",
@@ -392,7 +397,10 @@ export const zh = {
   message: {
     copyAll: "复制全文",
     exportMd: "导出 .md",
-    saveToWorkspace: "存入工作区"
+    exported: "已导出",
+    exportFailed: "导出失败",
+    saveToWorkspace: "存入工作区",
+    defaultSaveName: "marginalia-笔记.md"
   },
   saveDialog: {
     title: "存入工作区",

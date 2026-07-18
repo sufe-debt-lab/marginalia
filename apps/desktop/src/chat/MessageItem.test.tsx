@@ -1,7 +1,10 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
-import { MessageItem } from "./MessageItem.js";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ChatAssistantMessage, ChatEntry, ChatToolResult } from "@marginalia/chat-core";
+import { areMessageItemPropsEqual, MessageItem } from "./MessageItem.js";
+
+afterEach(() => cleanup());
 
 const usage = {
   input: 0,
@@ -75,5 +78,96 @@ describe("MessageItem", () => {
     expect(screen.getByText("read")).toBeInTheDocument();
     expect(screen.getByText("package content")).toBeInTheDocument();
     expect(screen.getByText("after")).toBeInTheDocument();
+  });
+});
+
+function assistantEntry(content: ChatAssistantMessage["content"], id = "m1"): ChatEntry {
+  return {
+    id,
+    message: {
+      role: "assistant",
+      content,
+      api: "marginalia-stream",
+      provider: "p",
+      model: "m",
+      usage,
+      stopReason: "stop",
+      timestamp: 1
+    }
+  };
+}
+
+describe("areMessageItemPropsEqual", () => {
+  const entry = assistantEntry([
+    { type: "toolCall", id: "t1", name: "bash", arguments: { command: "x" } }
+  ]);
+  const base = { entry, model: "m", streaming: false };
+
+  it("skips re-render when only another message's progress changes", () => {
+    const prev = { ...base, toolProgressByCallId: new Map([["other", "a"]]) };
+    const next = { ...base, toolProgressByCallId: new Map([["other", "ab"]]) };
+    expect(areMessageItemPropsEqual(prev, next)).toBe(true);
+  });
+
+  it("re-renders when its own tool call's progress changes", () => {
+    const prev = { ...base, toolProgressByCallId: new Map([["t1", "a"]]) };
+    const next = { ...base, toolProgressByCallId: new Map([["t1", "ab"]]) };
+    expect(areMessageItemPropsEqual(prev, next)).toBe(false);
+  });
+
+  it("treats fresh map identities with identical relevant values as equal", () => {
+    const approval = {
+      id: "ap-1",
+      toolCallId: "t1",
+      toolName: "bash",
+      kind: "command" as const,
+      status: "pending" as const,
+      payload: { kind: "command" as const, command: "x", cwd: "/ws" }
+    };
+    const prev = { ...base, approvalsByToolCallId: new Map([["t1", approval]]) };
+    const next = { ...base, approvalsByToolCallId: new Map([["t1", approval]]) };
+    expect(areMessageItemPropsEqual(prev, next)).toBe(true);
+  });
+
+  it("always re-renders when the entry object itself changes", () => {
+    const next = {
+      ...base,
+      entry: assistantEntry([{ type: "toolCall", id: "t1", name: "bash", arguments: {} }])
+    };
+    expect(areMessageItemPropsEqual(base, next)).toBe(false);
+  });
+});
+
+describe("MessageItem hover actions", () => {
+  const textEntry = assistantEntry([{ type: "text", text: "# 报告 Summary\n\n正文" }], "abcdef12");
+
+  it("keeps the action bar reachable for keyboard focus", () => {
+    render(<MessageItem entry={textEntry} />);
+    const bar = screen
+      .getByRole("button", { name: /copy full text|复制全文/i })
+      .closest("div.absolute");
+    expect(bar?.className).toMatch(/focus-within:opacity-100/);
+  });
+
+  it("exports with the heading-slug default name, same as save-to-workspace", async () => {
+    const saveTextFile = vi.fn(async () => ({ saved: true, path: "/tmp/x" }));
+    vi.stubGlobal("window", Object.assign(window, { marginalia: { saveTextFile } }));
+    render(<MessageItem entry={textEntry} />);
+    await userEvent.click(screen.getByRole("button", { name: /export|导出/i }));
+    expect(saveTextFile).toHaveBeenCalledWith({
+      defaultName: "报告-summary.md",
+      content: "# 报告 Summary\n\n正文"
+    });
+  });
+
+  it("falls back to a localized default name when there is no heading", async () => {
+    const saveTextFile = vi.fn(async (_input: { defaultName: string; content: string }) => ({
+      saved: true,
+      path: "/tmp/x"
+    }));
+    vi.stubGlobal("window", Object.assign(window, { marginalia: { saveTextFile } }));
+    render(<MessageItem entry={assistantEntry([{ type: "text", text: "plain" }], "zz")} />);
+    await userEvent.click(screen.getByRole("button", { name: /export|导出/i }));
+    expect(saveTextFile.mock.calls[0]![0].defaultName).toMatch(/^marginalia-(notes|笔记)\.md$/);
   });
 });

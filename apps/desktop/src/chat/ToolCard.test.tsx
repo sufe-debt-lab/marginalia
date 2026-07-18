@@ -45,6 +45,19 @@ describe("ToolCard", () => {
     expect(screen.getByText(long)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /copy|复制/i }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(long);
+    expect(await screen.findByText(/copied|已复制/i)).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows a copy failure label instead of crashing when the clipboard is unavailable", async () => {
+    const writeText = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<ToolCard call={call} result={result("out")} />);
+    await userEvent.click(screen.getByRole("button", { name: /bash/ }));
+    await userEvent.click(screen.getByRole("button", { name: /copy|复制/i }));
+    expect(await screen.findByText(/copy failed|复制失败/i)).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 
@@ -197,6 +210,44 @@ describe("ToolCard", () => {
       expect(screen.getByText("+new")).toBeInTheDocument();
       // JSON args should not be rendered
       expect(screen.queryByText(/"path"/)).not.toBeInTheDocument();
+    });
+
+    it("shows the error output instead of a stale diff when the approved edit fails", async () => {
+      const editCall = {
+        type: "toolCall" as const,
+        id: "t2",
+        name: "edit",
+        arguments: { path: "src/foo.ts" }
+      };
+      const approval: Approval = {
+        id: "ap-2",
+        toolCallId: "t2",
+        toolName: "edit",
+        kind: "file_edit",
+        status: "approved",
+        payload: {
+          kind: "file_edit",
+          path: "src/foo.ts",
+          mode: "edit",
+          patch: "@@ -1 +1 @@\n-old\n+new\n",
+          additions: 1,
+          deletions: 1,
+          exact: true
+        }
+      };
+      const failed: ChatToolResult = {
+        role: "toolResult",
+        toolCallId: "t2",
+        toolName: "edit",
+        content: [{ type: "text", text: "edit exploded" }],
+        isError: true,
+        timestamp: 1
+      };
+      render(<ToolCard call={editCall} approval={approval} result={failed} />);
+      await userEvent.click(screen.getByRole("button", { name: /edit/ }));
+      expect(screen.queryByText("+new")).not.toBeInTheDocument();
+      // Appears in the collapsed summary row and again in the expanded panel.
+      expect(screen.getAllByText("edit exploded").length).toBeGreaterThan(0);
     });
   });
 });

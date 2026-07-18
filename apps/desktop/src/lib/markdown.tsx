@@ -3,6 +3,25 @@ import type { Element } from "hast";
 import { CodeBlock } from "../chat/CodeBlock.js";
 import { isWebUrl, openExternal } from "./open-external.js";
 
+/**
+ * Pull the raw code text and language out of the hast `<pre><code>` pair so the
+ * `pre` component can replace the whole block with CodeBlock. Reading the hast
+ * node (not rendered children) keeps this independent of the `code` component.
+ */
+function fencedCode(node: Element | undefined): { code: string; language: string } | null {
+  const child = node?.children[0];
+  if (!child || child.type !== "element" || child.tagName !== "code") return null;
+  const classes = child.properties.className;
+  const classText = Array.isArray(classes)
+    ? classes.join(" ")
+    : typeof classes === "string"
+      ? classes
+      : "";
+  const language = /language-([\w+.-]+)/.exec(classText)?.[1] ?? "text";
+  const code = child.children.map((c) => (c.type === "text" ? c.value : "")).join("");
+  return { code: code.replace(/\n$/, ""), language };
+}
+
 export function createMarkdownComponents(prefix?: string): Components {
   const headingId = (node: Element | undefined): string | undefined => {
     if (!prefix) return undefined;
@@ -18,32 +37,34 @@ export function createMarkdownComponents(prefix?: string): Components {
     );
 
   return {
-    code({ className, children, ...props }) {
-      const raw = String(children).replace(/\n$/, "");
-      const match = /language-(\w+)/.exec(className || "");
-      if (!match) {
-        return (
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props}>
-            {raw}
-          </code>
-        );
-      }
-      const language = match[1]!;
-      return <CodeBlock code={raw} language={language} />;
+    // Fenced blocks are handled here (not in `code`) so CodeBlock's <div> never
+    // nests inside react-markdown's default <pre> — with or without a language tag.
+    pre({ node, children }) {
+      const fenced = fencedCode(node);
+      if (!fenced) return <pre>{children}</pre>;
+      return <CodeBlock code={fenced.code} language={fenced.language} />;
+    },
+    code({ children, ...props }) {
+      return (
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props}>
+          {String(children).replace(/\n$/, "")}
+        </code>
+      );
     },
     a({ children, href, ...rest }) {
+      // Only real web links leave the app (system browser + new-window
+      // semantics); anchors, mailto:, and relative paths keep their default
+      // in-page behavior and must not get target="_blank".
+      const web = Boolean(href) && isWebUrl(href!);
       return (
         <a
           className="text-primary underline"
           href={href}
-          target="_blank"
-          rel="noreferrer"
+          {...(web ? { target: "_blank", rel: "noreferrer" } : {})}
           onClick={(event) => {
-            // Only redirect real web links to the system browser; let anchors,
-            // mailto:, and relative paths keep their default behavior.
-            if (!href || !isWebUrl(href)) return;
+            if (!web) return;
             event.preventDefault();
-            openExternal(href);
+            openExternal(href!);
           }}
           {...rest}
         >

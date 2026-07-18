@@ -16,4 +16,9 @@ describe("marginalia:save-text-file IPC handler (electron main)", () => {
   it("opens a native save dialog", () => {
     expect(mainSource).toContain("showSaveDialog");
   });
+
+  it("returns a failure result instead of rejecting the IPC call when the write fails", () => {
+    const handler = mainSource.slice(mainSource.indexOf("marginalia:save-text-file"));
+    expect(handler).toMatch(/catch[\s\S]{0,400}saved:\s*false/);
+  });
 });

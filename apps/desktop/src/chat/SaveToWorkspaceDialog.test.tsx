@@ -16,6 +16,13 @@ describe("SaveToWorkspaceDialog", () => {
     expect(onSave).toHaveBeenCalledWith("notes/b.md", false);
   });
 
+  it("submits on Enter in the file name input", async () => {
+    const onSave = vi.fn(async () => "saved" as const);
+    render(<SaveToWorkspaceDialog open defaultName="a.md" onCancel={() => {}} onSave={onSave} />);
+    await userEvent.type(screen.getByRole("textbox"), "{enter}");
+    expect(onSave).toHaveBeenCalledWith("a.md", false);
+  });
+
   it("asks before overwriting an existing file", async () => {
     const onSave = vi.fn(
       async (_n: string, overwrite: boolean) =>

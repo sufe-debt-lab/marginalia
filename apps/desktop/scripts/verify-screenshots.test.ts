@@ -1,9 +1,28 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { PNG } from "pngjs";
 
 // @ts-expect-error -- plain ESM script without type declarations
-import { assertScreenshotMotionOff, parseArgs, SCENARIOS } from "./verify-screenshots.mjs";
+import {
+  assertScreenshotMotionOff,
+  assessFramePair,
+  ensureFixtureProvider,
+  parseArgs,
+  SCENARIOS
+} from "./verify-screenshots.mjs";
+
+/** A solid-gray PNG buffer with optional per-pixel overrides for noise/regions. */
+function grayPng(width: number, height: number, overrides: Array<[number, number, number]> = []) {
+  const png = new PNG({ width, height });
+  png.data.fill(200);
+  for (let i = 3; i < png.data.length; i += 4) png.data[i] = 255;
+  for (const [x, y, value] of overrides) {
+    const k = (y * width + x) * 4;
+    png.data[k] = png.data[k + 1] = png.data[k + 2] = value;
+  }
+  return PNG.sync.write(png);
+}
 
 const DEFAULTS = ["core-ui", "seeded-workspace", "approval-flow"];
 
@@ -104,6 +123,105 @@ describe("verify-screenshots parseArgs", () => {
     expect(source.indexOf("waitForDocumentPanelReady(ctx.page)")).toBeLessThan(
       source.indexOf('capture(ctx, "seeded-workspace", "chat-seeded-session")')
     );
+  });
+});
+
+describe("assessFramePair capture stability", () => {
+  it("treats byte-identical frames as stable", () => {
+    const frame = grayPng(20, 20);
+    expect(assessFramePair(frame, Buffer.from(frame))).toEqual({ stable: true, diffPixels: 0 });
+  });
+
+  it("tolerates sub-threshold compositor raster noise (±1 gray level)", () => {
+    // The real-world signature this guards: identical page content whose
+    // antialiased edges re-rasterize a hair differently per captured frame.
+    const a = grayPng(20, 20, [[10, 10, 245]]);
+    const b = grayPng(20, 20, [[10, 10, 246]]);
+    expect(a.equals(b)).toBe(false);
+    expect(assessFramePair(a, b)).toEqual({ stable: true, diffPixels: 0 });
+  });
+
+  it("still rejects real content changes", () => {
+    const a = grayPng(20, 20);
+    const b = grayPng(20, 20, [
+      [5, 5, 0],
+      [6, 5, 0],
+      [7, 5, 0]
+    ]);
+    const result = assessFramePair(a, b);
+    expect(result.stable).toBe(false);
+    expect(result.diffPixels).toBeGreaterThan(0);
+  });
+
+  it("treats undecodable or mismatched captures as unstable instead of throwing", () => {
+    const result = assessFramePair(grayPng(20, 20), grayPng(10, 10));
+    expect(result.stable).toBe(false);
+    expect(result.diffPixels).toBeNull();
+  });
+});
+
+describe("ensureFixtureProvider", () => {
+  it("reuses an existing fixture provider instead of creating a duplicate", async () => {
+    const existing = { id: "p1", name: "OpenAI", defaultModel: "gpt-5.1" };
+    const request = vi.fn(async () => [existing]);
+    await expect(ensureFixtureProvider("http://x", request)).resolves.toEqual(existing);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith("http://x", "/providers");
+  });
+
+  it("creates the fixture provider when none exists", async () => {
+    const request = vi.fn(async (_base: string, _endpoint: string, init?: { method?: string }) =>
+      init?.method === "POST" ? { id: "p2", name: "OpenAI" } : []
+    );
+    await ensureFixtureProvider("http://x", request);
+    expect(request).toHaveBeenCalledTimes(2);
+    const [, , init] = request.mock.calls[1] as [string, string, { method: string; body: string }];
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body) as { name: string; defaultModel: string };
+    expect(body.name).toBe("OpenAI");
+    expect(body.defaultModel).toBe("gpt-5.1");
+  });
+});
+
+describe("scenario hermeticity (source contracts)", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
+    "utf8"
+  );
+
+  it("seeded-workspace provisions its own provider before its first capture", () => {
+    // Solo runs and the shared default pass must render the same composer state;
+    // piggybacking on core-ui's provider made baselines depend on run grouping.
+    const provision = source.indexOf("ensureFixtureProvider(ctx.apiBase)");
+    expect(provision).toBeGreaterThan(-1);
+    expect(provision).toBeLessThan(
+      source.indexOf('capture(ctx, "seeded-workspace", "recent-threads")')
+    );
+  });
+
+  it("approval-flow shares the same idempotent provisioning helper", () => {
+    const scenarioStart = source.indexOf("async function scenarioApprovalFlow");
+    const scenarioEnd = source.indexOf("async function scenarioMinimaxLive");
+    const body = source.slice(scenarioStart, scenarioEnd);
+    expect(body).toContain("ensureFixtureProvider(ctx.apiBase)");
+  });
+
+  it("capture stability uses the tolerant frame comparison, not raw byte equality", () => {
+    expect(source).toContain("assessFramePair");
+  });
+
+  it("seeded workspace fixture is create-or-reuse across shared-database passes", () => {
+    // Isolated passes run with clean=false and inherit the shared pass's
+    // database; blindly POSTing a second "screenshot-fixture" workspace
+    // doubles the sidebar in their captures.
+    const start = source.indexOf("async function ensureSeededWorkspace");
+    const end = source.indexOf("async function scenarioCoreUi");
+    const body = source.slice(start, end);
+    const listCall = body.indexOf('"/workspaces")');
+    const createCall = body.indexOf('"/workspaces", {');
+    expect(listCall).toBeGreaterThan(-1);
+    expect(createCall).toBeGreaterThan(-1);
+    expect(listCall).toBeLessThan(createCall);
   });
 });
 

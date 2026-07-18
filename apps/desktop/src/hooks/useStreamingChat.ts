@@ -138,6 +138,10 @@ function toolResultEntryFromMessage(
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
   const bufferRef = useRef("");
+  // Latest cumulative live-output snapshot per running toolCallId. Sharing the
+  // rAF flush with text deltas caps tool progress at one state update per
+  // frame — high-frequency bash output must not re-render the stream per event.
+  const progressRef = useRef(new Map<string, string>());
   const rafRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -147,6 +151,11 @@ export function useStreamingChat(opts: Options) {
       const text = bufferRef.current;
       bufferRef.current = "";
       opts.onAssistantDelta(text);
+    }
+    if (progressRef.current.size > 0) {
+      const snapshots = progressRef.current;
+      progressRef.current = new Map();
+      for (const [toolCallId, output] of snapshots) opts.onToolProgress?.(toolCallId, output);
     }
     rafRef.current = null;
   }, [opts]);
@@ -164,6 +173,7 @@ export function useStreamingChat(opts: Options) {
       abortRef.current = controller;
       sendingRef.current = true;
       setSending(true);
+      progressRef.current = new Map();
       const stamp = Date.now();
       let turn = 0;
       let currentAssistantId: string | null = null;
@@ -193,6 +203,7 @@ export function useStreamingChat(opts: Options) {
               needNewAssistant = true;
               startAssistant(isAssistantMessage(pi.message) ? pi.message : undefined);
             } else if (isToolResultMessage(pi.message)) {
+              progressRef.current.delete(pi.message.toolCallId);
               opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
             }
             break;
@@ -212,6 +223,7 @@ export function useStreamingChat(opts: Options) {
             flush();
             if (isAssistantMessage(pi.message)) ensureAssistant(pi.message);
             if (isToolResultMessage(pi.message)) {
+              progressRef.current.delete(pi.message.toolCallId);
               opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
             }
             if (isRecord(pi.message) && pi.message.stopReason === "error") {
@@ -236,13 +248,22 @@ export function useStreamingChat(opts: Options) {
             }
             if (pi.toolCallId) {
               const output = fullResultText(pi.partialResult as never);
-              if (output !== undefined) opts.onToolProgress?.(pi.toolCallId, output);
+              if (output !== undefined) {
+                progressRef.current.set(pi.toolCallId, output);
+                schedule();
+              }
             }
             break;
           }
           case "tool_execution_end": {
             const entry = toolResultEntryFromEvent(pi, stamp);
-            if (entry) opts.onToolResultUpsert?.(entry);
+            if (entry) {
+              // The final result supersedes any buffered snapshot; dropping it
+              // here keeps a late flush from resurrecting a finished call's
+              // live-output area.
+              progressRef.current.delete(entry.message.toolCallId);
+              opts.onToolResultUpsert?.(entry);
+            }
             break;
           }
         }

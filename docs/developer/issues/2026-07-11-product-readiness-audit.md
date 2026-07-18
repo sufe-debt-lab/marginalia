@@ -38,7 +38,7 @@ owner: repository-maintainers
 | P1-DATA-001       | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`                                                                                               |
 | P1-UX-001         | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src/chat/MessageStream.tsx`、`apps/desktop/src/chat/Composer/Composer.tsx`、`apps/desktop/src/settings/GeneralPane.tsx` |
 | P1-MESSAGE-001    | P1       | open        | 2026-07-11    | post-M0                    | `docs/internal/plans/2026-07-10-message-stream.md`                                                                                    |
-| P1-QUALITY-001    | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/scripts/compare-screenshots.mjs`、2026-07-11 视觉审计                                                                   |
+| P1-QUALITY-001    | P1       | open        | 2026-07-13    | M0-trustworthy-local-alpha | `apps/desktop/scripts/compare-screenshots.mjs`、2026-07-11 视觉审计                                                                   |
 | P1-RELEASE-001    | P1       | open        | 2026-07-11    | public-release             | `apps/desktop/electron-builder.yml`、`.github/workflows/build-desktop.yml`                                                            |
 | P1-EXTENSIONS-001 | P1       | open        | 2026-07-11    | post-M0                    | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/desktop/src/settings/SettingsView.tsx`                                    |
 | P1-A11Y-001       | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src`                                                                                                                    |
@@ -149,6 +149,8 @@ MessageStream 在尾部内容变化时始终调用 `scrollIntoView()`，用户�
 修复目标：保持视觉裁决独立于通用 CI，但要求 UI 改动逐张记录裁决；未经裁决的 changed 不能作为完成证据。
 
 验收：当前 8 张差异完成 bless 或修复；PR 描述保存裁决结果。
+
+2026-07-13 进展：capture 判稳从字节相等改为像素容差（`assessFramePair`，消除合成器亚可见光栅噪声导致的 approval-denied 采集失败）；provider 与 seed workspace fixture 改为 create-or-reuse，seeded-workspace 与 approval-flow 在单场景和默认分组两种模式下渲染一致（旧基线嵌入的重复 workspace 伪影与 core-ui provider 泄漏随之消除）；全部 changed 完成逐张裁决并重采基线，默认分组与两种单场景运行均为 32/32、10/10、4/4 unchanged。剩余范围：`--fail-on-diff` 尚非默认，视觉裁决仍依赖人工流程。
 
 ## P1-MESSAGE-001: 消息流计划仍有四组未完成能力
 

@@ -152,7 +152,7 @@ same_change: true
 
 `.github/workflows/docs-gate.yml` 通过 `pull_request_target` 使用目标分支中的 checker 和影响映射，检查事件中精确的 PR head，不安装依赖或执行 PR 提供的脚本。workflow 的仓库内容权限只读，额外的 `statuses: write` 只用于把 `trusted-docs` 结果发布到精确的 PR head SHA；runner 自身的 check 不作为 required check。同一 PR 的事件使用 concurrency 串行收敛并取消旧 run，避免旧批准覆盖新的失败状态。`.github/CODEOWNERS` 保护 checker、contracts、workflow 和 agent 规则；仓库还必须把 commit status `trusted-docs` 配为 required check，并开启 Code Owner review，门禁才形成外部强制约束。
 
-本地 diff 检查使用 base 和声明文件。它分别比较 merge-base 到 Git index、Git index 到工作树，再并入未跟踪文件；因此暂存改动即使被工作树反向覆盖也不会消失：
+本地 diff 检查使用 base 和声明文件。它分别比较 merge-base 到 Git index、Git index 到工作树，再并入未跟踪文件；因此暂存改动即使被工作树反向覆盖也不会消失。二进制变更（如截图基线 PNG）不会让检查崩溃：changed-line 提取按有损 UTF-8 解码，无效字节替换为占位符，其中的 ASCII 内容仍参与 `changedLinePattern` 匹配，二进制无法绕过规则：
 
 ```bash
 pnpm docs:check -- --base <base-sha> --declaration <json-file>

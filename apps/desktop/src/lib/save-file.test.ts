@@ -13,4 +13,13 @@ describe("saveTextFile", () => {
     expect(bridge).toHaveBeenCalledWith({ defaultName: "a.md", content: "x" });
     delete (window as unknown as { marginalia?: unknown }).marginalia;
   });
+
+  it("reports bridge failures as an error result instead of throwing", async () => {
+    const bridge = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    (window as unknown as { marginalia?: unknown }).marginalia = { saveTextFile: bridge };
+    expect(await saveTextFile("a.md", "x")).toEqual({ saved: false, error: "disk full" });
+    delete (window as unknown as { marginalia?: unknown }).marginalia;
+  });
 });

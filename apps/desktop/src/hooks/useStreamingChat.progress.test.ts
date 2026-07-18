@@ -30,7 +30,7 @@ function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
 }
 
 describe("useStreamingChat tool progress", () => {
-  it("forwards accumulated partialResult text per update", async () => {
+  it("coalesces cumulative snapshots into one delivery per flush", async () => {
     const onToolProgress = vi.fn();
     const api = {
       runChat: vi.fn(async () =>
@@ -64,8 +64,46 @@ describe("useStreamingChat tool progress", () => {
       await result.current.send("hi", []);
     });
 
-    expect(onToolProgress).toHaveBeenNthCalledWith(1, "t1", "line1\n");
-    expect(onToolProgress).toHaveBeenNthCalledWith(2, "t1", "line1\nline2\n");
+    // Both updates land inside a single flush window, so only the latest
+    // cumulative snapshot is delivered — one state update per frame, not per event.
+    expect(onToolProgress).toHaveBeenCalledTimes(1);
+    expect(onToolProgress).toHaveBeenCalledWith("t1", "line1\nline2\n");
+  });
+
+  it("drops buffered progress once the tool result arrives", async () => {
+    const onToolProgress = vi.fn();
+    const onToolResultUpsert = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        makeEvents([
+          agentEvent({
+            type: "tool_execution_update",
+            toolCallId: "t1",
+            toolName: "bash",
+            args: { command: "x" },
+            partialResult: { content: [{ type: "text", text: "line1\n" }] }
+          }),
+          agentEvent({
+            type: "tool_execution_end",
+            toolCallId: "t1",
+            toolName: "bash",
+            args: { command: "x" },
+            result: "done",
+            isError: false
+          })
+        ])
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onToolProgress, onToolResultUpsert });
+
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+
+    // The final result supersedes the buffered snapshot: no late progress
+    // delivery may resurrect a live-output area for a finished call.
+    expect(onToolProgress).not.toHaveBeenCalled();
+    expect(onToolResultUpsert).toHaveBeenCalledTimes(1);
   });
 
   it("ignores updates without textual partialResult", async () => {

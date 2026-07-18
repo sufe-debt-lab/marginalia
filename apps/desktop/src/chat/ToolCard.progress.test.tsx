@@ -14,6 +14,11 @@ describe("ToolCard live progress", () => {
     expect(screen.queryByText("line 0")).not.toBeInTheDocument();
   });
 
+  it("renders live output as a plain block, not divs nested in a pre", () => {
+    render(<ToolCard call={call} progress={"alpha\nbeta"} />);
+    expect(screen.getByText("beta").closest("pre")).toBeNull();
+  });
+
   it("hides the live area once a result arrives", () => {
     const result: ChatToolResult = {
       role: "toolResult",

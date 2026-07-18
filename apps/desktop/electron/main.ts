@@ -139,8 +139,14 @@ ipcMain.handle("marginalia:save-text-file", async (_event, input: unknown) => {
     ? await dialog.showSaveDialog(windowRef, options)
     : await dialog.showSaveDialog(options);
   if (result.canceled || !result.filePath) return { saved: false };
-  await writeFile(result.filePath, content, "utf8");
-  return { saved: true, path: result.filePath };
+  try {
+    await writeFile(result.filePath, content, "utf8");
+    return { saved: true, path: result.filePath };
+  } catch (error) {
+    // Failure must come back as a result, not an IPC rejection, so the
+    // renderer can flash feedback instead of hitting an unhandled rejection.
+    return { saved: false, error: (error as Error).message };
+  }
 });
 
 app.on("before-quit", () => {
