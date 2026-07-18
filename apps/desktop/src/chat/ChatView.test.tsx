@@ -35,6 +35,14 @@ function makeApi(): ApiClient {
     runChat: vi.fn(async () =>
       events([{ type: "run_started", payload: {} }, textDelta("hi"), runCompleted()])
     ),
+    listSkills: vi.fn(async () => ({
+      workspaceId: "w1",
+      catalogRevision: "catalog",
+      effectiveRevision: "effective",
+      refreshedAt: 1,
+      candidates: [],
+      diagnostics: []
+    })),
     searchFiles: vi.fn(async () => [])
   } as unknown as ApiClient;
 }

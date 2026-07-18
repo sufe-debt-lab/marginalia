@@ -17,6 +17,31 @@ function fakeApi(): ApiClient {
       origin: "ui",
       model: null
     })),
+    listSkills: vi.fn(async () => ({
+      workspaceId: "w1",
+      catalogRevision: "catalog",
+      effectiveRevision: "effective",
+      refreshedAt: 1,
+      candidates: [
+        {
+          name: "pdf",
+          description: "Review PDFs",
+          discoveredPath: "/skills/pdf/SKILL.md",
+          canonicalPath: "/skills/pdf/SKILL.md",
+          source: "workspace_marginalia",
+          scope: "workspace",
+          status: "effective",
+          enabled: true,
+          effective: true,
+          explicitOnly: false,
+          explicitEligible: true,
+          shadowedBy: null,
+          bytesTotal: 10,
+          diagnostics: []
+        }
+      ],
+      diagnostics: []
+    })),
     searchFiles: vi.fn(async () => []),
     getBranch: vi.fn(async () => null)
   } as unknown as ApiClient;
@@ -161,5 +186,21 @@ describe("NewThreadView", () => {
     expect(useAppStore.getState().pendingTurn?.turn.text).toBe("first");
     expect(useAppStore.getState().getTurnDraft("session:newSession").text).toBe("first");
     expect(useAppStore.getState().getTurnDraft("new:w1").text).toBe("later edit");
+  });
+
+  it("deduplicates the same canonical Skill selected twice", async () => {
+    const api = fakeApi();
+    render(<NewThreadView api={api} />);
+    const input = await screen.findByRole("textbox", { name: /message/i });
+
+    await userEvent.type(input, "$pdf");
+    await userEvent.click(await screen.findByRole("option", { name: /\$pdf/i }));
+    await userEvent.type(input, "$pdf");
+    await userEvent.click(await screen.findByRole("option", { name: /pdf/i }));
+
+    expect(useAppStore.getState().getTurnDraft("new:w1").skills).toEqual([
+      { name: "pdf", path: "/skills/pdf/SKILL.md" }
+    ]);
+    expect(screen.getAllByTestId(/^skill-chip-/)).toHaveLength(1);
   });
 });

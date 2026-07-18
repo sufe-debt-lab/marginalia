@@ -87,7 +87,7 @@ React 应用入口 `apps/desktop/src/main.tsx` → `App.tsx`。`App` 负责启�
 
 ## 请求数据流
 
-renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调用 pi-server。`useApi(serverUrl, capabilityToken)`（`apps/desktop/src/hooks/useApi.ts`）用 main 进程拿到的 server URL 与 token 实例化它；普通 workspace/provider/document API 不发送 token，run 和后续 Skills API 才使用 bearer。各 `use*` hook（`useWorkspaces`、`useSessions`、`useMessages`、`useProviders`、`useStreamingChat` 等）在其上封装数据获取与状态。
+renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调用 pi-server。`useApi(serverUrl, capabilityToken)`（`apps/desktop/src/hooks/useApi.ts`）用 main 进程拿到的 server URL 与 token 实例化它；普通 workspace/provider/document API 不发送 token，run 和后续 Skills API 才使用 bearer。各 `use*` hook（`useWorkspaces`、`useSessions`、`useMessages`、`useProviders`、`useSkillCatalog`、`useStreamingChat` 等）在其上封装数据获取与状态。
 
 一次对话的完整链路：
 
@@ -113,6 +113,14 @@ Skills selection 都不进入 persist partial。New chat 创建 session 成功�
 `run_started` 后才记录 retry snapshot，并仅在 owner 当前值仍等于 submitted snapshot 时清理；创建
 session 或等待接受期间的后续编辑会保留，Retry 也不会覆盖当前新草稿。因此 pre-start 401/409/413、
 stream EOF 或切换视图不会把未接受输入误记为已发送。
+
+`useSkillCatalog` 是 Composer 的 catalog controller：挂载、workspace 切换和每次菜单从关闭变为 `$` 或
+`/` 时刷新，并以 request generation 和 workspace identity 丢弃迟到响应。刷新失败保留最后成功 snapshot
+供已选 chip 展示，但 picker 只显示 error/retry，不暴露 stale row。可选 candidate 必须同时满足非空
+`name`、`enabled`、`status === "effective"` 和 `explicitEligible`。`$` 菜单只显示 Skills；`/` 菜单把
+Commands 与 Skills 作为视觉分区，但使用同一个 flat selectable row 序列，所以标题不会进入键盘导航。
+两个入口都提交 exact `{ name, canonicalPath }`，删除触发 token，并由 scoped turn draft store 按 canonical
+path 去重；Composer 保持 ordered chips，不建立桌面专用 `/skill:*` 协议。
 
 ChatView 的错误状态同时记录 `accepted` 与派生的 `retryable`。Retry 只在失败属于当前已接受轮且
 `lastSent` 已由该轮 acceptance 更新时出现；后续 pre-start 401/409/413/EOF 会保留新草稿并隐藏 Retry，
@@ -266,9 +274,9 @@ State route 只接受 `{ path: string, enabled: boolean, workspaceId?: string }`
 统一映射为不含内部 path/bytes 的错误。该 API 只管理已经发现的文件，不创建、导入、安装、编辑或删除
 Skill。
 
-Desktop 尚未调用这三个管理 route，Settings Skills 入口仍禁用，Composer 也没有 picker。Run API
-已经接受显式 Skill selections 并接通 runtime；因此这是可由受保护 API 使用的后端能力，仍不是普通
-桌面流程可操作的用户功能。
+Desktop Composer 已通过 `GET /skills` 接入 picker，并把 exact selection 交给 run API；它不会调用 state
+或 content route。Settings Skills 入口仍禁用，因此启停 preference、内容预览和 invalid/blocked candidate
+修复仍不是普通桌面流程可操作的功能。
 
 ## Agent session 与资源
 

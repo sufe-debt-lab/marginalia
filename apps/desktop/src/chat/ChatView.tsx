@@ -49,6 +49,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const setTurnText = useAppStore((s) => s.setTurnText);
   const addTurnContextFile = useAppStore((s) => s.addTurnContextFile);
   const removeTurnContextFile = useAppStore((s) => s.removeTurnContextFile);
+  const addTurnSkill = useAppStore((s) => s.addTurnSkill);
+  const removeTurnSkill = useAppStore((s) => s.removeTurnSkill);
   const clearTurnDraft = useAppStore((s) => s.clearTurnDraft);
   const getTurnDraft = useAppStore((s) => s.getTurnDraft);
   const claimPendingTurn = useAppStore((s) => s.claimPendingTurn);
@@ -312,6 +314,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
             onAddContextFile={(path) => addTurnContextFile(owner, path)}
             onRemoveContextFile={(path) => removeTurnContextFile(owner, path)}
             skills={draft?.skills ?? []}
+            onAddSkill={(skill) => addTurnSkill(owner, skill)}
+            onRemoveSkill={(path) => removeTurnSkill(owner, path)}
             permission={permission}
             reasoning={reasoning}
             onPermissionChange={setPermission}

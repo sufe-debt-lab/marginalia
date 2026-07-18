@@ -98,13 +98,24 @@ workspace、provider、文件、审批等既有 route 仍未认证，缺少 Orig
 `127.0.0.1` 和这项局部防护都不是整套 API 的授权边界；在 `P0-SEC-001` 完整修复前，不要把 Alpha
 版本用于高敏感资料。
 
-## Skills 管理后端
+## Skills 选择与管理后端
 
 pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate、读取 candidate 的截断预览，
 并在受 capability 保护的 run API 中按 exact `{ name, canonical path }` 显式调用 Skill。每个 run 都会
 把当前 effective Skills 固定到 agent runtime；explicit-only Skill 不会出现在模型的隐式清单中，但可
-通过显式 selection 调用。Settings 中的 Skills 页和 Composer picker 尚未接入，因此普通桌面流程仍
-不能选择或管理 Skills。
+通过显式 selection 调用。
+
+Composer 现在提供两个等价的选择入口：输入 `$` 打开仅含 Skills 的菜单，输入 `/` 打开 Commands 与
+Skills 两个视觉分区。分区标题不是键盘导航项，方向键会在两个分区的可选行之间连续移动。选择 Skill
+后会删除当前触发 token，并在附件上方加入有序的 `$name` chip；不会把 Skill 编码成 `/skill:*` 文本。
+同一 canonical path 由 turn draft store 去重，chip 可移除，并通过 tooltip 展示来源与 canonical path；
+warning diagnostic 和 explicit-only 状态也会显示。磁盘上名为 `skills` 的 Skill 仍只是普通 `$skills`
+候选，不会成为 `/skills` 管理命令。
+
+Catalog 会在 Composer 挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜单时刷新。加载或刷新失败时
+菜单不会允许从旧 snapshot 新增 Skill，而已有 snapshot 和已选 chips 会保留；可在菜单中重试。当前只
+允许选择 `name` 非空、enabled、status 为 `effective` 且 `explicitEligible` 的 candidate。Settings 中的
+Skills 管理页仍未接入。
 
 Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。显式 block 单项
 最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB。选择失效和 payload 超限分别返回稳定的
@@ -123,7 +134,7 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 
 ## 当前不可用
 
-- Skills 桌面流程：管理和 run runtime API 已存在，但 Settings 入口与 Composer picker 仍禁用。
+- Skills Settings 管理页与 blocked selection 修复流程仍未接入；Composer 已可选择和移除 eligible Skill。
 - MCP：没有 server 配置、连接或工具注入，设置入口禁用。
 - 独立 Quick chat 入口、版本快照、自动更新和数据导入导出仍未完成。
 - Slash menu 会显示 clear/help/model，但选择后当前不会执行对应动作。

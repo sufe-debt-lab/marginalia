@@ -1,0 +1,73 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ApiClient, ApiError, SkillCandidate, SkillCatalogSnapshot } from "@/api/client.js";
+
+export type SkillPickerItem = Omit<
+  Pick<
+    SkillCandidate,
+    "name" | "description" | "canonicalPath" | "source" | "explicitOnly" | "diagnostics"
+  >,
+  "name"
+> & { name: string };
+
+function asError(failure: unknown): Error {
+  return failure instanceof Error ? failure : new Error(String(failure));
+}
+
+export function useSkillCatalog(
+  api: ApiClient,
+  workspaceId: string | null
+): {
+  snapshot: SkillCatalogSnapshot | null;
+  loading: boolean;
+  error: ApiError | Error | null;
+  refresh(): Promise<SkillCatalogSnapshot | null>;
+} {
+  const [snapshot, setSnapshot] = useState<SkillCatalogSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<ApiError | Error | null>(null);
+  const [stateWorkspaceId, setStateWorkspaceId] = useState(workspaceId);
+  const requestId = useRef(0);
+  const workspaceRef = useRef(workspaceId);
+  workspaceRef.current = workspaceId;
+
+  const refresh = useCallback(async () => {
+    const id = ++requestId.current;
+    const requestedWorkspace = workspaceId;
+    setStateWorkspaceId(requestedWorkspace);
+    setLoading(true);
+    try {
+      const next = await api.listSkills(requestedWorkspace);
+      if (id !== requestId.current || workspaceRef.current !== requestedWorkspace) return null;
+      if (next.workspaceId !== requestedWorkspace) return null;
+      setSnapshot(next);
+      setError(null);
+      return next;
+    } catch (failure) {
+      if (id === requestId.current && workspaceRef.current === requestedWorkspace) {
+        setError(asError(failure));
+      }
+      return null;
+    } finally {
+      if (id === requestId.current && workspaceRef.current === requestedWorkspace) {
+        setLoading(false);
+      }
+    }
+  }, [api, workspaceId]);
+
+  useEffect(() => {
+    requestId.current += 1;
+    setStateWorkspaceId(workspaceId);
+    setSnapshot(null);
+    setError(null);
+    setLoading(true);
+    void refresh();
+    return () => {
+      requestId.current += 1;
+    };
+  }, [refresh, workspaceId]);
+
+  if (stateWorkspaceId !== workspaceId) {
+    return { snapshot: null, loading: true, error: null, refresh };
+  }
+  return { snapshot, loading, error, refresh };
+}

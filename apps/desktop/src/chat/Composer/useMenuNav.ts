@@ -29,11 +29,13 @@ export function useMenuNav<T>(
         return;
       }
       if (e.key === "ArrowDown") {
+        if (items.length === 0) return;
         e.preventDefault();
         setActiveIndex((current) => Math.min(current + 1, items.length - 1));
         return;
       }
       if (e.key === "ArrowUp") {
+        if (items.length === 0) return;
         e.preventDefault();
         setActiveIndex((current) => Math.max(current - 1, 0));
         return;

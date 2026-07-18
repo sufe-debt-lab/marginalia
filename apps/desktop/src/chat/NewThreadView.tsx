@@ -28,6 +28,8 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const setTurnText = useAppStore((s) => s.setTurnText);
   const addTurnContextFile = useAppStore((s) => s.addTurnContextFile);
   const removeTurnContextFile = useAppStore((s) => s.removeTurnContextFile);
+  const addTurnSkill = useAppStore((s) => s.addTurnSkill);
+  const removeTurnSkill = useAppStore((s) => s.removeTurnSkill);
   const moveTurnDraft = useAppStore((s) => s.moveTurnDraft);
   const setPendingTurn = useAppStore((s) => s.setPendingTurn);
   const setView = useAppStore((s) => s.setView);
@@ -102,6 +104,8 @@ export function NewThreadView({ api }: { api: ApiClient }) {
           onAddContextFile={(path) => addTurnContextFile(owner, path)}
           onRemoveContextFile={(path) => removeTurnContextFile(owner, path)}
           skills={draft?.skills ?? []}
+          onAddSkill={(skill) => addTurnSkill(owner, skill)}
+          onRemoveSkill={(path) => removeTurnSkill(owner, path)}
           permission={permission}
           reasoning={reasoning}
           onPermissionChange={setPermission}

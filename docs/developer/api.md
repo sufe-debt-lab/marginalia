@@ -73,6 +73,12 @@ document、approval 等普通 method 仍只发送 JSON header。Skills list/cont
 `URLSearchParams` 编码，state update 只发送 `{ path, enabled, workspaceId? }`，run 的 `skills`
 selection 按调用方顺序序列化。
 
+renderer 的 `useSkillCatalog` 在 Composer 挂载、workspace 切换和每次新打开 `$` 或 `/` 菜单时调用
+`listSkills()`。它用 request generation 与 requested workspace 同时拒绝迟到或 workspace 不匹配的响应；
+刷新失败保留最后成功 snapshot，但 picker 进入 error/retry 状态，不能从旧 snapshot 新增 selection。
+当前 Composer 不调用 `setSkillEnabled()` 或 `readSkillContent()`；这两个 method 留给尚未实现的 Settings
+管理界面。
+
 `request()`、204 response helper 和 `runChat()` 的非成功 response 共用结构化错误解码。JSON object
 响应会完整保存在 `ApiError.details`，同时公开 HTTP `status`、body 的字符串 `error` 作为 `code`，以及
 body 的字符串 `message`（缺省为 `code`）。非 JSON 或非 object response 稳定降级为

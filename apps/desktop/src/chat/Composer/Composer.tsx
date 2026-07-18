@@ -1,14 +1,17 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, Plus, Square, X } from "lucide-react";
-import type { ApiClient, Provider, SkillSelection } from "@/api/client.js";
+import type { ApiClient, Provider, SkillCandidate, SkillSelection } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
+import { useSkillCatalog, type SkillPickerItem } from "@/hooks/useSkillCatalog.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
 import type { TurnDraft } from "@/store/app-store.js";
 import { MentionMenu } from "./MentionMenu.js";
 import { ModelPicker, type Reasoning } from "./ModelPicker.js";
 import { PermissionChip, type Permission } from "./PermissionChip.js";
-import { SlashMenu } from "./SlashMenu.js";
+import { SkillChip } from "./SkillChip.js";
+import { SkillMenu } from "./SkillMenu.js";
+import { SlashMenu, type SlashRow } from "./SlashMenu.js";
 
 interface Props {
   api: ApiClient;
@@ -23,6 +26,8 @@ interface Props {
   onAddContextFile: (path: string) => void;
   onRemoveContextFile: (path: string) => void;
   skills: readonly SkillSelection[];
+  onAddSkill: (skill: SkillSelection) => void;
+  onRemoveSkill: (path: string) => void;
   sending: boolean;
   /** Hard-disable the send button (e.g. no workspace / no provider), independent of streaming. */
   disabled?: boolean;
@@ -63,9 +68,9 @@ function basename(path: string): string {
   return path.split("/").pop() || path;
 }
 
-/** The `/` or `@` token immediately before the caret, anywhere in the text. */
+/** The `/`, `@`, or `$` token immediately before the caret, anywhere in the text. */
 interface Trigger {
-  kind: "slash" | "mention";
+  kind: "slash" | "mention" | "skill";
   query: string;
   start: number; // index of the trigger symbol
   end: number; // caret position
@@ -73,26 +78,65 @@ interface Trigger {
 
 function detectTrigger(value: string, caret: number): Trigger | null {
   const before = value.slice(0, caret);
-  const m = /(^|\s)([/@])(\S*)$/.exec(before);
+  const m = /(^|\s)([/@$])(\S*)$/.exec(before);
   if (!m) return null;
   const symbol = m[2];
   const query = m[3] ?? "";
   return {
-    kind: symbol === "/" ? "slash" : "mention",
+    kind: symbol === "/" ? "slash" : symbol === "$" ? "skill" : "mention",
     query,
     start: caret - query.length - 1,
     end: caret
   };
 }
 
+function isEligibleSkill(
+  candidate: SkillCandidate
+): candidate is SkillCandidate & { name: string } {
+  return (
+    candidate.name !== null &&
+    candidate.effective &&
+    candidate.enabled &&
+    candidate.status === "effective" &&
+    candidate.explicitEligible
+  );
+}
+
+function toPickerItem(candidate: SkillCandidate & { name: string }): SkillPickerItem {
+  return {
+    name: candidate.name,
+    description: candidate.description,
+    canonicalPath: candidate.canonicalPath,
+    source: candidate.source,
+    explicitOnly: candidate.explicitOnly,
+    diagnostics: candidate.diagnostics
+  };
+}
+
 export function Composer(props: Props) {
   const { t } = useTranslation();
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [skillQuery, setSkillQuery] = useState<string | null>(null);
   const [mentionSuggestions, setMentionSuggestions] = useState<{ path: string }[]>([]);
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   // Which UI opened the file menu: an inline `@` mention vs the `+` attachment picker.
   const [pickerMode, setPickerMode] = useState<"mention" | "attach">("mention");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const skillCatalog = useSkillCatalog(props.api, props.workspaceId);
+  const pickerItems = useMemo(
+    () => skillCatalog.snapshot?.candidates.filter(isEligibleSkill).map(toPickerItem) ?? [],
+    [skillCatalog.snapshot]
+  );
+  const candidateByPath = useMemo(
+    () =>
+      new Map(
+        skillCatalog.snapshot?.candidates.map((candidate) => [
+          candidate.canonicalPath,
+          candidate
+        ]) ?? []
+      ),
+    [skillCatalog.snapshot]
+  );
   // Attachment cards present at mount don't animate; later additions do.
   const initialContextFiles = useRef<ReadonlySet<string>>(new Set(props.contextFiles)).current;
   const canSubmit =
@@ -109,6 +153,7 @@ export function Composer(props: Props) {
   function closeMenus() {
     setTrigger(null);
     setSlashQuery(null);
+    setSkillQuery(null);
     setMentionSuggestions([]);
   }
 
@@ -123,10 +168,18 @@ export function Composer(props: Props) {
       return;
     }
     if (next.kind === "slash") {
+      if (trigger?.kind !== "slash") void skillCatalog.refresh();
       setSlashQuery(next.query);
+      setSkillQuery(null);
+      setMentionSuggestions([]);
+    } else if (next.kind === "skill") {
+      if (trigger?.kind !== "skill") void skillCatalog.refresh();
+      setSlashQuery(null);
+      setSkillQuery(next.query);
       setMentionSuggestions([]);
     } else {
       setSlashQuery(null);
+      setSkillQuery(null);
       setPickerMode("mention");
       if (props.workspaceId) {
         const items = await props.api.searchFiles(props.workspaceId, next.query);
@@ -161,10 +214,20 @@ export function Composer(props: Props) {
     textareaRef.current?.focus();
   }
 
-  function pickSlash(name: string) {
-    // App slash-commands have no inline text payload yet → just dismiss the token.
+  function pickSlash(row: SlashRow) {
     replaceTriggerToken("");
-    void name;
+    if (row.kind === "skill") {
+      props.onAddSkill({ name: row.skill.name, path: row.skill.canonicalPath });
+    } else {
+      // App slash-commands have no inline text payload yet → just dismiss the token.
+      void row.name;
+    }
+    closeMenus();
+  }
+
+  function pickSkill(skill: SkillPickerItem) {
+    replaceTriggerToken("");
+    props.onAddSkill({ name: skill.name, path: skill.canonicalPath });
     closeMenus();
   }
 
@@ -188,13 +251,33 @@ export function Composer(props: Props) {
     const items = await props.api.searchFiles(props.workspaceId, "");
     setTrigger(null);
     setSlashQuery(null);
+    setSkillQuery(null);
     setMentionSuggestions(Array.isArray(items) ? items : []);
   }
 
   return (
     <div className="relative w-full">
       {slashQuery !== null && (
-        <SlashMenu query={slashQuery} onSelect={pickSlash} onClose={() => setSlashQuery(null)} />
+        <SlashMenu
+          query={slashQuery}
+          skills={pickerItems}
+          skillsLoading={skillCatalog.loading}
+          skillsError={skillCatalog.error}
+          onSelect={pickSlash}
+          onRetrySkills={() => void skillCatalog.refresh()}
+          onClose={closeMenus}
+        />
+      )}
+      {skillQuery !== null && (
+        <SkillMenu
+          items={pickerItems}
+          query={skillQuery}
+          loading={skillCatalog.loading}
+          error={skillCatalog.error}
+          onSelect={pickSkill}
+          onRetry={() => void skillCatalog.refresh()}
+          onClose={closeMenus}
+        />
       )}
       {mentionSuggestions.length > 0 && (
         <MentionMenu
@@ -204,6 +287,18 @@ export function Composer(props: Props) {
         />
       )}
       <div className="rounded-[14px] border border-border bg-surface px-3.5 pt-3 pb-2 shadow-composer transition-[border-color,box-shadow] motion-standard focus-within:border-border-strong focus-within:shadow-composer-focus">
+        {props.skills.length > 0 && (
+          <div className="mb-2.5 flex flex-wrap gap-2">
+            {props.skills.map((skill) => (
+              <SkillChip
+                key={skill.path}
+                skill={skill}
+                candidate={candidateByPath.get(skill.path)}
+                onRemove={props.onRemoveSkill}
+              />
+            ))}
+          </div>
+        )}
         {/* attachment cards */}
         {props.contextFiles.length > 0 && (
           <div className="mb-2.5 flex flex-wrap gap-2">

@@ -93,10 +93,11 @@ Run preflight 遇到 shadowed selection 时，会把该 canonical path 作为 ty
 其他 invalid reason 省略该字段。
 
 Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现和解析；当前没有 filesystem watcher。
-磁盘编辑、创建、删除和 symlink retarget 会在下一次显式 refresh 时体现。重复刷新同一磁盘与 preference
-状态不会改变 revision：管理可见 candidate、diagnostic、preview 或 enabled/status 变化会更新
-`catalogRevision`；只有 effective Skill 的 metadata、canonical path、顺序或正文 hash 变化才更新
-`effectiveRevision`。
+Composer 会在挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜单时请求刷新；run preflight 仍会在
+每轮执行前刷新。磁盘编辑、创建、删除和 symlink retarget 会在下一次显式 refresh 时体现。重复刷新同一
+磁盘与 preference 状态不会改变 revision：管理可见 candidate、diagnostic、preview 或 enabled/status
+变化会更新 `catalogRevision`；只有 effective Skill 的 metadata、canonical path、顺序或正文 hash 变化
+才更新 `effectiveRevision`。
 
 Run request body 最多 4 MiB；最多提交 16 个 raw Skill selections，且每个 name/path 分别最多 16 KiB
 UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB；
@@ -123,8 +124,9 @@ Skill object 或 runtime effective collection。Catalog/internal failure 只返�
 把 effective Skills 和 diagnostics 以 `effectiveRevision` 固定到 agent loader，并允许按 exact
 `{ name, canonical path }` 显式选择。通过 raw request/field limits 后，显式列表按 path 保留第一次出现，
 旧 path 或 name mismatch 不会自动改绑。Loader 使用 `noSkills: true` 关闭自身磁盘 discovery，
-再通过 pinned override 注入 snapshot，并非禁用 runtime Skills。当前桌面 Settings/Composer 尚未接入，
-所以它还不是用户可操作的正常产品流程。
+再通过 pinned override 注入 snapshot，并非禁用 runtime Skills。Composer 已通过 `listSkills()` 接入
+eligible candidate，并在 `$` 与 `/` 两个入口写入同一 ordered turn selection；canonical path 去重由 draft
+store 负责。Settings 的启停和内容预览界面尚未接入。
 
 Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
 预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的
