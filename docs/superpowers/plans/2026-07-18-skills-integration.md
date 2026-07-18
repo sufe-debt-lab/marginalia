@@ -1882,6 +1882,12 @@ git commit -m "feat(chat-core): normalize Skill-enabled user prompts"
   内部 Skill/attachment grammar 的用户原文也会在重开时归一化。按 active design 不新增第二套 trusted
   display metadata；正式 architecture 与 implementation report 已明确该边界，malformed/ambiguous 输入继续
   fail closed。
+- Formal review fixes：attachment parser 改为按 captured variant 精确分支。`mime` 只接受 builder 的
+  `header newline + body + newline closing`，`error` 只接受 `header newline + immediate closing`；attachment
+  attributes 只接受 builder encoder 的 `&amp; &quot; &lt; &gt;`，Skill attributes 仍接受五种 entities。
+  RED 为 3 failed / 20 passed，分别证明 mime immediate-close、error body、attachment `&apos;` 曾被错误剥离；
+  GREEN 为 chat-core 23/23、session/provider 32/32。新增 multimodal user history 回归，确认 array content
+  保持且 outer message 为独立对象；V1 provenance residual 不变。
 
 ---
 

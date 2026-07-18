@@ -118,10 +118,12 @@ Pi session 中的 user message 保留发给模型的完整 prompt，包括开头
 Marginalia `<attached_files>` envelope。`packages/chat-core/src/user-display.ts` 定义实时与重开共用的展示
 契约；其中 `normalizeAgentPromptForDisplay()`
 （`packages/chat-core/src/user-display.ts#normalizeAgentPromptForDisplay`）严格解析连续 Skill blocks、只解码
-builder 支持的五种 XML attribute entities、按原顺序生成 `$name` markers，并只移除完整匹配 Marginalia
-builder 语法且位于字符串末尾的附件 envelope。疑似 Skill 前缀、未知 entity 或 closing-tag 歧义会保留整个
-原 prompt；不完整附件 suffix 也保持可见。解析不查询当前 Catalog，因此磁盘上已删除的 Skill 仍按 session
-内保存的 name 展示。
+Skill builder 支持的五种 XML attribute entities，并按原顺序生成 `$name` markers。附件 envelope 只接受
+attachment builder 的四种 attribute entities（不含 `&apos;`），其中 `mime` entry 必须包含 header newline、
+body 和 closing tag 前 newline，`error` entry 必须在 header newline 后立即 closing；完整 wrapper 还必须位于
+字符串末尾。疑似 Skill 前缀、unknown entity、variant/body grammar 错误或 closing-tag 歧义会保留对应原文；
+不完整附件 suffix 也保持可见。解析不查询当前 Catalog，因此磁盘上已删除的 Skill 仍按 session 内保存的
+name 展示。
 
 该 V1 边界只验证内部 serialization 的完整语法，不能证明 markup 的生成来源。用户若故意输入完全匹配
 Marginalia grammar 的 leading Skill blocks 或 trailing attachment envelope，重开时也会按内部 prompt

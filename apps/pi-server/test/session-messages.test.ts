@@ -21,6 +21,38 @@ const usage = {
 };
 
 describe("readMessagesFromSessionFile", () => {
+  it("preserves multimodal user content while cloning its outer message", () => {
+    const content = [
+      { type: "text", text: "inspect this image" },
+      { type: "image", data: "aW1hZ2U=", mimeType: "image/png" }
+    ];
+    const originalMessage = { role: "user", content, timestamp: 1748390401000 };
+    const file = writeJsonl([
+      {
+        type: "session",
+        version: 3,
+        id: "abc",
+        cwd: "/tmp",
+        timestamp: "2026-05-26T00:00:00.000Z"
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-05-26T00:00:01.000Z",
+        message: originalMessage
+      }
+    ]);
+    const before = fs.readFileSync(file);
+
+    const [entry] = readMessagesFromSessionFile(file);
+
+    expect(entry).toEqual({ id: "u1", message: originalMessage });
+    expect(entry?.message).not.toBe(originalMessage);
+    expect(originalMessage.content).toBe(content);
+    expect(fs.readFileSync(file)).toEqual(before);
+  });
+
   it("normalizes only a cloned user prompt and leaves session bytes unchanged", () => {
     const rawPrompt =
       '<skill name="deleted&amp;skill" location="/deleted/SKILL.md">\nInstructions\n</skill>\n\n' +

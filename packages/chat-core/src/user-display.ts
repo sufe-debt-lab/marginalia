@@ -19,9 +19,21 @@ const XML_ENTITIES: Readonly<Record<string, string>> = {
   "&apos;": "'"
 };
 
-function decodeXmlAttribute(value: string): string | null {
+const ATTACHMENT_XML_ENTITIES: Readonly<Record<string, string>> = {
+  "&amp;": "&",
+  "&quot;": '"',
+  "&lt;": "<",
+  "&gt;": ">"
+};
+
+function decodeSkillXmlAttribute(value: string): string | null {
   if (/&(?!(?:amp|quot|lt|gt|apos);)/.test(value)) return null;
   return value.replace(/&(amp|quot|lt|gt|apos);/g, (entity) => XML_ENTITIES[entity]!);
+}
+
+function decodeAttachmentXmlAttribute(value: string): string | null {
+  if (/&(?!(?:amp|quot|lt|gt);)/.test(value)) return null;
+  return value.replace(/&(amp|quot|lt|gt);/g, (entity) => ATTACHMENT_XML_ENTITIES[entity]!);
 }
 
 function parseLeadingSkills(raw: string): { names: string[]; rest: string } | null {
@@ -32,8 +44,8 @@ function parseLeadingSkills(raw: string): { names: string[]; rest: string } | nu
     if (!open) return null;
     const closeAt = rest.indexOf(SKILL_CLOSE, open[0].length);
     if (closeAt < 0) return null;
-    const name = decodeXmlAttribute(open[1]!);
-    const location = decodeXmlAttribute(open[2]!);
+    const name = decodeSkillXmlAttribute(open[1]!);
+    const location = decodeSkillXmlAttribute(open[2]!);
     if (name === null || location === null) return null;
     names.push(name);
     rest = rest.slice(closeAt + SKILL_CLOSE.length);
@@ -55,15 +67,24 @@ function isGeneratedAttachmentEnvelope(value: string): boolean {
   while (rest !== "") {
     const open = ATTACHED_FILE_OPEN.exec(rest);
     if (!open) return false;
-    if (decodeXmlAttribute(open[1]!) === null || decodeXmlAttribute(open[3]!) === null) {
+    if (
+      decodeAttachmentXmlAttribute(open[1]!) === null ||
+      decodeAttachmentXmlAttribute(open[3]!) === null
+    ) {
       return false;
     }
-    const emptyBody = rest.startsWith(EMPTY_ATTACHED_FILE_CLOSE, open[0].length);
-    const closeAt = emptyBody ? open[0].length : rest.indexOf(ATTACHED_FILE_CLOSE, open[0].length);
+    const variant = open[2]!;
+    const closeAt =
+      variant === "error"
+        ? rest.startsWith(EMPTY_ATTACHED_FILE_CLOSE, open[0].length)
+          ? open[0].length
+          : -1
+        : rest.indexOf(ATTACHED_FILE_CLOSE, open[0].length);
     if (closeAt < 0) return false;
     count += 1;
     rest = rest.slice(
-      closeAt + (emptyBody ? EMPTY_ATTACHED_FILE_CLOSE.length : ATTACHED_FILE_CLOSE.length)
+      closeAt +
+        (variant === "error" ? EMPTY_ATTACHED_FILE_CLOSE.length : ATTACHED_FILE_CLOSE.length)
     );
     if (rest === "") break;
     if (!rest.startsWith("\n<attached_file ")) return false;

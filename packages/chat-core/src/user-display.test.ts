@@ -7,6 +7,15 @@ const skill = (name: string, location: string, body = "Instructions") =>
 const attachment =
   '<attached_files>\n<attached_file path="note.md" mime="text/markdown">\n# Note\ncontext\n</attached_file>\n</attached_files>';
 
+const attachmentEnvelope = (...blocks: string[]) =>
+  `<attached_files>\n${blocks.join("\n")}\n</attached_files>`;
+
+const mimeAttachment = (body: string) =>
+  `<attached_file path="note.md" mime="text/markdown">\n${body}\n</attached_file>`;
+
+const errorAttachment =
+  '<attached_file path="missing.md" error="File &quot;missing.md&quot; is unavailable">\n</attached_file>';
+
 describe("formatUserDisplayText", () => {
   it("places ordered Skill markers before user text", () => {
     expect(formatUserDisplayText("Review this document", ["brainstorming", "pdf"])).toBe(
@@ -90,13 +99,54 @@ describe("normalizeAgentPromptForDisplay", () => {
   });
 
   it("supports generated unreadable-attachment entries", () => {
-    const errorAttachment =
-      '<attached_files>\n<attached_file path="missing.md" error="File &quot;missing.md&quot; is unavailable">\n</attached_file>\n</attached_files>';
+    const envelope = attachmentEnvelope(errorAttachment);
 
-    expect(normalizeAgentPromptForDisplay(`inspect\n\n${errorAttachment}`)).toEqual({
+    expect(normalizeAgentPromptForDisplay(`inspect\n\n${envelope}`)).toEqual({
       skillNames: [],
       text: "inspect"
     });
+  });
+
+  it("supports a generated mime attachment with an empty body", () => {
+    const envelope = attachmentEnvelope(mimeAttachment(""));
+
+    expect(normalizeAgentPromptForDisplay(`inspect\n\n${envelope}`)).toEqual({
+      skillNames: [],
+      text: "inspect"
+    });
+  });
+
+  it("removes multiple generated mime and error attachments", () => {
+    const envelope = attachmentEnvelope(
+      mimeAttachment("context"),
+      errorAttachment,
+      '<attached_file path="data&amp;&quot;&lt;&gt;.txt" mime="text/plain">\nbody\n</attached_file>'
+    );
+
+    expect(normalizeAgentPromptForDisplay(`inspect\n\n${envelope}`)).toEqual({
+      skillNames: [],
+      text: "inspect"
+    });
+  });
+
+  it.each([
+    [
+      "mime attachment with an immediate close",
+      '<attached_file path="note.md" mime="text/markdown">\n</attached_file>'
+    ],
+    [
+      "error attachment with a body",
+      '<attached_file path="missing.md" error="unavailable">\nreason\n</attached_file>'
+    ],
+    [
+      "attachment attribute with apos entity",
+      '<attached_file path="note&apos;.md" mime="text/markdown">\ncontext\n</attached_file>'
+    ]
+  ])("retains the whole suffix for a malformed %s", (_case, block) => {
+    const envelope = attachmentEnvelope(block);
+    const raw = `inspect\n\n${envelope}`;
+
+    expect(normalizeAgentPromptForDisplay(raw)).toEqual({ skillNames: [], text: raw });
   });
 
   it("retains a malformed attachment suffix while still formatting valid Skills", () => {
