@@ -20,7 +20,10 @@ export type InvalidSelectionReason =
   | "too_large"
   | "unsupported_identifier";
 
-export type InvalidSkillSelection = SkillSelection & { reason: InvalidSelectionReason };
+export type InvalidSkillSelection = SkillSelection & {
+  reason: InvalidSelectionReason;
+  winnerPath?: string;
+};
 
 export type AgentRuntimeSkills = {
   effectiveRevision: string;
@@ -153,7 +156,9 @@ function validateSelection(
     return { invalid: { ...selection, reason: "invalid" } };
   }
   if (candidate.status === "shadowed") {
-    return { invalid: { ...selection, reason: "shadowed" } };
+    return {
+      invalid: { ...selection, reason: "shadowed", winnerPath: candidate.shadowedBy! }
+    };
   }
   if (candidate.skill.name !== selection.name) {
     return { invalid: { ...selection, reason: "name_mismatch" } };

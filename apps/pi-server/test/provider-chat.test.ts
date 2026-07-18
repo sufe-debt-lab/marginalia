@@ -14,7 +14,11 @@ import {
 } from "../src/db/repositories.js";
 import { FakeAgentClient } from "../src/agent/fake-agent-client.js";
 import type { AgentRunEvent, AgentSessionEvent } from "../src/agent/agent-client.js";
-import type { SkillCatalogService, SkillCatalogSnapshot } from "../src/skills/types.js";
+import type {
+  SkillCandidate,
+  SkillCatalogService,
+  SkillCatalogSnapshot
+} from "../src/skills/types.js";
 
 const dbs: Database.Database[] = [];
 const capability = { token: "test-token", allowedOrigins: new Set<string>() };
@@ -314,6 +318,73 @@ describe("chat runs", () => {
     });
     expect(tooMany.status).toBe(413);
     expect(await tooMany.json()).toEqual({ error: "skill_payload_too_large" });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(runCount(db)).toBe(0);
+  });
+
+  it("includes the current winner path for a shadowed Skill 409", async () => {
+    const { db, session, providerId } = setupRun();
+    const loserPath = "/tmp/loser/SKILL.md";
+    const winnerPath = "/tmp/winner/SKILL.md";
+    const shadowed = {
+      discoveredPath: loserPath,
+      sourceRoot: "/tmp",
+      relativePath: "loser/SKILL.md",
+      source: "workspace_marginalia",
+      scope: "workspace",
+      mode: "pi",
+      sourcePriority: 0,
+      ancestorDepth: 0,
+      canonicalPath: loserPath,
+      canonicalBaseDir: "/tmp/loser",
+      skill: {
+        name: "duplicate",
+        description: "duplicate description",
+        filePath: loserPath,
+        baseDir: "/tmp/loser",
+        sourceInfo: {
+          path: loserPath,
+          source: "local",
+          scope: "project",
+          origin: "test"
+        },
+        disableModelInvocation: false
+      },
+      diagnostics: [],
+      bytesTotal: 4,
+      contentHash: "loser-hash",
+      explicitEligible: true,
+      explicitOnly: false,
+      rawContent: "Body",
+      previewContent: "Body",
+      previewTruncated: false,
+      enabled: true,
+      effective: false,
+      status: "shadowed",
+      shadowedBy: winnerPath
+    } satisfies SkillCandidate;
+    const prepare = vi.fn(async () => preparedRun([]));
+    const app = createApp({
+      db,
+      capability,
+      skillCatalog: fixedCatalog(catalogSnapshot({ candidates: [shadowed] })),
+      agentClient: {
+        prepare,
+        resolveApproval: () => false,
+        cancelPending: () => 0
+      }
+    });
+
+    const response = await runRequest(app, session.id, providerId, {
+      skills: [{ name: "duplicate", path: loserPath }]
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "skill_precondition_failed",
+      catalogRevision: "catalog-1",
+      invalidSelections: [{ name: "duplicate", path: loserPath, reason: "shadowed", winnerPath }]
+    });
     expect(prepare).not.toHaveBeenCalled();
     expect(runCount(db)).toBe(0);
   });

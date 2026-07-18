@@ -195,7 +195,11 @@ describe("prepareSkillTurn", () => {
         { name: "missing", path: "/tmp/missing/SKILL.md", reason: "missing" },
         { ...selection(disabled), reason: "disabled" },
         { name: "invalid", path: invalid.canonicalPath, reason: "invalid" },
-        { ...selection(shadowed), reason: "shadowed" },
+        {
+          ...selection(shadowed),
+          reason: "shadowed",
+          winnerPath: "/tmp/winner/SKILL.md"
+        },
         { name: "wrong", path: successor.canonicalPath, reason: "name_mismatch" },
         { ...selection(tooLarge), reason: "too_large" },
         { ...selection(unsupported), reason: "unsupported_identifier" }

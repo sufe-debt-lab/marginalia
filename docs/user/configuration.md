@@ -82,6 +82,8 @@ Catalog 按 discovery 顺序处理 candidate。Invalid candidate 优先标为 `i
 标为 `disabled`；两者都不占用 Skill name。第一个 enabled valid 同名 candidate 成为 `effective`，
 后续同名 candidate 标为 `shadowed` 并记录 winner 的 canonical path。因此停用或删除 winner 后，下一个
 enabled valid candidate 会在刷新时接替，不会把旧选择自动改绑到新 path。
+Run preflight 遇到 shadowed selection 时，会把该 canonical path 作为 typed 409 的 `winnerPath` 返回；
+其他 invalid reason 省略该字段。
 
 Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现和解析；当前没有 filesystem watcher。
 磁盘编辑、创建、删除和 symlink retarget 会在下一次显式 refresh 时体现。重复刷新同一磁盘与 preference

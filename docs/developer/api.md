@@ -276,11 +276,15 @@ Skill 可以被显式选择，但 Pi 会把它从隐式 system prompt 的可用�
     {
       "name": "pdf",
       "path": "/canonical/pdf/SKILL.md",
-      "reason": "missing" | "disabled" | "invalid" | "shadowed" | "name_mismatch" | "too_large" | "unsupported_identifier"
+      "reason": "missing" | "disabled" | "invalid" | "shadowed" | "name_mismatch" | "too_large" | "unsupported_identifier",
+      "winnerPath": "/canonical/current-winner/SKILL.md" // 仅 reason="shadowed" 时存在
     }
   ]
 }
 ```
+
+`winnerPath` 是当前 effective winner 的 canonical path，只在 `reason: "shadowed"` 时返回；其他 reason
+必须省略该字段，不返回 `null`。
 
 Raw selections 超过 16、selection identity field 超限、单个 XML block 超过 512 KiB 或全部 block 按
 `blocks.join("\n\n")` 实际序列化后的 UTF-8 大小（包含 block 间分隔符）超过 2 MiB 时返回

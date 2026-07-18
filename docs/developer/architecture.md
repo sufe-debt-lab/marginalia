@@ -237,6 +237,8 @@ stream read failure 都会 best-effort cancel，reader 始终释放 lock。随�
 block 的 body 只来自 snapshot `rawContent`，不会重新读盘。Builder 与 Pi 0.75.5 使用相同的 newline 和
 frontmatter boundary，分别转义 XML attribute/text，并拒绝 XML 1.0 不支持的 control character。Prompt
 拼接顺序固定为 Skill blocks → user text → trailing `attached_files` envelope。
+Shadowed selection 的 typed 409 从 candidate `shadowedBy` 复制当前 winner canonical path 到
+`winnerPath`；其他 invalid reason 的对象省略该字段。
 
 显式 XML block 单项最多 512 KiB；全部 blocks 以 `blocks.join("\n\n")` 实际序列化后的 UTF-8 bytes
 （包含分隔符）计量，最多 2 MiB。Pre-create typed Skill failure 保留 409/413；其他内部失败统一返回

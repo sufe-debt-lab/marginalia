@@ -1526,6 +1526,12 @@ export type InvalidSelectionReason =
   | "too_large"
   | "unsupported_identifier";
 
+export type InvalidSkillSelection = SkillSelection & {
+  reason: InvalidSelectionReason;
+  /** Present only when reason is shadowed; canonical path of the current winner. */
+  winnerPath?: string;
+};
+
 export type AgentRuntimeSkills = {
   effectiveRevision: string;
   loadResult: LoadSkillsResult;
@@ -1700,6 +1706,9 @@ Expected: PASS；0/1/N Skills 与隐式 loader 使用同一 effectiveRevision，
   static/exact-diff docs checks 与完整 `pnpm verify` 均通过；完整测试为 docs 28、chat-core 14、pi-server
   267（另 1 个 opt-in smoke skip）、desktop 330，format/lint/typecheck/build 全部通过。无 UI-visible change，
   未运行 visual verification。
+- Second formal re-review：`InvalidSkillSelection` 增加 optional `winnerPath`；只有 `reason: "shadowed"`
+  才返回当前 winner canonical path，其他六种 reason 省略该字段而非返回 `null`。Pure preflight 与 typed
+  409 route 都有 RED/GREEN，route 保持 catalog revision、无 prepare/run 的原有 transaction contract。
 
 - [x] **Step 9: 提交**
 
