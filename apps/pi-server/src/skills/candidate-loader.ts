@@ -54,6 +54,29 @@ function piDiagnostic(diagnostic: ResourceDiagnostic): SkillDiagnostic {
   };
 }
 
+function decodeUtf8WithinByteBudget(
+  input: Buffer,
+  byteBudget: number
+): { content: string; truncated: boolean } {
+  const decoded = input.toString("utf8");
+  if (Buffer.byteLength(decoded, "utf8") <= byteBudget) {
+    return { content: decoded, truncated: false };
+  }
+
+  const prefix: string[] = [];
+  let bytesUsed = 0;
+  for (const char of decoded) {
+    const charBytes = Buffer.byteLength(char, "utf8");
+    if (bytesUsed + charBytes > byteBudget) {
+      return { content: prefix.join(""), truncated: true };
+    }
+    prefix.push(char);
+    bytesUsed += charBytes;
+  }
+
+  return { content: prefix.join(""), truncated: false };
+}
+
 function failureCandidate(
   descriptor: DiscoveredSkillFile,
   code: string,
@@ -108,6 +131,10 @@ function parsedCandidate(
   }
 
   const explicitEligible = parsedSkill !== null && !tooLarge && !unsupportedIdentifier;
+  const preview = decodeUtf8WithinByteBudget(content, SKILL_PREVIEW_BYTES);
+  const rawContent = explicitEligible
+    ? decodeUtf8WithinByteBudget(content, SKILL_EXPLICIT_BYTES).content
+    : null;
   return {
     ...descriptor,
     canonicalPath,
@@ -118,9 +145,9 @@ function parsedCandidate(
     contentHash: hash(content),
     explicitEligible,
     explicitOnly: parsedSkill?.disableModelInvocation ?? false,
-    rawContent: explicitEligible ? content.toString("utf8") : null,
-    previewContent: content.subarray(0, SKILL_PREVIEW_BYTES).toString("utf8"),
-    previewTruncated: content.byteLength > SKILL_PREVIEW_BYTES
+    rawContent,
+    previewContent: preview.content,
+    previewTruncated: preview.truncated
   };
 }
 
