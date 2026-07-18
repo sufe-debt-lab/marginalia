@@ -18,6 +18,23 @@ describe("SlashMenu", () => {
     }
   ];
 
+  it("bounds the upward menu so both section headings stay visible in New chat", () => {
+    render(
+      <SlashMenu
+        query=""
+        skills={skills}
+        skillsLoading={false}
+        skillsError={null}
+        onSelect={vi.fn()}
+        onRetrySkills={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("listbox", { name: "Commands and Skills" })).toHaveClass(
+      "max-h-[190px]"
+    );
+  });
+
   it("filters by query and selects with click", async () => {
     const onSelect = vi.fn();
     render(

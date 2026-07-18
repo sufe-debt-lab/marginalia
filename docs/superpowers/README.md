@@ -6,11 +6,9 @@
 
 <!-- active-records:start -->
 
-| Record ID               | Type | Status | Document                                                                      |
-| ----------------------- | ---- | ------ | ----------------------------------------------------------------------------- |
-| `SPEC-P1-CHAT-CORE-001` | spec | active | [P1 对话核心体验设计](./specs/2026-07-08-p1-chat-core-experience-design.md)   |
-| `SPEC-P2-SKILLS-001`    | spec | active | [Codex 风格 Skills 集成设计](./specs/2026-07-18-skills-integration-design.md) |
-| `PLAN-P2-SKILLS-001`    | plan | active | [Codex 风格 Skills 集成实施计划](./plans/2026-07-18-skills-integration.md)    |
+| Record ID               | Type | Status | Document                                                                    |
+| ----------------------- | ---- | ------ | --------------------------------------------------------------------------- |
+| `SPEC-P1-CHAT-CORE-001` | spec | active | [P1 对话核心体验设计](./specs/2026-07-08-p1-chat-core-experience-design.md) |
 
 <!-- active-records:end -->
 

@@ -9,7 +9,9 @@ import {
   assessFramePair,
   ensureFixtureProvider,
   parseArgs,
-  SCENARIOS
+  SCENARIOS,
+  skillsApiJson,
+  writeSkillsFixture
 } from "./verify-screenshots.mjs";
 
 /** A solid-gray PNG buffer with optional per-pixel overrides for noise/regions. */
@@ -24,7 +26,16 @@ function grayPng(width: number, height: number, overrides: Array<[number, number
   return PNG.sync.write(png);
 }
 
-const DEFAULTS = ["core-ui", "seeded-workspace", "approval-flow"];
+const DEFAULTS = ["core-ui", "seeded-workspace", "approval-flow", "skills-flow"];
+const SKILLS_FLOW_LABELS = [
+  "skills-settings",
+  "skill-picker-dollar",
+  "slash-skills",
+  "skill-chips",
+  "skills-global-only",
+  "skill-diagnostics",
+  "skill-precondition-blocked"
+];
 
 describe("verify-screenshots parseArgs", () => {
   it("defaults to the local scenarios with cleaning enabled", () => {
@@ -210,18 +221,81 @@ describe("scenario hermeticity (source contracts)", () => {
     expect(source).toContain("assessFramePair");
   });
 
-  it("seeded workspace fixture is create-or-reuse across shared-database passes", () => {
-    // Isolated passes run with clean=false and inherit the shared pass's
-    // database; blindly POSTing a second "screenshot-fixture" workspace
-    // doubles the sidebar in their captures.
-    const start = source.indexOf("async function ensureSeededWorkspace");
-    const end = source.indexOf("async function scenarioCoreUi");
+  it("resets isolated harness state without deleting screenshots from earlier passes", () => {
+    const start = source.indexOf("async function withHarness");
+    const end = source.indexOf("async function runAdhocSession");
     const body = source.slice(start, end);
-    const listCall = body.indexOf('"/workspaces")');
-    const createCall = body.indexOf('"/workspaces", {');
-    expect(listCall).toBeGreaterThan(-1);
-    expect(createCall).toBeGreaterThan(-1);
-    expect(listCall).toBeLessThan(createCall);
+    expect(body).toContain("if (clean) await rm(outRoot");
+    expect(body).toContain("else await rm(runRoot");
+  });
+
+  it("keeps Skills fixture writes inside the isolated harness home and workspace", async () => {
+    const root = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const os = await vi.importActual<typeof import("node:os")>("node:os");
+    const fixtureRoot = await root.mkdtemp(path.join(os.tmpdir(), "marginalia-skills-shot-"));
+    const home = path.join(fixtureRoot, "home");
+    const workspace = path.join(fixtureRoot, "workspace");
+    try {
+      const fixture = await writeSkillsFixture({ root: fixtureRoot, home, workspace });
+      expect(fixture.writtenPaths.length).toBeGreaterThan(0);
+      expect(
+        fixture.writtenPaths.every((file: string) => file.startsWith(`${fixtureRoot}${path.sep}`))
+      ).toBe(true);
+      expect(
+        fixture.writtenPaths.every((file: string) =>
+          [".marginalia/skills", ".pi/skills", ".agents/skills"].some((directory) =>
+            file.split(path.sep).join("/").includes(`/${directory}/`)
+          )
+        )
+      ).toBe(true);
+      expect(
+        fixture.writtenPaths.some((file: string) => file.includes(process.env.HOME ?? ""))
+      ).toBe(false);
+    } finally {
+      await root.rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a Skills fixture root that escapes the isolated harness run", async () => {
+    const root = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const os = await vi.importActual<typeof import("node:os")>("node:os");
+    const fixtureRoot = await root.mkdtemp(path.join(os.tmpdir(), "marginalia-skills-boundary-"));
+    const escapedWorkspace = `${fixtureRoot}-escape`;
+    try {
+      await expect(
+        writeSkillsFixture({
+          root: fixtureRoot,
+          home: path.join(fixtureRoot, "home"),
+          workspace: escapedWorkspace
+        })
+      ).rejects.toThrow(/outside isolated run root/i);
+    } finally {
+      await root.rm(fixtureRoot, { recursive: true, force: true });
+      await root.rm(escapedWorkspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uses bearer authentication only in the Skills harness API helper", async () => {
+    const request = vi.fn(
+      async (_url: string, _init: RequestInit) =>
+        new Response(JSON.stringify({ catalogRevision: "catalog-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+    );
+    await skillsApiJson(
+      { url: "http://127.0.0.1:3456", capabilityToken: "fixture-secret" },
+      "/skills",
+      {},
+      request
+    );
+    expect(request).toHaveBeenCalledWith(
+      "http://127.0.0.1:3456/skills",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer fixture-secret" })
+      })
+    );
+    expect(source).not.toMatch(/manifest\.(?:capabilityToken|token)|capabilityToken.*summary/);
   });
 });
 
@@ -243,16 +317,19 @@ describe("SCENARIOS registry export", () => {
       "core-ui",
       "seeded-workspace",
       "approval-flow",
+      "skills-flow",
       "minimax-live"
     ]);
     expect(SCENARIOS["minimax-live"].live).toBe(true);
     expect(SCENARIOS["core-ui"].expected).toContain("first-run");
     expect(SCENARIOS["seeded-workspace"].expected).toContain("recent-threads");
     expect(SCENARIOS["approval-flow"].expected).toContain("approval-command-pending");
+    expect(SCENARIOS["skills-flow"].expected).toEqual(SKILLS_FLOW_LABELS);
   });
 
   it("isolates env-declaring scenarios (e.g. approval-flow's fake agent) from the shared harness pass", () => {
     expect(SCENARIOS["approval-flow"].env).toEqual({ MARGINALIA_FAKE_AGENT: "1" });
+    expect(SCENARIOS["skills-flow"].env).toEqual({ MARGINALIA_FAKE_AGENT: "1" });
     expect(SCENARIOS["core-ui"].env).toBeUndefined();
     expect(SCENARIOS["seeded-workspace"].env).toBeUndefined();
   });

@@ -32,7 +32,7 @@ export function SkillMenu({ items, query, loading, error, onSelect, onRetry, onC
     <div
       role="listbox"
       aria-label={t("composer.skillsSection")}
-      className={cn(COMPOSER_MENU_CLS, "max-h-[280px] w-80 overflow-auto")}
+      className={cn(COMPOSER_MENU_CLS, "max-h-[190px] w-80 overflow-auto")}
     >
       <div className="px-2.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-text-subtle">
         {t("composer.skillsSection")}

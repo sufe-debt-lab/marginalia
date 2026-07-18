@@ -1,7 +1,7 @@
 ---
 type: spec
 record_id: SPEC-P2-SKILLS-001
-status: active
+status: archived
 created: 2026-07-18
 updated: 2026-07-18
 target_milestone: post-M0
@@ -15,11 +15,46 @@ docs_impact:
     - docs/developer/api.md
     - docs/developer/architecture.md
   product_status: true
+archived_at: 2026-07-18
+outcome: completed
+implementation_refs:
+  - 0fc70e2
+  - 62bb2e6
+  - 3e673ca
+  - 7cda2b3
+  - 9a1164d
+  - f4d7102
+  - 723f528
+  - 6e2548a
+  - b76895c
+  - 45e1c9b
+  - cbaacac
+  - bea3b4a
+  - acef94c
+  - 061ab73
+  - ec26457
+  - e51e83d
+  - bbaf2b5
+  - 8357b46
+  - 2eda76a
+  - fb8ede7
+  - 4010a68
+  - 73cf180
+  - 6698120
+  - 7a0e89d
+  - c602ce4
+  - e838e32
+  - b72b260
+  - f36b229
+  - 67bac67
+  - 7a778ae
+  - same_change
+same_change: true
 ---
 
 # Codex 风格 Skills 集成设计
 
-日期：2026-07-18 · 状态：实施中
+日期：2026-07-18 · 状态：已完成并归档
 
 ## 背景
 
@@ -654,3 +689,30 @@ Task 9 deep security review 确认两项必须收紧的边界，已由 repositor
 这些变更不改变 canonical first-path dedupe、exact membership、512 KiB block 或 2 MiB expanded total
 语义。后续任何目录规则、API、持久化、认证、历史展示或大小限制变化，仍必须先更新本节并重新确认
 相应正式文档。
+
+## Implementation Outcome
+
+- 实际完成：实现六级目录发现、Pi-compatible 候选解析、不可变 workspace/global Catalog、canonical
+  path 偏好、冲突诊断、只读 HTTP API、run preflight 与 per-session lease；Desktop 提供 Settings 管理、
+  `$`/`/` 双入口、有序 chips、发送前阻断与修复、Retry 和 live/reopened history 归一化。
+- 安全边界：Skills 敏感 API 与所有 run 使用 Electron 进程级 capability token；服务端在创建 run 前
+  完成刷新、身份复验、payload 限制和 prompt 构建。Task 16 的 Electron harness 只在隔离 HOME/workspace
+  下创建 fixture，并拒绝任何逃逸 run root 的写入；token 不进入 manifest、summary 或日志。
+- 视觉交付：新增 deterministic `skills-flow`，覆盖 Settings、`$` picker、Slash Skills、多 chips、
+  global-only、diagnostics 与真实 409 blocked state。人工检查发现两个 picker 在 New Chat 中裁切标题，
+  因此把两者的可滚动最大高度收敛到 190 px；七张批准 baseline 随 closeout 提交。
+- 设计偏差：除本 spec 已记录的 `expandPromptTemplates: false` 与 raw request caps 外，实施增加 stale
+  request/generation guards、acceptance-deferred retry replacement、40 px chip remove target 和 picker
+  高度修复。这些变化收紧竞态、安全或可访问性边界，不扩大产品范围。
+- 验证：各任务均保存 RED→GREEN 证据；closeout 执行 `pnpm verify` 与 `pnpm verify:visual`。最终
+  docs 28、chat-core 37、pi-server 270（另 1 项 opt-in skip）、desktop 418 tests 通过，全部 build
+  通过；visual 为 39 张 unchanged，且 `changed=0 new=0 orphan=0 errors=0`。
+- 正式文档：同步 `docs/user/guide.md`、`docs/user/concepts.md`、
+  `docs/user/configuration.md`、`docs/developer/api.md`、`docs/developer/architecture.md`、
+  `docs/developer/development.md`、`docs/product/status.md`、readiness audit 与 screenshot harness README。
+- 实现引用：frontmatter 保存从实际 ancestry base `ad07b03` 后的全部 Task 1–15 commits；Task 16 代码、
+  baseline、归档和索引位于同一 closeout commit，因此使用受限机器值 `same_change`。
+- 遗留问题：MCP 与 Skill 创建、安装、编辑、更新生态仍不在 V1；整体 loopback API 的
+  `P0-SEC-001` 仍 open。已批准 residual risks 保持不变，包括 Pi discovery 的同步无界读取与目录
+  symlink cycle、canonical out-of-root Skill symlink、512 KiB eligibility 前完整文件读取，以及历史
+  prompt 归一化的保守 provenance 限制。

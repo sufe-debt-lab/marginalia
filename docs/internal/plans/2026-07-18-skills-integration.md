@@ -1,7 +1,7 @@
 ---
 type: plan
 record_id: PLAN-P2-SKILLS-001
-status: active
+status: archived
 source_spec_id: SPEC-P2-SKILLS-001
 created: 2026-07-18
 updated: 2026-07-18
@@ -17,6 +17,41 @@ docs_impact:
     - docs/developer/architecture.md
     - docs/developer/development.md
   product_status: true
+archived_at: 2026-07-18
+outcome: completed
+implementation_refs:
+  - 0fc70e2
+  - 62bb2e6
+  - 3e673ca
+  - 7cda2b3
+  - 9a1164d
+  - f4d7102
+  - 723f528
+  - 6e2548a
+  - b76895c
+  - 45e1c9b
+  - cbaacac
+  - bea3b4a
+  - acef94c
+  - 061ab73
+  - ec26457
+  - e51e83d
+  - bbaf2b5
+  - 8357b46
+  - 2eda76a
+  - fb8ede7
+  - 4010a68
+  - 73cf180
+  - 6698120
+  - 7a0e89d
+  - c602ce4
+  - e838e32
+  - b72b260
+  - f36b229
+  - 67bac67
+  - 7a778ae
+  - same_change
+same_change: true
 ---
 
 # Codex 风格 Skills 集成 Implementation Plan
@@ -2283,20 +2318,20 @@ export function useSkillCatalog(
 };
 ```
 
-- [ ] **Step 1: 写 hook stale-response 失败测试**
+- [x] **Step 1: 写 hook stale-response 失败测试**
 
 用两个 deferred responses：w1 请求先发后回，切到 w2 后 w2 先回；断言最终 snapshot 只能是 w2。
 同 workspace 连续两个 request 也只接受最新 requestId。refresh reject 时保留旧 snapshot 供展示，但
 返回 null 且暴露 error，picker 不允许从旧结果新增 selection。
 
-- [ ] **Step 2: 写菜单与 chips 失败测试**
+- [x] **Step 2: 写菜单与 chips 失败测试**
 
 覆盖 `$` 打开 Skill-only menu、query 搜索 name/description、`/` 同时显示 Commands/Skills headings、
 keyboard ArrowDown 只遍历 selectable rows、选择 Skill 删除 trigger token 且正文不写 `/skill:*`、
 chips 顺序、canonical dedupe、remove、warning/explicit-only badge、empty/loading/error。显式断言没有
 `/skills` 管理 command；名为 `skills` 的磁盘 Skill 仍是 Skill row。
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run:
 
@@ -2306,7 +2341,7 @@ pnpm --filter @marginalia/desktop test -- useSkillCatalog SkillMenu SkillChip Sl
 
 Expected: FAIL，只有 `/`/`@` trigger 和静态 commands。
 
-- [ ] **Step 4: 实现带 requestId/workspace guard 的 hook**
+- [x] **Step 4: 实现带 requestId/workspace guard 的 hook**
 
 ```ts
 const requestId = useRef(0);
@@ -2341,13 +2376,13 @@ workspace change 时递增 requestId 并清当前 snapshot/error，避免把另�
 NewThreadView/ChatView mount 以及 workspace owner 改变时主动调用一次 `refresh()`；菜单每次打开仍再
 refresh，从而同时满足 workspace-switch 与 picker-open 两个刷新事件。
 
-- [ ] **Step 5: 增加第三类 trigger 与 picker eligibility**
+- [x] **Step 5: 增加第三类 trigger 与 picker eligibility**
 
 `Trigger.kind` 增加 `"skill"`，regex 扩展为 `([/@$])`。每次 `$` 或 `/` menu 打开都调用 `refresh()`。
 eligible list 只包含 `effective && enabled && status === "effective" && explicitEligible && name !== null`。
 refresh 失败后菜单只显示 error/retry，不允许点击旧 row。
 
-- [ ] **Step 6: 合并 Slash rows 但保持扁平导航**
+- [x] **Step 6: 合并 Slash rows 但保持扁平导航**
 
 ```ts
 type SlashRow =
@@ -2363,13 +2398,13 @@ const selectableRows: SlashRow[] = [
 section labels 不进入数组。`useMenuNav` 继续接一维 rows；onSelect 返回 discriminated union。command
 保持既有行为，skill 统一调用 `onAddSkill({ name, path: canonicalPath })`。
 
-- [ ] **Step 7: 渲染 chips 并接 controlled store actions**
+- [x] **Step 7: 渲染 chips 并接 controlled store actions**
 
 chips 位于附件卡上方或同一区域，显示 `$name`、source tooltip、remove button；canonical path 是 key。
 `Composer` 不自己去重，调用 Task 12 store action，保证所有入口使用同一 dedupe。所有 aria labels、
 empty/error/status copy 加 en/zh keys。
 
-- [ ] **Step 8: focused 验证**
+- [x] **Step 8: focused 验证**
 
 Run:
 
@@ -2380,7 +2415,7 @@ pnpm --filter @marginalia/desktop typecheck
 
 Expected: PASS；`$` 和 `/` 生成相同 structured identity，不出现 `/skills` command。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add apps/desktop/src/hooks/useSkillCatalog.ts apps/desktop/src/hooks/useSkillCatalog.test.tsx apps/desktop/src/chat/Composer apps/desktop/src/i18n/messages.ts
@@ -2418,7 +2453,7 @@ type SkillsPaneProps = {
 setEnabled(path: string, enabled: boolean): Promise<SkillCatalogSnapshot | null>;
 ```
 
-- [ ] **Step 1: 写 Settings 失败测试**
+- [x] **Step 1: 写 Settings 失败测试**
 
 覆盖：Skills tab 可点击且打开即 refresh；有效 workspace 显示 name 并请求 workspaceId；stale
 `activeWorkspaceId` 不在已加载列表时传 null/global-only；搜索 name/description/discovered/canonical
@@ -2433,7 +2468,7 @@ expect(
 expect(api.listSkills).toHaveBeenCalledWith(null); // stale workspace fallback
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -2443,13 +2478,13 @@ pnpm --filter @marginalia/desktop test -- SkillsPane SettingsView AppShell useSk
 
 Expected: FAIL，Skills tab disabled，没有 pane。
 
-- [ ] **Step 3: 扩展 hook 的 toggle 与 stale guard**
+- [x] **Step 3: 扩展 hook 的 toggle 与 stale guard**
 
 `setEnabled` 捕获调用时 workspaceId/requestId；调用 `api.setSkillEnabled` 返回的 snapshot 只有在
 workspace 仍匹配时落地。开始 toggle 时不 optimistic 改 status；失败保留原 snapshot 并暴露 error，
 避免 winner 接替的复杂状态在 client 重算。
 
-- [ ] **Step 4: 实现列表/详情双栏但保持现有 Settings 宽度体系**
+- [x] **Step 4: 实现列表/详情双栏但保持现有 Settings 宽度体系**
 
 左侧：search input + status/source rows；右侧：selected candidate metadata、diagnostics、只读 preview。
 状态 label 精确为 Effective、Enabled · Shadowed、Disabled、Invalid；warning/explicit-only 另渲染。
@@ -2466,12 +2501,12 @@ toggle 的 checked 来自 `candidate.enabled`，Invalid candidate 也显示真�
 </div>
 ```
 
-- [ ] **Step 5: 严格处理 preview response race**
+- [x] **Step 5: 严格处理 preview response race**
 
 row selection 递增 `contentRequestId`，response 只有 candidate canonicalPath、workspaceId 与 requestId
 仍匹配时落地；切 row/workspace 时先清 preview。preview 只展示 server content，不再从 path 读文件。
 
-- [ ] **Step 6: 在 AppShell 解析可信 workspace context**
+- [x] **Step 6: 在 AppShell 解析可信 workspace context**
 
 ```ts
 const activeWorkspace = useMemo(
@@ -2487,7 +2522,7 @@ const activeWorkspace = useMemo(
 
 Settings tab 移除 disabled；MCP 仍 disabled。SkillsPane mount 时 refresh，tab 返回时重新 mount/refresh。
 
-- [ ] **Step 7: 加 i18n 并 focused 验证**
+- [x] **Step 7: 加 i18n 并 focused 验证**
 
 Run:
 
@@ -2498,7 +2533,7 @@ pnpm --filter @marginalia/desktop typecheck
 
 Expected: PASS；global-only 与 workspace 视图都可搜索、preview、toggle、refresh。
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add apps/desktop/src/settings apps/desktop/src/app/AppShell.tsx apps/desktop/src/app/AppShell.test.tsx apps/desktop/src/hooks/useSkillCatalog.ts apps/desktop/src/hooks/useSkillCatalog.test.tsx apps/desktop/src/i18n/messages.ts
@@ -2693,7 +2728,7 @@ git commit -m "feat(desktop): recover blocked Skill turns"
 - Produces: deterministic `skills-flow` default scenario、clean `pnpm verify`、人工裁决后的 visual baseline、
   archived spec/plan with Implementation Outcome。
 
-- [ ] **Step 1: 写 screenshot scenario contract 失败测试**
+- [x] **Step 1: 写 screenshot scenario contract 失败测试**
 
 新增 default `skills-flow`，expected labels 精确为：
 
@@ -2712,7 +2747,7 @@ git commit -m "feat(desktop): recover blocked Skill turns"
 测试还断言 fixture HOME/workspace 只写入 `.marginalia/skills`、`.pi/skills`、`.agents/skills`，不
 读取开发者真实 HOME；scenario 使用 `MARGINALIA_FAKE_AGENT=1`。
 
-- [ ] **Step 2: 运行 scenario unit test 确认失败**
+- [x] **Step 2: 运行 scenario unit test 确认失败**
 
 Run:
 
@@ -2722,7 +2757,7 @@ pnpm --filter @marginalia/desktop test -- verify-screenshots
 
 Expected: FAIL，scenario 和 labels 不存在。
 
-- [ ] **Step 3: 实现 deterministic Skills fixture/scenario**
+- [x] **Step 3: 实现 deterministic Skills fixture/scenario**
 
 在 isolated `runRoot/home` 与 seed workspace 写至少这些 fixtures：effective、同名 shadowed、disabled、
 invalid missing description、warning invalid-name、explicit-only、body >512 KiB。通过真实 UI 完成
@@ -2732,7 +2767,7 @@ Settings 搜索/选行、toggle、`$`、`/`、多 chips；blocked shot 在选择
 `waitForPiServerUrl` 改为返回 `{ url, capabilityToken }`，只有 screenshot harness 的 Skills API helper
 需要 bearer；token 不写 summary/manifest。
 
-- [ ] **Step 4: 运行 focused screenshot capture 并检查每张图**
+- [x] **Step 4: 运行 focused screenshot capture 并检查每张图**
 
 Run:
 
@@ -2745,7 +2780,7 @@ Expected: report 中七张均为 `new`（第一次）或 intentional `changed`�
 `output/visual-diff/report.md` 和每张 PNG，检查信息层级、截断、hover-independent controls、中文/英文
 不混杂、blocked 修复动作可见。发现问题先改 UI/测试并重跑，不直接 bless。
 
-- [ ] **Step 5: 带具体理由更新七张 baseline**
+- [x] **Step 5: 带具体理由更新七张 baseline**
 
 ```bash
 pnpm --filter @marginalia/desktop compare:screenshots \
@@ -2755,7 +2790,7 @@ pnpm --filter @marginalia/desktop compare:screenshots \
 
 Expected: 七张 baseline 写入 **apps/desktop/screenshots-baseline/skills-flow/**，无 orphan。
 
-- [ ] **Step 6: 调用 required completion skills 并运行完整门禁**
+- [x] **Step 6: 调用 required completion skills 并运行完整门禁**
 
 执行者在声称完成前必须调用 `check` 与 `superpowers:verification-before-completion`，然后运行：
 
@@ -2767,7 +2802,7 @@ pnpm verify:visual
 Expected: `pnpm verify` 全绿；visual report 为 `changed=0 new=0 orphan=0 errors=0`。即使命令 exit 0，
 也再次打开 report 确认七张 skills-flow 和所有既有 scenario 都是 unchanged。
 
-- [ ] **Step 7: 写 Implementation Outcome 并归档 active records**
+- [x] **Step 7: 写 Implementation Outcome 并归档 active records**
 
 先收集本计划实际实现 commits：
 
@@ -2787,14 +2822,14 @@ git mv docs/superpowers/plans/2026-07-18-skills-integration.md docs/internal/pla
 同一 change 从 active index 删除两条记录，并在 `docs/internal/README.md` 增加 stable IDs 的 archive
 entries。再次运行 `pnpm docs:check`。
 
-- [ ] **Step 8: 提交 closeout**
+- [x] **Step 8: 提交 closeout**
 
 ```bash
 git add apps/desktop/scripts apps/desktop/screenshots-baseline docs
 git commit -m "feat(desktop): verify and close out Skills integration"
 ```
 
-- [ ] **Step 9: 最终证据检查**
+- [x] **Step 9: 最终证据检查**
 
 Run:
 
@@ -2806,3 +2841,34 @@ pnpm docs:check
 
 Expected: worktree clean；任务 commits 与归档引用一致；docs check PASS。不要 push、开 PR 或发布，
 除非用户另行明确要求。
+
+## Implementation Outcome
+
+- 实际完成：Task 1–15 通过 30 个独立 Conventional Commits 交付 server capability/lease/catalog/API、
+  chat-core history normalization、desktop API/draft/picker/Settings/blocked repair 和正式产品文档。
+  实际 ancestry base 是 `ad07b03`；计划 Step 7 的示例 `b97d789` 不是本分支祖先，未用于生成引用。
+- Task 16：新增默认 `skills-flow` 与七个精确 labels；fixture 覆盖 effective、shadowed、disabled、
+  invalid missing-description、invalid-name warning、explicit-only 和超过 512 KiB。场景通过真实 Settings、
+  `$`/`/`、chips 与删除文件后的实际 409 UI，不读写开发者 HOME，也不泄露 capability token。
+- TDD：scenario contract 初始为 5 failures / 24 passes，完成后为 29 passes；视觉检查暴露 picker 标题
+  裁切，两个生产 UI contract tests 先 RED 后 GREEN；deep review 暴露 fixture root containment 缺失，
+  逃逸测试先 RED 后修复。full visual 又暴露 isolated passes 共用 runRoot 的状态泄漏，hermeticity test
+  先以 1 failure / 29 passes 复现，再让每个 pass 重置 DB/HOME/user-data。最终 Task 16 focused 为
+  3 files / 39 tests，desktop typecheck 通过。
+- 人工视觉裁决：Settings、chips、global-only、diagnostics 与 blocked 首轮通过；`$` picker 与 Slash
+  Skills 修正 190 px 可滚动高度后通过。七张图均无混合语言、关键动作遮挡或 hover-only 控件；baseline
+  使用批准理由更新，focused recompare 为 7 unchanged。
+- Review：按 `/check deep` 执行 security、architecture/race、adversarial、test/docs 检查。并行 reviewer
+  因 agent thread limit 不可用，故由执行者按相同 checklist 完成本地深审；唯一 finding 是 fixture writer
+  可能逃逸 run root，已修复，最终 0 hard stops、0 deferred findings。
+- 完整验证：`pnpm verify` 通过（docs 28、chat-core 37、pi-server 270 + 1 opt-in skip、desktop 418，
+  全部 build 通过）；`pnpm verify:visual` 通过，报告为 39 unchanged、
+  `changed=0 new=0 orphan=0 errors=0`。Task 16 report 保存完整 RED→GREEN 与七张裁决。
+- 正式文档：既有 Task 15 已同步 user guide/concepts/configuration、developer API/architecture、product status
+  与 readiness audit；Task 16 同步 screenshot harness README，并把 spec/plan、active/internal indexes 按
+  documentation lifecycle 同一 change 归档。
+- 偏差：保留各 task 已记录的运行时、请求 cap、retry 与 UI race 收紧；Task 16 只新增 picker 高度与
+  test harness root containment 修复，没有扩大 V1 功能或新增运行时依赖。
+- 遗留问题：MCP、Skill create/import/install/edit/update 生态与整体 loopback `P0-SEC-001` 继续 open。
+  已批准 Pi discovery 同步无界读取、directory symlink cycle、out-of-root symlink、eligibility 前完整读取，
+  以及保守 history provenance normalization residual risks 均保持记录，不因归档关闭。

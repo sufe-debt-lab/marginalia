@@ -26,6 +26,21 @@ const skills: SkillPickerItem[] = [
 ];
 
 describe("SkillMenu", () => {
+  it("bounds the upward menu so its heading stays visible in New chat", () => {
+    render(
+      <SkillMenu
+        items={skills}
+        query=""
+        loading={false}
+        error={null}
+        onSelect={vi.fn()}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("listbox", { name: "Skills" })).toHaveClass("max-h-[190px]");
+  });
+
   it("searches by name and description and selects a structured item", async () => {
     const onSelect = vi.fn();
     const { rerender } = render(

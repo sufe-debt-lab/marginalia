@@ -6,14 +6,16 @@
 
 ## 近期归档
 
-| Record ID                       | Outcome               | Archived   | Document                                                                 |
-| ------------------------------- | --------------------- | ---------- | ------------------------------------------------------------------------ |
-| `SPEC-DOC-LIFECYCLE-001`        | completed             | 2026-07-11 | [文档生命周期设计](./specs/2026-07-11-documentation-lifecycle-design.md) |
-| `PLAN-DOC-LIFECYCLE-001`        | completed             | 2026-07-11 | [文档生命周期实施记录](./plans/2026-07-11-documentation-lifecycle.md)    |
-| `PLAN-P1-APPROVAL-BACKBONE-001` | completed             | 2026-07-11 | [P1-A 审批权限骨架](./plans/2026-07-08-approval-backbone.md)             |
-| `PLAN-P1-MESSAGE-STREAM-001`    | cancelled（部分交付） | 2026-07-11 | [P1-B 消息流渲染](./plans/2026-07-10-message-stream.md)                  |
-| —                               | historical handoff    | 2026-07-11 | [产物导出子系统](./handoffs/2026-07-10-export-subsystem.md)              |
-| —                               | historical handoff    | 2026-07-11 | [文件变更摘要](./handoffs/2026-07-10-turn-change-summary.md)             |
+| Record ID                       | Outcome               | Archived   | Document                                                                      |
+| ------------------------------- | --------------------- | ---------- | ----------------------------------------------------------------------------- |
+| `SPEC-DOC-LIFECYCLE-001`        | completed             | 2026-07-11 | [文档生命周期设计](./specs/2026-07-11-documentation-lifecycle-design.md)      |
+| `PLAN-DOC-LIFECYCLE-001`        | completed             | 2026-07-11 | [文档生命周期实施记录](./plans/2026-07-11-documentation-lifecycle.md)         |
+| `PLAN-P1-APPROVAL-BACKBONE-001` | completed             | 2026-07-11 | [P1-A 审批权限骨架](./plans/2026-07-08-approval-backbone.md)                  |
+| `PLAN-P1-MESSAGE-STREAM-001`    | cancelled（部分交付） | 2026-07-11 | [P1-B 消息流渲染](./plans/2026-07-10-message-stream.md)                       |
+| `SPEC-P2-SKILLS-001`            | completed             | 2026-07-18 | [Codex 风格 Skills 集成设计](./specs/2026-07-18-skills-integration-design.md) |
+| `PLAN-P2-SKILLS-001`            | completed             | 2026-07-18 | [Codex 风格 Skills 集成实施记录](./plans/2026-07-18-skills-integration.md)    |
+| —                               | historical handoff    | 2026-07-11 | [产物导出子系统](./handoffs/2026-07-10-export-subsystem.md)                   |
+| —                               | historical handoff    | 2026-07-11 | [文件变更摘要](./handoffs/2026-07-10-turn-change-summary.md)                  |
 
 ## 目录说明
 

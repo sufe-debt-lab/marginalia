@@ -69,7 +69,7 @@ export function SlashMenu({
     <div
       role="listbox"
       aria-label={t("composer.slashMenu")}
-      className={cn(COMPOSER_MENU_CLS, "max-h-[320px] w-80 overflow-auto")}
+      className={cn(COMPOSER_MENU_CLS, "max-h-[190px] w-80 overflow-auto")}
     >
       <SectionLabel>{t("composer.commandsSection")}</SectionLabel>
       {commandRows.length === 0 ? (
