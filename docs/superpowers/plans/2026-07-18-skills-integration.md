@@ -691,7 +691,7 @@ export interface SkillPreferenceStore {
 export function createSkillPreferenceStore(db: Database.Database): SkillPreferenceStore;
 ```
 
-- [ ] **Step 1: 写 v1 → v2 与 repository 失败测试**
+- [x] **Step 1: 写 v1 → v2 与 repository 失败测试**
 
 测试先手工创建带 `schema_migrations(version=1)` 的 v1 DB，再调用 `migrate(db)`：
 
@@ -709,7 +709,7 @@ expect(() =>
 Repository 用例固定 default-enabled、upsert、canonical string 原样作为 key、以及文件消失后记录仍
 存在（tombstone 不自动删除）。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -719,7 +719,7 @@ pnpm --filter @marginalia/pi-server test -- skill-preferences db-connection prov
 
 Expected: FAIL，因为 migration 只有伪 v1 记录且没有 preferences 表。
 
-- [ ] **Step 3: 把 migration 改为顺序版本**
+- [x] **Step 3: 把 migration 改为顺序版本**
 
 保留现有 v1 DDL，改为每个版本独立 transaction：
 
@@ -765,13 +765,13 @@ for (const migration of migrations) {
 现有 `sessions.model` 与 `agent_session_path` 兼容升级必须仍属于 v1 bootstrap：旧 DB 已有 version 1
 但缺列的历史异常形态继续由幂等 column guard 修复，不能被 v2 重构破坏。
 
-- [ ] **Step 4: 实现 store**
+- [x] **Step 4: 实现 store**
 
 `enabledFor` 没有 row 时返回 true；`setEnabled` 用
 `INSERT ... ON CONFLICT(skill_path) DO UPDATE` 并返回 camelCase DTO；`list()` 只供 Catalog 一次性
 构造 preference map，不在候选循环中做 N 次查询。
 
-- [ ] **Step 5: 更新数据库契约并验证**
+- [x] **Step 5: 更新数据库契约并验证**
 
 Run:
 
@@ -783,7 +783,24 @@ pnpm docs:check
 
 Expected: PASS；fresh DB 得到 v1+v2，真实 v1 DB 只补 v2，不丢既有数据。
 
-- [ ] **Step 6: 提交**
+**Task 4 results (2026-07-18):**
+
+- 实际完成：SQLite migration 改为 v1/v2 顺序 transaction，新增带 `enabled IN (0, 1)` 约束的
+  `skill_preferences`；`SkillPreferenceStore` 实现缺省启用、exact canonical string key、upsert、单次
+  bulk list 和持久 tombstone。未提前实现 discovery、Catalog 或 HTTP API。
+- RED：prescribed focused command exit 1；recorded-v1 只返回 version 1、fresh DB 缺 preferences 表，
+  store module 尚不存在，共 2 个失败测试、1 个失败 suite、22 个既有测试通过。
+- GREEN：prescribed focused suite 28/28 通过；补齐完整 suite 发现的旧 migration 断言后，扩展 focused
+  suite 36/36 通过。pi-server typecheck、`pnpm docs:check` 与最终 `pnpm verify` 全通过；最终仓库门禁
+  包含 docs 28、chat-core 14、pi-server 155（另 1 个 opt-in smoke skip）和 desktop 330 tests 及 builds。
+- 正式文档：更新 `docs/developer/api.md` 和 `docs/developer/architecture.md` 的 v2 schema、兼容修复、
+  preference key/default/upsert/list/tombstone 契约。
+- Review：security、architecture 与 adversarial pass 无 finding。
+- 偏差与遗留：原 Files 清单漏列已有断言 `apps/pi-server/test/workspace-session.test.ts`，完整门禁发现后
+  已同步到 v1+v2；第一次全门禁先修复 API 文档格式，第二次暴露该旧断言，第三次完整通过。无实现
+  偏差或新增遗留。
+
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/pi-server docs/developer/api.md docs/developer/architecture.md

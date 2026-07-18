@@ -47,7 +47,10 @@ describe("migrations", () => {
         { name: "workspaces" }
       ])
     );
-    expect(db.prepare("select version from schema_migrations").all()).toEqual([{ version: 1 }]);
+    expect(db.prepare("select version from schema_migrations order by version").all()).toEqual([
+      { version: 1 },
+      { version: 2 }
+    ]);
   });
 });
 

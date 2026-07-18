@@ -96,7 +96,7 @@ afterEach(() => {
 });
 
 describe("provider chat migrations", () => {
-  it("creates provider env var and run tables and agent_session_path column", () => {
+  it("creates the current schema and records every migration", () => {
     const db = memoryDb();
     migrate(db);
 
@@ -108,6 +108,12 @@ describe("provider chat migrations", () => {
     expect(names).toContain("providers");
     expect(names).toContain("env_vars");
     expect(names).toContain("runs");
+    expect(names).toContain("skill_preferences");
+
+    expect(db.prepare("select version from schema_migrations order by version").all()).toEqual([
+      { version: 1 },
+      { version: 2 }
+    ]);
 
     const sessionColumns = db
       .prepare("pragma table_info(sessions)")

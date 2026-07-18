@@ -275,7 +275,17 @@ schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置和 secret 边界
 | `runs`              | `id, session_id, provider_id, model, status, error, created_at, completed_at`                            |
 | `approvals`         | `id, session_id, run_id, tool_call_id, tool_name, kind, payload, status, reason, created_at, decided_at` |
 | `env_vars`          | `id, key, value, scope, workspace_id, created_at`（存 provider API key 等）                              |
+| `skill_preferences` | `skill_path, enabled, updated_at`；`enabled` 只能为 `0` 或 `1`                                           |
 | `schema_migrations` | `version, applied_at`                                                                                    |
+
+数据库迁移按版本顺序分别在 transaction 中执行。全新数据库记录 v1 和 v2；已有 v1 数据库只补
+`skill_preferences` 和 v2 记录。v1 的兼容修复仍会幂等补齐历史数据库可能缺失的
+`sessions.model` 与 `sessions.agent_session_path` 列。
+
+`createSkillPreferenceStore()`（`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）
+是 Skill 启停偏好的数据库入口。调用方传入的 canonical path 字符串会原样作为主键；没有记录时视为
+启用，写入使用 upsert，`list()` 一次读取全部偏好。路径对应文件消失时记录不会自动删除，因而保留为
+tombstone，供之后再次发现同一路径时复用。
 
 删除 workspace 时 repository 在 transaction 中显式清理 message/run/session，再删除 workspace。数据库外键也对 session/message 的部分关系启用 cascade。删除 provider 会清理关联 runs。
 

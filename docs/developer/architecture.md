@@ -114,6 +114,15 @@ lease 不跨 pi-server 重启持久化，renderer 的 `sendingRef` 也仍只保�
 
 历史消息的读取也分两种来源（`apps/pi-server/src/app.ts#readMessagesFromSessionFile`）：若该 session 已有 `agentSessionPath`（pi 落盘的 session 文件），从该文件读；否则从 SQLite 的 `messages` 表读并转成 `ChatEntry`。
 
+SQLite schema 由 `migrate()`（`apps/pi-server/src/db/migrations.ts#migrate`）按版本顺序升级，每个版本
+使用独立 transaction。v1 建立既有 workspace/session/provider/run/approval 数据模型，并保留对历史
+异常数据库缺失 `sessions.model` 或 `sessions.agent_session_path` 的幂等修复；v2 只增加
+`skill_preferences`。`createSkillPreferenceStore()`
+（`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）以调用方已解析的 canonical
+path 原字符串保存启停状态，缺省为启用，并通过单次 `list()` 为后续 Catalog 构造偏好 map。Store 不
+检查文件是否仍存在，也不自动清理记录，因此被删除 Skill 的偏好会作为 tombstone 保留。Catalog、
+discovery 和 HTTP 接入仍由后续任务实现。
+
 ## Agent session 与资源
 
 `PiCodingAgentClient.prepare()` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension，并取得已配置的 AgentSession；此阶段不会调用 prompt。`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的事件流和始终可等待的 `settled` Promise。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。
