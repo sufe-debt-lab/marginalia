@@ -355,25 +355,26 @@ export function createApp(options: AppOptions = {}) {
 
       let failed = false;
       try {
-        const result = await agentClient.run({
+        const message = await buildAgentMessage(
+          workspace.rootDir,
+          body.message,
+          body.contextFiles ?? []
+        );
+        const prepared = await agentClient.prepare({
           sessionId,
           workspaceRoot: workspace.rootDir,
           piProviderId: piProviderId(provider.name),
           modelId,
-          message: await buildAgentMessage(
-            workspace.rootDir,
-            body.message,
-            body.contextFiles ?? []
-          ),
           agentSessionPath: session.agentSessionPath ?? null,
           permission: body.permission,
-          reasoning: body.reasoning ?? null,
-          abortSignal: c.req.raw.signal
+          reasoning: body.reasoning ?? null
         });
-        if (result.sessionFile) setAgentSessionPath(db, sessionId, result.sessionFile);
+        if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
+        const execution = prepared.start(message);
 
         // 断开即拒绝：abort 时主动取消挂起审批，避免被阻塞的扩展死等。
         const onAbort = () => {
+          execution.abort();
           agentClient.cancelPending(sessionId);
         };
         c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
@@ -382,7 +383,7 @@ export function createApp(options: AppOptions = {}) {
           // Single source of truth: forward raw pi events; the client derives all
           // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
           // envelope (started/failed/completed) is added on top.
-          for await (const event of result.events) {
+          for await (const event of execution.events) {
             const type = (event as { type?: string }).type;
             if (type === "approval_requested") {
               const approval = event as ApprovalRequestedEvent;
@@ -421,6 +422,7 @@ export function createApp(options: AppOptions = {}) {
           c.req.raw.signal.removeEventListener("abort", onAbort);
           agentClient.cancelPending(sessionId);
           expirePendingApprovals(db, run.id);
+          await execution.settled;
         }
 
         if (!failed) {

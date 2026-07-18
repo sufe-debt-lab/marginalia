@@ -1,10 +1,10 @@
 import { FakeAgentClient } from "./fake-agent-client.js";
 import type {
   AgentClient,
+  AgentPrepareInput,
   AgentRunEvent,
-  AgentRunInput,
-  AgentRunResult,
-  ApprovalDecision
+  ApprovalDecision,
+  PreparedAgentRun
 } from "./agent-client.js";
 
 function assistantMessage(content: unknown[]): Record<string, unknown> {
@@ -148,13 +148,27 @@ export class ScriptedFakeAgentClient implements AgentClient {
     return this.fake.cancelPending(sessionId);
   }
 
-  run(input: AgentRunInput): Promise<AgentRunResult> {
-    const script = input.message.includes("approval-bash")
-      ? bashApprovalScript(input.sessionId)
-      : input.message.includes("approval-edit")
-        ? editApprovalScript(input.sessionId)
-        : plainScript();
-    this.fake.enqueueEvents(script);
-    return this.fake.run(input);
+  async prepare(input: AgentPrepareInput): Promise<PreparedAgentRun> {
+    this.fake.enqueueEvents(bashApprovalScript(input.sessionId));
+    const bash = await this.fake.prepare(input);
+    this.fake.enqueueEvents(editApprovalScript(input.sessionId));
+    const edit = await this.fake.prepare(input);
+    this.fake.enqueueEvents(plainScript());
+    const plain = await this.fake.prepare(input);
+
+    let started = false;
+    return {
+      sessionFile: plain.sessionFile,
+      start(message, promptOptions) {
+        if (started) throw new Error("prepared run already started");
+        started = true;
+        const prepared = message.includes("approval-bash")
+          ? bash
+          : message.includes("approval-edit")
+            ? edit
+            : plain;
+        return prepared.start(message, promptOptions);
+      }
+    };
   }
 }

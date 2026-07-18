@@ -5,16 +5,15 @@ const baseInput = {
   sessionId: "s1",
   workspaceRoot: "/ws",
   piProviderId: "openai",
-  modelId: "gpt",
-  message: ""
+  modelId: "gpt"
 };
 
 describe("ScriptedFakeAgentClient", () => {
   it("emits a command approval script for approval-bash prompts", async () => {
     const client = new ScriptedFakeAgentClient();
-    const result = await client.run({ ...baseInput, message: "please approval-bash" });
+    const execution = (await client.prepare(baseInput)).start("please approval-bash");
     const types: string[] = [];
-    for await (const event of result.events) {
+    for await (const event of execution.events) {
       const type = (event as { type?: string }).type ?? "";
       types.push(type);
       if (type === "approval_requested") {
@@ -29,10 +28,20 @@ describe("ScriptedFakeAgentClient", () => {
 
   it("replies with plain text otherwise", async () => {
     const client = new ScriptedFakeAgentClient();
-    const result = await client.run({ ...baseInput, message: "hello" });
+    const execution = (await client.prepare(baseInput)).start("hello");
     const types: string[] = [];
-    for await (const event of result.events) types.push((event as { type?: string }).type ?? "");
+    for await (const event of execution.events) types.push((event as { type?: string }).type ?? "");
     expect(types).not.toContain("approval_requested");
     expect(types).toContain("message_end");
+  });
+
+  it("starts a prepared run only once", async () => {
+    const client = new ScriptedFakeAgentClient();
+    const prepared = await client.prepare(baseInput);
+    const execution = prepared.start("hello");
+
+    expect(() => prepared.start("please approval-bash")).toThrow("prepared run already started");
+    execution.abort();
+    await execution.settled;
   });
 });

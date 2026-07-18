@@ -93,7 +93,7 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
 
 1. renderer 调 `ApiClient.runChat(sessionId, …)`（`apps/desktop/src/api/client.ts#runChat`），携带进程 bearer → `POST /sessions/:sessionId/runs`。
 2. pi-server 路由（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）先验证 exact Origin 与 bearer；通过后才建 `run` 记录，开 SSE 流，先发 `run_started`。
-3. 调 `agentClient.run(...)`（`PiCodingAgentClient`，`apps/pi-server/src/agent/pi-coding-agent-client.ts`），后者驱动 `@earendil-works/pi-coding-agent` 与选定 provider 对话。若带 `@文件` 上下文，`buildAgentMessage`（`apps/pi-server/src/app.ts#buildAgentMessage`）会把文件内容内联进消息。
+3. 调 `agentClient.prepare(...)`（`PiCodingAgentClient`，`apps/pi-server/src/agent/pi-coding-agent-client.ts`）取得已配置的 session，再以 `start(message)` 驱动 `@earendil-works/pi-coding-agent` 与选定 provider 对话。若带 `@文件` 上下文，`buildAgentMessage`（`apps/pi-server/src/app.ts#buildAgentMessage`）会把文件内容内联进消息。
 4. agent 产出的**原始 pi 事件**被原样包进 `agent_event` 逐条 SSE 推回（`apps/pi-server/src/app.ts#agent_event`）。
 5. 结束时发 `run_completed`，出错发 `run_failed`，并落 `runs` 表（`apps/pi-server/src/app.ts#completeRun`）。
 6. renderer 端 `streamSse`（`apps/desktop/src/api/sse-stream.ts`）解析流，`useStreamingChat` 从原始事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
@@ -114,7 +114,7 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
 
 ## Agent session 与资源
 
-`PiCodingAgentClient` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。
+`PiCodingAgentClient.prepare()` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension，并取得已配置的 AgentSession；此阶段不会调用 prompt。`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的事件流和始终可等待的 `settled` Promise。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。
 
 AgentSession 由 `AgentSessionRegistry` 按 session ID 缓存。首次创建时传入 model、resource loader、tool allowlist 和 session manager；缓存命中后直接返回旧 handle，不重新应用配置。Reasoning 通过 setter 动态更新，权限工具集没有同类更新路径。Provider、model、permission 或资源边界变化时，当前缓存不能保证一致。
 

@@ -307,6 +307,7 @@ git commit -m "feat(desktop): secure Skills-capable runs"
 - Modify: `apps/pi-server/src/agent/pi-coding-agent-client.ts`
 - Modify: `apps/pi-server/src/agent/fake-agent-client.ts`
 - Modify: `apps/pi-server/src/agent/scripted-fake-agent.ts`
+- Modify: `apps/pi-server/src/app.ts`
 - Modify: `apps/pi-server/test/pi-coding-agent-client.test.ts`
 - Modify: `apps/pi-server/test/fake-agent-client.test.ts`
 - Modify: `apps/pi-server/test/scripted-fake-agent.test.ts`
@@ -339,7 +340,7 @@ export interface AgentClient {
 }
 ```
 
-- [ ] **Step 1: 写生命周期失败测试**
+- [x] **Step 1: 写生命周期失败测试**
 
 覆盖四个可观察事实：
 
@@ -370,7 +371,7 @@ it("abort delegates to the prepared session", async () => {
 
 Fake client 还要断言 approval pause/resolution 在新接口下顺序不变。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -380,13 +381,13 @@ pnpm --filter @marginalia/pi-server test -- pi-coding-agent-client fake-agent-cl
 
 Expected: FAIL，因为 `prepare`/`start`/`settled` 尚不存在。
 
-- [ ] **Step 3: 改造 AgentClient 类型与 fake clients**
+- [x] **Step 3: 改造 AgentClient 类型与 fake clients**
 
 `FakeAgentClient.prepare()` 捕获当次 enqueue 的 event 副本；`start()` 才创建 iterator。它返回一个
 始终可等待的 `settled`：iterator 正常结束、抛错或 abort 后 resolve，approval 行为沿用现有 pending
 map。`ScriptedFakeAgentClient.prepare()` 只选脚本并委托 fake，不在 prepare 期间消费事件。
 
-- [ ] **Step 4: 改造 Pi client，确保 start 同步失败也有 execution**
+- [x] **Step 4: 改造 Pi client，确保 start 同步失败也有 execution**
 
 `prepare()` 继续完成 model、policy、loader、registry acquire 和 thinking level；`start()` 内建立
 queue/subscriptions，再用以下边界启动 prompt：
@@ -420,7 +421,7 @@ try {
 iterator waiter 类型改成能在 `finish()` 后重新检查 `queue/error/finished`，保证 failure 不会被错误
 转换成普通 done。`abort()` 只调用当前 handle 的 `session.abort()`。
 
-- [ ] **Step 5: 迁移 route 测试桩到新接口**
+- [x] **Step 5: 迁移 route 测试桩到新接口**
 
 统一使用这个小 helper，避免每个测试重复不一致的 execution：
 
@@ -443,7 +444,7 @@ function preparedRun(events: AgentRunEvent[], sessionFile = "/tmp/test.jsonl") {
 
 本任务只保持 route 外部行为通过；事务顺序在 Task 3 调整。
 
-- [ ] **Step 6: 更新内部生命周期文档并验证**
+- [x] **Step 6: 更新内部生命周期文档并验证**
 
 Run:
 
@@ -455,7 +456,20 @@ pnpm docs:check
 
 Expected: PASS；`prepare` 不 prompt，`start` 的所有出口都最终 settled。
 
-- [ ] **Step 7: 提交**
+**Implementation Outcome (Task 2):**
+
+- 实际完成：`AgentClient` 已拆分为 `prepare/start/settled`；Pi client、fake clients 和 route
+  callsite 已迁移，route 的 run 创建位置保持不变，未提前实现 Task 3 的事务顺序。
+- RED：prescribed focused command 按预期出现 4 个失败文件、14 个失败测试，原因为
+  `prepare()` 不存在及 route 仍调用旧 `run()`。
+- GREEN：focused lifecycle/route/approval 共 29 tests 通过；pi-server typecheck、
+  `pnpm docs:check` 和最终 `pnpm verify` 全通过。
+- Review fix：prepared run 只允许一次 `start()`；fake abort 等待 iterator unwind 后才 settled。
+- 正式文档：更新 `docs/developer/architecture.md`，记录 preparation 与 execution 生命周期。
+- 偏差与遗留：原 Task 2 Files 清单漏列必需的 route callsite `apps/pi-server/src/app.ts`，已补入；
+  无设计偏差或新增遗留。
+
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/pi-server docs/developer/architecture.md

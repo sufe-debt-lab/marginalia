@@ -12,7 +12,7 @@ import {
   setAgentSessionPath
 } from "../src/db/repositories.js";
 import { FakeAgentClient } from "../src/agent/fake-agent-client.js";
-import type { AgentSessionEvent } from "../src/agent/agent-client.js";
+import type { AgentRunEvent, AgentSessionEvent } from "../src/agent/agent-client.js";
 
 const dbs: Database.Database[] = [];
 const capability = { token: "test-token", allowedOrigins: new Set<string>() };
@@ -24,6 +24,21 @@ function memoryDb() {
   const db = new Database(":memory:");
   dbs.push(db);
   return db;
+}
+
+function preparedRun(events: AgentRunEvent[], sessionFile = "/tmp/test.jsonl") {
+  return {
+    sessionFile,
+    start() {
+      return {
+        events: (async function* () {
+          yield* events;
+        })(),
+        abort() {},
+        settled: Promise.resolve()
+      };
+    }
+  };
 }
 
 afterEach(() => {
@@ -211,8 +226,9 @@ describe("chat runs", () => {
     expect(text).not.toContain('"type":"tool_started"');
   });
 
-  it("passes pi provider id and model into AgentClient.run", async () => {
+  it("passes run configuration to prepare and the message to start", async () => {
     let seen: any = null;
+    let startedMessage: string | null = null;
     const db = memoryDb();
     migrate(db);
     const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-pi" });
@@ -223,12 +239,18 @@ describe("chat runs", () => {
     });
 
     const stubClient = {
-      async run(input: any) {
+      async prepare(input: any) {
         seen = input;
-        async function* iterate() {
-          yield { type: "message_end", message: { stopReason: "end", content: "ok" } } as any;
-        }
-        return { sessionFile: "/tmp/x.jsonl", events: iterate(), dispose() {} };
+        const prepared = preparedRun([
+          { type: "message_end", message: { stopReason: "end", content: "ok" } } as any
+        ]);
+        return {
+          ...prepared,
+          start(message: string) {
+            startedMessage = message;
+            return prepared.start();
+          }
+        };
       }
     };
 
@@ -252,13 +274,13 @@ describe("chat runs", () => {
       sessionId: session.id,
       workspaceRoot: "/tmp/docs-pi",
       piProviderId: "minimax-cn",
-      modelId: "MiniMax-M2.7",
-      message: "ping"
+      modelId: "MiniMax-M2.7"
     });
+    expect(startedMessage).toBe("ping");
   });
 
   it("includes selected context file contents in the agent message", async () => {
-    let seen: any = null;
+    let startedMessage = "";
     const db = memoryDb();
     migrate(db);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "docs-context-"));
@@ -271,12 +293,17 @@ describe("chat runs", () => {
     });
 
     const stubClient = {
-      async run(input: any) {
-        seen = input;
-        async function* iterate() {
-          yield { type: "message_end", message: { stopReason: "end", content: "ok" } } as any;
-        }
-        return { sessionFile: "/tmp/x.jsonl", events: iterate(), dispose() {} };
+      async prepare() {
+        const prepared = preparedRun([
+          { type: "message_end", message: { stopReason: "end", content: "ok" } } as any
+        ]);
+        return {
+          ...prepared,
+          start(message: string) {
+            startedMessage = message;
+            return prepared.start();
+          }
+        };
       }
     };
 
@@ -300,9 +327,9 @@ describe("chat runs", () => {
     });
     await response.text();
 
-    expect(seen.message).toContain("summarize");
-    expect(seen.message).toContain('<attached_file path="note.md"');
-    expect(seen.message).toContain("# Note\nattached context");
+    expect(startedMessage).toContain("summarize");
+    expect(startedMessage).toContain('<attached_file path="note.md"');
+    expect(startedMessage).toContain("# Note\nattached context");
   });
 
   it("serves messages from the pi session file when present", async () => {
