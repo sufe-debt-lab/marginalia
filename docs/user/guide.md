@@ -10,7 +10,11 @@ Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工
 4. 用 `@文件` 或附件按钮把资料加入请求；右侧文档面板可以浏览、搜索和预览文件。
 5. 对助手回答可以复制、导出 `.md`，或保存到当前 workspace。
 
-没有启用 provider 时不要发送消息。当前 New chat 仍可能先创建 session 并保留待发送 prompt，这个流程没有完整的错误引导。
+没有启用 provider 时不要发送消息。Composer 草稿按 New chat 的 workspace 或现有 session 隔离；切换
+workspace、session 或 Settings 不会串用或立即清空正文与附件。New chat 只有创建 session 成功后才转移
+完整草稿。Desktop 收到 `run_started` 才把本轮视为已接受；若对应草稿仍等于刚提交的快照才清空，发送
+等待期间的后续编辑会保留。此前的 401/409/413 或流提前结束会保留输入，接受后的失败则可用 Retry
+重发同一轮正文、附件和 Skills selection，而不会覆盖当前新草稿。
 
 ## Workspace 与会话
 

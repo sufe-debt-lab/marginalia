@@ -4,6 +4,7 @@ import type { ApiClient, RunEvent } from "@/api/client.js";
 import { useStreamingChat } from "./useStreamingChat.js";
 
 async function* makeEvents(events: RunEvent[]) {
+  yield { type: "run_started", payload: {} };
   for (const e of events) {
     yield e;
   }
@@ -24,6 +25,8 @@ function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
       onAssistantDelta: vi.fn(),
       onAssistantReplace: vi.fn(),
       onComplete: vi.fn(),
+      onAccepted: vi.fn(),
+      onError: vi.fn(),
       ...overrides
     })
   );
@@ -61,7 +64,7 @@ describe("useStreamingChat tool progress", () => {
     const { result } = makeHook(api, { onToolProgress });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     // Both updates land inside a single flush window, so only the latest
@@ -97,7 +100,7 @@ describe("useStreamingChat tool progress", () => {
     const { result } = makeHook(api, { onToolProgress, onToolResultUpsert });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     // The final result supersedes the buffered snapshot: no late progress
@@ -123,7 +126,7 @@ describe("useStreamingChat tool progress", () => {
     const { result } = makeHook(api, { onToolProgress });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     expect(onToolProgress).not.toHaveBeenCalled();

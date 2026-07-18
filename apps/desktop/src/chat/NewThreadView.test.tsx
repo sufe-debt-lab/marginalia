@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient, Provider } from "@/api/client.js";
@@ -33,8 +33,8 @@ function resetStore() {
     locale: "en",
     activeWorkspaceId: "w1",
     activeSessionId: null,
-    pendingPrompt: null,
-    contextFiles: [],
+    turnDrafts: {},
+    pendingTurn: null,
     composerProviderId: null,
     composerModel: null,
     leftSidebarCollapsed: false,
@@ -76,17 +76,90 @@ describe("NewThreadView", () => {
     expect(screen.queryByText("DisabledCo")).not.toBeInTheDocument();
   });
 
-  it("submitting creates session, sets pendingPrompt, switches view to chat", async () => {
+  it("moves the complete workspace draft only after creating the session", async () => {
     const api = fakeApi();
+    const store = useAppStore.getState();
+    store.setTurnText("new:w1", "hello world");
+    store.addTurnContextFile("new:w1", "/docs/a.md");
+    store.addTurnSkill("new:w1", { name: "pdf", path: "/skills/pdf" });
     render(<NewThreadView api={api} />);
     await waitFor(() => expect(api.listProviders).toHaveBeenCalled());
-    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "hello world");
+    expect(screen.getByRole("textbox", { name: /message/i })).toHaveValue("hello world");
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
     await waitFor(() =>
       expect(api.createSession).toHaveBeenCalledWith({ workspaceId: "w1", title: "hello world" })
     );
     expect(useAppStore.getState().activeSessionId).toBe("newSession");
-    expect(useAppStore.getState().pendingPrompt).toBe("hello world");
+    expect(useAppStore.getState().getTurnDraft("new:w1")).toEqual({
+      text: "",
+      contextFiles: [],
+      skills: []
+    });
+    expect(useAppStore.getState().getTurnDraft("session:newSession")).toEqual({
+      text: "hello world",
+      contextFiles: ["/docs/a.md"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    });
+    expect(useAppStore.getState().pendingTurn).toEqual({
+      sessionId: "newSession",
+      turn: {
+        text: "hello world",
+        contextFiles: ["/docs/a.md"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }
+    });
     expect(useAppStore.getState().view).toBe("chat");
+  });
+
+  it("keeps the workspace draft when session creation fails", async () => {
+    const api = fakeApi();
+    (api.createSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("offline"));
+    useAppStore.getState().setTurnText("new:w1", "keep me");
+    render(<NewThreadView api={api} />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => expect(api.createSession).toHaveBeenCalled());
+    expect(useAppStore.getState().getTurnDraft("new:w1").text).toBe("keep me");
+    expect(useAppStore.getState().pendingTurn).toBeNull();
+    expect(useAppStore.getState().view).toBe("new-thread");
+  });
+
+  it("hands off only the clicked snapshot and preserves edits made while creating", async () => {
+    const api = fakeApi();
+    let finishCreate: ((session: Awaited<ReturnType<ApiClient["createSession"]>>) => void) | null =
+      null;
+    (api.createSession as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishCreate = resolve;
+        })
+    );
+    useAppStore.getState().setTurnText("new:w1", "first");
+    render(<NewThreadView api={api} />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+    await userEvent.clear(screen.getByRole("textbox", { name: /message/i }));
+    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "later edit");
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    expect(api.createSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishCreate?.({
+        id: "newSession",
+        workspaceId: "w1",
+        title: "first",
+        origin: "ui",
+        model: null
+      });
+    });
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe("chat"));
+    expect(useAppStore.getState().pendingTurn?.turn.text).toBe("first");
+    expect(useAppStore.getState().getTurnDraft("session:newSession").text).toBe("first");
+    expect(useAppStore.getState().getTurnDraft("new:w1").text).toBe("later edit");
   });
 });

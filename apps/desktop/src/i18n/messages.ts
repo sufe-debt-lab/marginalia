@@ -33,7 +33,8 @@ export const en = {
     title: "What should we build?",
     placeholder: "Describe a task, ask, or drop a file…",
     tabTitle: "New chat",
-    pickUp: "Pick up where you left off"
+    pickUp: "Pick up where you left off",
+    createSessionFailed: "Failed to create session"
   },
   composer: {
     chatPlaceholder: "Type / for commands, @ for files…",
@@ -243,7 +244,8 @@ export const zh = {
     title: "我们要做点什么？",
     placeholder: "描述任务、提问，或拖入文件…",
     tabTitle: "新对话",
-    pickUp: "继续之前的会话"
+    pickUp: "继续之前的会话",
+    createSessionFailed: "创建会话失败"
   },
   composer: {
     chatPlaceholder: "输入 / 调用技能、@ 引用文件…",

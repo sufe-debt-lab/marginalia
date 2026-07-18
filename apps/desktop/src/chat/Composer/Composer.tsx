@@ -1,9 +1,10 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, Plus, Square, X } from "lucide-react";
-import type { ApiClient, Provider } from "@/api/client.js";
+import type { ApiClient, Provider, SkillSelection } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
+import type { TurnDraft } from "@/store/app-store.js";
 import { MentionMenu } from "./MentionMenu.js";
 import { ModelPicker, type Reasoning } from "./ModelPicker.js";
 import { PermissionChip, type Permission } from "./PermissionChip.js";
@@ -16,14 +17,17 @@ interface Props {
   providerId: string;
   model: string;
   onModelChange: (next: { providerId: string; model: string }) => void;
+  text: string;
+  onTextChange: (text: string) => void;
   contextFiles: readonly string[];
   onAddContextFile: (path: string) => void;
   onRemoveContextFile: (path: string) => void;
+  skills: readonly SkillSelection[];
   sending: boolean;
   /** Hard-disable the send button (e.g. no workspace / no provider), independent of streaming. */
   disabled?: boolean;
   onStop?: () => void;
-  onSubmit: (text: string) => void;
+  onSubmit: (turn: TurnDraft) => void;
   placeholder: string;
   autoFocus?: boolean;
   permission?: Permission;
@@ -83,7 +87,6 @@ function detectTrigger(value: string, caret: number): Trigger | null {
 
 export function Composer(props: Props) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState("");
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [mentionSuggestions, setMentionSuggestions] = useState<{ path: string }[]>([]);
   const [trigger, setTrigger] = useState<Trigger | null>(null);
@@ -92,7 +95,9 @@ export function Composer(props: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Attachment cards present at mount don't animate; later additions do.
   const initialContextFiles = useRef<ReadonlySet<string>>(new Set(props.contextFiles)).current;
-  const canSubmit = !props.disabled && (draft.trim().length > 0 || props.contextFiles.length > 0);
+  const canSubmit =
+    !props.disabled &&
+    (props.text.trim().length > 0 || props.contextFiles.length > 0 || props.skills.length > 0);
 
   function autoSize() {
     const el = textareaRef.current;
@@ -108,7 +113,7 @@ export function Composer(props: Props) {
   }
 
   async function handleChange(value: string, caret: number) {
-    setDraft(value);
+    props.onTextChange(value);
     requestAnimationFrame(autoSize);
     const next = detectTrigger(value, caret);
     setTrigger(next);
@@ -132,11 +137,11 @@ export function Composer(props: Props) {
 
   function submit() {
     if (props.sending || !canSubmit) return;
-    const text = draft.trim();
-    props.onSubmit(text);
-    setDraft("");
-    closeMenus();
-    requestAnimationFrame(autoSize);
+    props.onSubmit({
+      text: props.text.trim(),
+      contextFiles: [...props.contextFiles],
+      skills: props.skills.map((skill) => ({ ...skill }))
+    });
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -149,7 +154,9 @@ export function Composer(props: Props) {
   /** Replace the active trigger token (e.g. `@que`) with `replacement`. */
   function replaceTriggerToken(replacement: string) {
     if (!trigger) return;
-    setDraft((d) => d.slice(0, trigger.start) + replacement + d.slice(trigger.end));
+    props.onTextChange(
+      props.text.slice(0, trigger.start) + replacement + props.text.slice(trigger.end)
+    );
     requestAnimationFrame(autoSize);
     textareaRef.current?.focus();
   }
@@ -240,7 +247,7 @@ export function Composer(props: Props) {
           ref={textareaRef}
           autoFocus={props.autoFocus}
           aria-label={t("composer.message")}
-          value={draft}
+          value={props.text}
           onChange={(e) =>
             void handleChange(e.target.value, e.target.selectionStart ?? e.target.value.length)
           }

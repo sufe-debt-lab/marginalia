@@ -2111,7 +2111,7 @@ type SendCallbacks = {
 };
 ```
 
-- [ ] **Step 1: 写 store isolation 失败测试**
+- [x] **Step 1: 写 store isolation 失败测试**
 
 覆盖 `session:s1`、`session:s2`、`new:w1`、`new:w2` 四个 owner 的 text/files/skills 不串用；
 canonical path 去重保留第一次；`moveTurnDraft("new:w1", "session:s3")` 原子移动；`clearTurnDraft`
@@ -2122,7 +2122,7 @@ expect(persisted.state).not.toHaveProperty("turnDrafts");
 expect(persisted.state).not.toHaveProperty("pendingTurn");
 ```
 
-- [ ] **Step 2: 写接受时序失败测试**
+- [x] **Step 2: 写接受时序失败测试**
 
 `useStreamingChat` 分别模拟 HTTP 409（无 SSE）、`run_started` 后 failure、以及 stream 在 started 前
 结束。断言：
@@ -2139,7 +2139,7 @@ expect(onUserAppend).toHaveBeenCalledWith(
 );
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run:
 
@@ -2149,7 +2149,7 @@ pnpm --filter @marginalia/desktop test -- app-store useStreamingChat Composer Ne
 
 Expected: FAIL，draft 在 Composer local state、pending 只有 string、bubble 在 HTTP 接受前追加。
 
-- [ ] **Step 4: 实现非持久化 scoped draft actions**
+- [x] **Step 4: 实现非持久化 scoped draft actions**
 
 删除全局 `pendingPrompt`/`contextFiles`，增加：
 
@@ -2169,13 +2169,13 @@ claimPendingTurn(sessionId: string): TurnDraft | null;
 
 所有 getter 缺项返回新的 empty draft，不能共享可变 singleton。
 
-- [ ] **Step 5: 把 Composer 改为受控值**
+- [x] **Step 5: 把 Composer 改为受控值**
 
 Props 精确改为 `text/onTextChange/contextFiles/.../skills/...`；删除 local `draft`，trigger/menu 仍可
 local。`submit()` 只调用 `onSubmit({ text: text.trim(), contextFiles, skills })`，绝不清 text/files/skills；
 清理由 owner 在 run acceptance 后执行。
 
-- [ ] **Step 6: 改造 New Thread handoff**
+- [x] **Step 6: 改造 New Thread handoff**
 
 owner 为 `new:${activeWorkspaceId ?? "global"}`。创建 session 成功后：
 
@@ -2188,7 +2188,7 @@ setView("chat");
 
 workspace 切换只改变 owner，不删除其他 workspace draft。session 创建失败不移动 draft。
 
-- [ ] **Step 7: 以 `run_started` 接受并清空对应 owner**
+- [x] **Step 7: 以 `run_started` 接受并清空对应 owner**
 
 ChatView mount 时先调用 `claimPendingTurn(sessionId)`：matching envelope 原子取出并清空，避免失败后
 rerender/remount 自动重复发送；实际 `session:<id>` draft 仍保留。`useStreamingChat.send(turn)` 在遍历
@@ -2198,7 +2198,7 @@ rerender/remount 自动重复发送；实际 `session:<id>` draft 仍保留。`u
 
 `lastSent` 只记录已 accepted turn；Retry 只从该对象发送完整 `{ text, contextFiles, skills }`。
 
-- [ ] **Step 8: focused 验证**
+- [x] **Step 8: focused 验证**
 
 Run:
 
@@ -2209,12 +2209,26 @@ pnpm --filter @marginalia/desktop typecheck
 
 Expected: PASS；Settings unmount、workspace/session 切换与 401/409/413 都不丢或串 draft。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add apps/desktop/src/store apps/desktop/src/chat apps/desktop/src/hooks/useStreamingChat.ts apps/desktop/src/hooks/useStreamingChat.test.ts apps/desktop/src/i18n/messages.ts
 git commit -m "feat(desktop): preserve scoped Skill turn drafts"
 ```
+
+**Implementation results (2026-07-18):**
+
+- Added renderer-memory-only drafts keyed by New chat workspace or session, plus one-shot full-turn handoff. Text,
+  attachments, and ordered Skill selections now share the same owner boundary and never enter persisted state.
+- Made Composer controlled and moved acceptance to the first `run_started`. Pre-start HTTP/stream failures preserve
+  the full turn; accepted failures retain an immutable full retry snapshot.
+- Hardened handoff and acceptance races: duplicate New chat submission is ignored; edits made while session creation
+  or run acceptance is pending stay in the source/current draft; Retry never clears an unrelated newer draft.
+- RED established the missing store APIs, early optimistic append, local Composer ownership, string-only handoff, and
+  the two late-edit races. Final focused verification passed 76/76 tests plus desktop typecheck.
+- Full repository and visual verification passed; four baseline changes intentionally capture New chat draft survival
+  across Settings and subsequent Composer states. Detailed evidence is in
+  `.superpowers/sdd/skills-task-12-report.md`.
 
 ---
 

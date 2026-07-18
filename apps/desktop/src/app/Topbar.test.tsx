@@ -13,8 +13,8 @@ describe("Topbar", () => {
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
-      pendingPrompt: null,
-      contextFiles: [],
+      pendingTurn: null,
+      turnDrafts: {},
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false
     });

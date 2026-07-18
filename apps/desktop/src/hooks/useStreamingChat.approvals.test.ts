@@ -22,7 +22,9 @@ const baseOpts = {
   onAssistantStart: noop,
   onAssistantReplace: noop,
   onAssistantDelta: noop,
-  onComplete: noop
+  onComplete: noop,
+  onAccepted: noop,
+  onError: noop
 };
 
 describe("useStreamingChat approvals", () => {
@@ -64,7 +66,7 @@ describe("useStreamingChat approvals", () => {
         onApprovalResolved: resolved
       })
     );
-    await act(() => result.current.send("hi", []));
+    await act(() => result.current.send({ text: "hi", contextFiles: [], skills: [] }));
     expect(requested).toHaveBeenCalledWith(
       expect.objectContaining({ approvalId: "ap-1", toolCallId: "t1", toolName: "bash" })
     );

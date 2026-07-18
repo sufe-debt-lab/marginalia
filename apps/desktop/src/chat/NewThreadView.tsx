@@ -1,10 +1,11 @@
 import { toast } from "sonner";
+import { useRef } from "react";
 import type { ApiClient } from "@/api/client.js";
 import { useProviders } from "@/hooks/useProviders.js";
 import { resolveComposerSelection } from "@/lib/provider-selection.js";
 import { useWorkspaces } from "@/hooks/useWorkspaces.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
-import { useAppStore } from "@/store/app-store.js";
+import { useAppStore, type TurnDraft, type TurnOwner } from "@/store/app-store.js";
 import { Composer } from "./Composer/Composer.js";
 import { WorkspaceChip } from "./Composer/WorkspaceChip.js";
 import { RecentThreads } from "./RecentThreads.js";
@@ -19,14 +20,17 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const workspaces = useWorkspaces(api);
   const providers = useProviders(api);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
+  const owner: TurnOwner = `new:${activeWorkspaceId ?? "global"}`;
+  const draft = useAppStore((s) => s.turnDrafts[owner]);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setActiveSessionTitle = useAppStore((s) => s.setActiveSessionTitle);
-  const setPendingPrompt = useAppStore((s) => s.setPendingPrompt);
+  const setTurnText = useAppStore((s) => s.setTurnText);
+  const addTurnContextFile = useAppStore((s) => s.addTurnContextFile);
+  const removeTurnContextFile = useAppStore((s) => s.removeTurnContextFile);
+  const moveTurnDraft = useAppStore((s) => s.moveTurnDraft);
+  const setPendingTurn = useAppStore((s) => s.setPendingTurn);
   const setView = useAppStore((s) => s.setView);
-  const contextFiles = useAppStore((s) => s.contextFiles);
-  const addContext = useAppStore((s) => s.addContextFile);
-  const removeContext = useAppStore((s) => s.removeContextFile);
   const composerProviderId = useAppStore((s) => s.composerProviderId);
   const composerModel = useAppStore((s) => s.composerModel);
   const setComposerModel = useAppStore((s) => s.setComposerModel);
@@ -34,6 +38,7 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const reasoning = useAppStore((s) => s.reasoning);
   const setPermission = useAppStore((s) => s.setPermission);
   const setReasoning = useAppStore((s) => s.setReasoning);
+  const submittingRef = useRef(false);
 
   const enabledProviders = providers.enabled;
   // Honour the stored selection only while it's still enabled; otherwise fall back
@@ -56,19 +61,23 @@ export function NewThreadView({ api }: { api: ApiClient }) {
     }
   }
 
-  async function submit(text: string) {
-    if (!activeWorkspaceId) return;
+  async function submit(turn: TurnDraft) {
+    if (!activeWorkspaceId || submittingRef.current) return;
+    submittingRef.current = true;
     try {
       const session = await api.createSession({
         workspaceId: activeWorkspaceId,
-        title: text.slice(0, 32)
+        title: turn.text.slice(0, 32)
       });
+      const moved = moveTurnDraft(owner, `session:${session.id}`, turn);
+      setPendingTurn({ sessionId: session.id, turn: moved });
       setActiveSession(session.id);
       setActiveSessionTitle(session.title);
-      setPendingPrompt(text);
       setView("chat");
     } catch (err) {
-      toast.error(`Failed: ${(err as Error).message}`);
+      toast.error(`${t("newThread.createSessionFailed")}: ${(err as Error).message}`);
+    } finally {
+      submittingRef.current = false;
     }
   }
 
@@ -87,9 +96,12 @@ export function NewThreadView({ api }: { api: ApiClient }) {
           providerId={actualProviderId}
           model={actualModel}
           onModelChange={({ providerId: p, model: m }) => setComposerModel(p, m)}
-          contextFiles={contextFiles}
-          onAddContextFile={addContext}
-          onRemoveContextFile={removeContext}
+          text={draft?.text ?? ""}
+          onTextChange={(text) => setTurnText(owner, text)}
+          contextFiles={draft?.contextFiles ?? []}
+          onAddContextFile={(path) => addTurnContextFile(owner, path)}
+          onRemoveContextFile={(path) => removeTurnContextFile(owner, path)}
+          skills={draft?.skills ?? []}
           permission={permission}
           reasoning={reasoning}
           onPermissionChange={setPermission}

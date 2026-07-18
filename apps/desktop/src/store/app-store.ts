@@ -1,10 +1,24 @@
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import type { SkillSelection } from "@/api/client.js";
 
 export type AppView = "new-thread" | "chat" | "settings";
 export type Locale = "en" | "zh";
 export type AgentPermission = "full" | "ask" | "readonly";
 export type AgentReasoning = "low" | "medium" | "high" | "xhigh";
+
+export type TurnDraft = {
+  text: string;
+  contextFiles: string[];
+  skills: SkillSelection[];
+};
+
+export type PendingTurn = {
+  sessionId: string;
+  turn: TurnDraft;
+};
+
+export type TurnOwner = `session:${string}` | `new:${string}`;
 
 interface AppState {
   view: AppView;
@@ -12,8 +26,8 @@ interface AppState {
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
   activeSessionTitle: string | null;
-  pendingPrompt: string | null;
-  contextFiles: string[];
+  turnDrafts: Partial<Record<TurnOwner, TurnDraft>>;
+  pendingTurn: PendingTurn | null;
   leftSidebarCollapsed: boolean;
   rightPanelCollapsed: boolean;
   pinnedWorkspaceIds: string[];
@@ -31,10 +45,17 @@ interface AppState {
   setActiveWorkspace: (id: string | null) => void;
   setActiveSession: (id: string | null) => void;
   setActiveSessionTitle: (title: string | null) => void;
-  setPendingPrompt: (p: string | null) => void;
-  addContextFile: (p: string) => void;
-  removeContextFile: (p: string) => void;
-  clearContextFiles: () => void;
+  getTurnDraft: (owner: TurnOwner) => TurnDraft;
+  setTurnText: (owner: TurnOwner, text: string) => void;
+  addTurnContextFile: (owner: TurnOwner, path: string) => void;
+  removeTurnContextFile: (owner: TurnOwner, path: string) => void;
+  addTurnSkill: (owner: TurnOwner, skill: SkillSelection) => void;
+  removeTurnSkill: (owner: TurnOwner, path: string) => void;
+  replaceTurnSkills: (owner: TurnOwner, skills: SkillSelection[]) => void;
+  clearTurnDraft: (owner: TurnOwner) => void;
+  moveTurnDraft: (from: TurnOwner, to: TurnOwner, submitted?: TurnDraft) => TurnDraft;
+  setPendingTurn: (turn: PendingTurn | null) => void;
+  claimPendingTurn: (sessionId: string) => TurnDraft | null;
   toggleLeftSidebar: () => void;
   toggleRightPanel: () => void;
   togglePin: (id: string) => void;
@@ -67,16 +88,46 @@ function getLocalStorage(): Storage | undefined {
   }
 }
 
+function cloneTurnDraft(turn?: TurnDraft): TurnDraft {
+  return {
+    text: turn?.text ?? "",
+    contextFiles: [...(turn?.contextFiles ?? [])],
+    skills: (turn?.skills ?? []).map((skill) => ({ ...skill }))
+  };
+}
+
+function dedupeSkills(skills: readonly SkillSelection[]): SkillSelection[] {
+  const seen = new Set<string>();
+  return skills.flatMap((skill) => {
+    if (seen.has(skill.path)) return [];
+    seen.add(skill.path);
+    return [{ ...skill }];
+  });
+}
+
+function sameTurnDraft(left: TurnDraft, right: TurnDraft): boolean {
+  return (
+    left.text === right.text &&
+    left.contextFiles.length === right.contextFiles.length &&
+    left.contextFiles.every((path, index) => path === right.contextFiles[index]) &&
+    left.skills.length === right.skills.length &&
+    left.skills.every(
+      (skill, index) =>
+        skill.name === right.skills[index]?.name && skill.path === right.skills[index]?.path
+    )
+  );
+}
+
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       view: "new-thread",
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
       activeSessionTitle: null,
-      pendingPrompt: null,
-      contextFiles: [],
+      turnDrafts: {},
+      pendingTurn: null,
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
@@ -98,12 +149,82 @@ export const useAppStore = create<AppState>()(
             : { activeSessionId: id }
         ),
       setActiveSessionTitle: (title) => set({ activeSessionTitle: title }),
-      setPendingPrompt: (p) => set({ pendingPrompt: p }),
-      addContextFile: (p) =>
-        set((s) => (s.contextFiles.includes(p) ? s : { contextFiles: [...s.contextFiles, p] })),
-      removeContextFile: (p) =>
-        set((s) => ({ contextFiles: s.contextFiles.filter((x) => x !== p) })),
-      clearContextFiles: () => set({ contextFiles: [] }),
+      getTurnDraft: (owner) => cloneTurnDraft(get().turnDrafts[owner]),
+      setTurnText: (owner, text) =>
+        set((s) => ({
+          turnDrafts: {
+            ...s.turnDrafts,
+            [owner]: { ...cloneTurnDraft(s.turnDrafts[owner]), text }
+          }
+        })),
+      addTurnContextFile: (owner, path) =>
+        set((s) => {
+          const draft = cloneTurnDraft(s.turnDrafts[owner]);
+          if (draft.contextFiles.includes(path)) return s;
+          draft.contextFiles.push(path);
+          return { turnDrafts: { ...s.turnDrafts, [owner]: draft } };
+        }),
+      removeTurnContextFile: (owner, path) =>
+        set((s) => {
+          const draft = cloneTurnDraft(s.turnDrafts[owner]);
+          draft.contextFiles = draft.contextFiles.filter((item) => item !== path);
+          return { turnDrafts: { ...s.turnDrafts, [owner]: draft } };
+        }),
+      addTurnSkill: (owner, skill) =>
+        set((s) => {
+          const draft = cloneTurnDraft(s.turnDrafts[owner]);
+          if (draft.skills.some((item) => item.path === skill.path)) return s;
+          draft.skills.push({ ...skill });
+          return { turnDrafts: { ...s.turnDrafts, [owner]: draft } };
+        }),
+      removeTurnSkill: (owner, path) =>
+        set((s) => {
+          const draft = cloneTurnDraft(s.turnDrafts[owner]);
+          draft.skills = draft.skills.filter((skill) => skill.path !== path);
+          return { turnDrafts: { ...s.turnDrafts, [owner]: draft } };
+        }),
+      replaceTurnSkills: (owner, skills) =>
+        set((s) => {
+          const draft = cloneTurnDraft(s.turnDrafts[owner]);
+          draft.skills = dedupeSkills(skills);
+          return { turnDrafts: { ...s.turnDrafts, [owner]: draft } };
+        }),
+      clearTurnDraft: (owner) =>
+        set((s) => {
+          if (!(owner in s.turnDrafts)) return s;
+          const turnDrafts = { ...s.turnDrafts };
+          delete turnDrafts[owner];
+          return { turnDrafts };
+        }),
+      moveTurnDraft: (from, to, submitted) => {
+        let moved = cloneTurnDraft();
+        set((s) => {
+          const current = cloneTurnDraft(s.turnDrafts[from]);
+          moved = cloneTurnDraft(submitted ?? current);
+          const turnDrafts: Partial<Record<TurnOwner, TurnDraft>> = {
+            ...s.turnDrafts,
+            [to]: cloneTurnDraft(moved)
+          };
+          if (submitted === undefined || sameTurnDraft(current, submitted)) delete turnDrafts[from];
+          return { turnDrafts };
+        });
+        return cloneTurnDraft(moved);
+      },
+      setPendingTurn: (pendingTurn) =>
+        set({
+          pendingTurn: pendingTurn
+            ? { sessionId: pendingTurn.sessionId, turn: cloneTurnDraft(pendingTurn.turn) }
+            : null
+        }),
+      claimPendingTurn: (sessionId) => {
+        let claimed: TurnDraft | null = null;
+        set((s) => {
+          if (s.pendingTurn?.sessionId !== sessionId) return s;
+          claimed = cloneTurnDraft(s.pendingTurn.turn);
+          return { pendingTurn: null };
+        });
+        return claimed === null ? null : cloneTurnDraft(claimed);
+      },
       toggleLeftSidebar: () => set((s) => ({ leftSidebarCollapsed: !s.leftSidebarCollapsed })),
       toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed })),
       togglePin: (id) =>

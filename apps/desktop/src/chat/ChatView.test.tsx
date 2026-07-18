@@ -1,7 +1,7 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApiClient, RunEvent } from "@/api/client.js";
+import { ApiError, type ApiClient, type RunEvent } from "@/api/client.js";
 import { useAppStore } from "@/store/app-store.js";
 import { ChatView } from "./ChatView.js";
 
@@ -26,7 +26,7 @@ function makeApi(): ApiClient {
       role: input.role,
       content: input.content
     })),
-    runChat: vi.fn(async () => events([textDelta("hi")])),
+    runChat: vi.fn(async () => events([{ type: "run_started", payload: {} }, textDelta("hi")])),
     searchFiles: vi.fn(async () => [])
   } as unknown as ApiClient;
 }
@@ -39,43 +39,140 @@ describe("ChatView", () => {
       view: "chat",
       activeWorkspaceId: "w1",
       activeSessionId: "s1",
-      pendingPrompt: null,
-      contextFiles: [],
+      turnDrafts: {},
+      pendingTurn: null,
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false
     }));
   });
 
-  it("consumes pendingPrompt on mount", async () => {
-    useAppStore.setState({ pendingPrompt: "hello first" });
+  it("claims and sends a matching pending turn, clearing its draft only on run_started", async () => {
+    useAppStore.getState().setTurnText("session:s1", "hello first");
+    useAppStore.getState().addTurnSkill("session:s1", { name: "pdf", path: "/skills/pdf" });
+    useAppStore.getState().setPendingTurn({
+      sessionId: "s1",
+      turn: {
+        text: "hello first",
+        contextFiles: [],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }
+    });
     const api = makeApi();
     render(<ChatView api={api} sessionId="s1" />);
     await waitFor(() => expect(api.runChat).toHaveBeenCalled());
-    expect(useAppStore.getState().pendingPrompt).toBeNull();
+    expect(useAppStore.getState().pendingTurn).toBeNull();
+    expect(useAppStore.getState().getTurnDraft("session:s1")).toEqual({
+      text: "",
+      contextFiles: [],
+      skills: []
+    });
+    expect(
+      await screen.findByText((_text, node) => node?.textContent === "$pdf\n\nhello first", {
+        selector: ".whitespace-pre-wrap"
+      })
+    ).toBeInTheDocument();
   });
 
-  it("does not auto-send when pendingPrompt is null", async () => {
+  it("does not claim or auto-send a pending turn for another session", async () => {
+    useAppStore.getState().setPendingTurn({
+      sessionId: "other",
+      turn: { text: "not yours", contextFiles: [], skills: [] }
+    });
     const api = makeApi();
     render(<ChatView api={api} sessionId="s1" />);
     await waitFor(() => expect(api.listMessages).toHaveBeenCalled());
     expect(api.runChat).not.toHaveBeenCalled();
+    expect(useAppStore.getState().pendingTurn?.sessionId).toBe("other");
   });
 
-  it("retry resends without duplicating the user message", async () => {
+  it("retry resends the complete accepted turn without duplicating the user message", async () => {
     const api = makeApi();
     (api.runChat as ReturnType<typeof vi.fn>)
       .mockImplementationOnce(async () =>
-        events([{ type: "run_failed", payload: { error: "boom" } }])
+        events([
+          { type: "run_started", payload: {} },
+          { type: "run_failed", payload: { error: "boom" } }
+        ])
       )
-      .mockImplementationOnce(async () => events([textDelta("ok")]));
-    useAppStore.setState({ pendingPrompt: "hello there" });
+      .mockImplementationOnce(async () =>
+        events([{ type: "run_started", payload: {} }, textDelta("ok")])
+      );
+    useAppStore.getState().setTurnText("session:s1", "hello there");
+    useAppStore.getState().addTurnContextFile("session:s1", "/docs/a.md");
+    useAppStore.getState().addTurnSkill("session:s1", { name: "pdf", path: "/skills/pdf" });
+    useAppStore.getState().setPendingTurn({
+      sessionId: "s1",
+      turn: {
+        text: "hello there",
+        contextFiles: ["/docs/a.md"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }
+    });
     render(<ChatView api={api} sessionId="s1" />);
 
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
+    useAppStore.getState().setTurnText("session:s1", "next draft");
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
     await waitFor(() => expect(api.runChat).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText("ok")).toBeInTheDocument());
-    expect(screen.getAllByText("hello there")).toHaveLength(1);
+    expect(
+      screen.getAllByText((_text, node) => node?.textContent === "$pdf\n\nhello there", {
+        selector: ".whitespace-pre-wrap"
+      })
+    ).toHaveLength(1);
+    expect(api.runChat).toHaveBeenLastCalledWith(
+      "s1",
+      expect.objectContaining({
+        message: "hello there",
+        contextFiles: ["/docs/a.md"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }),
+      expect.anything()
+    );
+    expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("next draft");
+  });
+
+  it("does not clear edits made while waiting for run_started", async () => {
+    let accept: (() => void) | null = null;
+    const api = makeApi();
+    (api.runChat as ReturnType<typeof vi.fn>).mockImplementationOnce(async () =>
+      events([
+        await new Promise<RunEvent>((resolve) => {
+          accept = () => resolve({ type: "run_started", payload: {} });
+        })
+      ])
+    );
+    useAppStore.getState().setTurnText("session:s1", "first");
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => expect(api.runChat).toHaveBeenCalledTimes(1));
+    await userEvent.clear(screen.getByRole("textbox", { name: /message/i }));
+    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "later edit");
+    await act(async () => accept?.());
+
+    await waitFor(() =>
+      expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("later edit")
+    );
+  });
+
+  it("keeps the session draft and appends nothing when HTTP rejects before run_started", async () => {
+    const api = makeApi();
+    (api.runChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError("Selections changed", 409, "skill_precondition_failed", {})
+    );
+    useAppStore.getState().setTurnText("session:s1", "keep me");
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText("run_failed").parentElement).toHaveTextContent("Selections changed")
+    );
+    expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("keep me");
+    expect(screen.queryByText("keep me", { selector: "p" })).not.toBeInTheDocument();
   });
 });

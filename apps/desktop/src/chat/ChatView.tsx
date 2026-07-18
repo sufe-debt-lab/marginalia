@@ -5,7 +5,7 @@ import { useProviders } from "@/hooks/useProviders.js";
 import { resolveComposerSelection } from "@/lib/provider-selection.js";
 import { useStreamingChat } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
-import { useAppStore } from "@/store/app-store.js";
+import { useAppStore, type TurnDraft, type TurnOwner } from "@/store/app-store.js";
 import { mergeApprovals } from "./approval-merge.js";
 import { Composer } from "./Composer/Composer.js";
 import { extractMentions } from "./Composer/mentions.js";
@@ -13,17 +13,40 @@ import { MessageStream } from "./MessageStream.js";
 import { SaveToWorkspaceDialog } from "./SaveToWorkspaceDialog.js";
 import type { ApprovalDecision } from "./ToolCard.js";
 
+function cloneTurnDraft(turn: TurnDraft): TurnDraft {
+  return {
+    text: turn.text,
+    contextFiles: [...turn.contextFiles],
+    skills: turn.skills.map((skill) => ({ ...skill }))
+  };
+}
+
+function sameTurnDraft(left: TurnDraft, right: TurnDraft): boolean {
+  return (
+    left.text === right.text &&
+    left.contextFiles.length === right.contextFiles.length &&
+    left.contextFiles.every((path, index) => path === right.contextFiles[index]) &&
+    left.skills.length === right.skills.length &&
+    left.skills.every(
+      (skill, index) =>
+        skill.name === right.skills[index]?.name && skill.path === right.skills[index]?.path
+    )
+  );
+}
+
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
   const { t } = useTranslation();
   const messages = useMessages(api, sessionId);
   const providers = useProviders(api);
-  const pendingPrompt = useAppStore((s) => s.pendingPrompt);
-  const setPendingPrompt = useAppStore((s) => s.setPendingPrompt);
+  const owner: TurnOwner = `session:${sessionId}`;
+  const draft = useAppStore((s) => s.turnDrafts[owner]);
+  const setTurnText = useAppStore((s) => s.setTurnText);
+  const addTurnContextFile = useAppStore((s) => s.addTurnContextFile);
+  const removeTurnContextFile = useAppStore((s) => s.removeTurnContextFile);
+  const clearTurnDraft = useAppStore((s) => s.clearTurnDraft);
+  const getTurnDraft = useAppStore((s) => s.getTurnDraft);
+  const claimPendingTurn = useAppStore((s) => s.claimPendingTurn);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
-  const contextFiles = useAppStore((s) => s.contextFiles);
-  const addContext = useAppStore((s) => s.addContextFile);
-  const removeContext = useAppStore((s) => s.removeContextFile);
-  const clearContextFiles = useAppStore((s) => s.clearContextFiles);
   const composerProviderId = useAppStore((s) => s.composerProviderId);
   const composerModel = useAppStore((s) => s.composerModel);
   const setComposerModel = useAppStore((s) => s.setComposerModel);
@@ -41,7 +64,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     composerModel
   );
   const [error, setError] = useState<string | null>(null);
-  const [lastSent, setLastSent] = useState<{ text: string; contextFiles: string[] } | null>(null);
+  const [lastSent, setLastSent] = useState<TurnDraft | null>(null);
   // Message queued for the save-to-workspace dialog: its markdown (write content)
   // plus the proposed file name. Null when the dialog is closed.
   const [saveTarget, setSaveTarget] = useState<{ markdown: string; defaultName: string } | null>(
@@ -50,6 +73,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   // Ids of the most recent optimistic pair, so a retry can drop them before resending.
   const lastUserIdRef = useRef<string | null>(null);
   const lastAssistantIdRef = useRef<string | null>(null);
+  const pendingTurnRef = useRef<TurnDraft | null>(null);
+  const claimedSessionRef = useRef<string | null>(null);
+  const clearSnapshotRef = useRef<TurnDraft | null>(null);
 
   // Approvals keyed by toolCallId so a ToolCard can look up its own decision state.
   const [approvals, setApprovals] = useState<Map<string, Approval>>(new Map());
@@ -127,8 +153,19 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
         const status = u.expired ? "expired" : u.approved ? "approved" : "denied";
         return new Map(prev).set(u.toolCallId, { ...existing, status, reason: u.reason ?? null });
       }),
+    onAccepted: (turn) => {
+      const clearSnapshot = clearSnapshotRef.current;
+      clearSnapshotRef.current = null;
+      if (clearSnapshot && sameTurnDraft(getTurnDraft(owner), clearSnapshot)) {
+        clearTurnDraft(owner);
+      }
+      setLastSent(cloneTurnDraft(turn));
+    },
     onComplete: () => setError(null),
-    onError: setError
+    onError: (streamError, accepted) => {
+      if (!accepted) clearSnapshotRef.current = null;
+      setError(streamError.message);
+    }
   });
 
   // Stable identity so approving/denying doesn't defeat MessageItem's memoization.
@@ -175,35 +212,43 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     }
   }
 
-  // `+` attachments (contextFiles) plus inline `@path` mentions from the text.
-  function filesFor(text: string): string[] {
-    return [...new Set([...contextFiles, ...extractMentions(text)])];
+  // `+` attachments plus inline `@path` mentions from the text.
+  function withMentionedFiles(turn: TurnDraft): TurnDraft {
+    return {
+      text: turn.text,
+      contextFiles: [...new Set([...turn.contextFiles, ...extractMentions(turn.text)])],
+      skills: turn.skills.map((skill) => ({ ...skill }))
+    };
   }
 
-  function submit(text: string) {
+  function submit(turn: TurnDraft) {
     if (!actualProviderId) {
       setError(t("chat.noProvider"));
       return;
     }
     setError(null);
-    const files = filesFor(text);
-    setLastSent({ text, contextFiles: files });
-    clearContextFiles();
-    void stream.send(text, files);
+    clearSnapshotRef.current = cloneTurnDraft(turn);
+    void stream.send(withMentionedFiles(turn));
   }
 
-  // 消费 pendingPrompt 一次
+  // Claim the matching handoff once. The session draft remains until run_started.
   useEffect(() => {
-    if (pendingPrompt && actualProviderId) {
-      const text = pendingPrompt;
-      const files = filesFor(text);
-      setPendingPrompt(null);
-      setLastSent({ text, contextFiles: files });
-      clearContextFiles();
-      void stream.send(text, files);
-    }
+    if (claimedSessionRef.current === sessionId) return;
+    claimedSessionRef.current = sessionId;
+    pendingTurnRef.current = claimPendingTurn(sessionId);
+  }, [claimPendingTurn, sessionId]);
+
+  useEffect(() => {
+    const pending = pendingTurnRef.current;
+    if (!pending || !actualProviderId) return;
+    pendingTurnRef.current = null;
+    setError(null);
+    clearSnapshotRef.current = cloneTurnDraft(pending);
+    void stream.send(withMentionedFiles(pending));
+    // The claimed turn is nulled synchronously before send, so changes to the
+    // hook callbacks cannot replay it on rerender.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPrompt, actualProviderId]);
+  }, [actualProviderId, sessionId]);
 
   function retry() {
     if (!lastSent) return;
@@ -211,7 +256,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     // Drop the failed attempt's bubbles so the resend doesn't duplicate them.
     if (lastUserIdRef.current) messages.removeMessage(lastUserIdRef.current);
     if (lastAssistantIdRef.current) messages.removeMessage(lastAssistantIdRef.current);
-    void stream.send(lastSent.text, lastSent.contextFiles);
+    clearSnapshotRef.current = null;
+    void stream.send(lastSent);
   }
 
   return (
@@ -238,9 +284,12 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
             providerId={actualProviderId}
             model={actualModel}
             onModelChange={({ providerId: p, model: m }) => setComposerModel(p, m)}
-            contextFiles={contextFiles}
-            onAddContextFile={addContext}
-            onRemoveContextFile={removeContext}
+            text={draft?.text ?? ""}
+            onTextChange={(text) => setTurnText(owner, text)}
+            contextFiles={draft?.contextFiles ?? []}
+            onAddContextFile={(path) => addTurnContextFile(owner, path)}
+            onRemoveContextFile={(path) => removeTurnContextFile(owner, path)}
+            skills={draft?.skills ?? []}
             permission={permission}
             reasoning={reasoning}
             onPermissionChange={setPermission}

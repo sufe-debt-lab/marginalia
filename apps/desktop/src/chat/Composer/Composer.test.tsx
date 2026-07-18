@@ -1,8 +1,9 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState, type ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "@/api/client.js";
-import { Composer } from "./Composer.js";
+import { Composer as ControlledComposer } from "./Composer.js";
 
 const providers = [{ id: "p1", name: "Minimax", defaultModel: "M2.7" }];
 
@@ -10,6 +11,27 @@ function api(): ApiClient {
   return {
     searchFiles: vi.fn(async () => [{ path: "src/App.tsx" }])
   } as unknown as ApiClient;
+}
+
+type TestComposerProps = Omit<
+  ComponentProps<typeof ControlledComposer>,
+  "text" | "onTextChange" | "skills"
+> &
+  Partial<Pick<ComponentProps<typeof ControlledComposer>, "text" | "onTextChange" | "skills">>;
+
+function Composer(props: TestComposerProps) {
+  const [text, setText] = useState(props.text ?? "");
+  return (
+    <ControlledComposer
+      {...props}
+      text={props.text ?? text}
+      onTextChange={(next) => {
+        if (props.text === undefined) setText(next);
+        props.onTextChange?.(next);
+      }}
+      skills={props.skills ?? []}
+    />
+  );
 }
 
 describe("Composer", () => {
@@ -35,7 +57,41 @@ describe("Composer", () => {
     );
     await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "hello");
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
-    expect(onSubmit).toHaveBeenCalledWith("hello");
+    expect(onSubmit).toHaveBeenCalledWith({ text: "hello", contextFiles: [], skills: [] });
+  });
+
+  it("submits a complete controlled turn without clearing any controlled value", async () => {
+    const onSubmit = vi.fn();
+    const onTextChange = vi.fn();
+    render(
+      <Composer
+        api={api()}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        text="Review"
+        onTextChange={onTextChange}
+        contextFiles={["/docs/a.pdf"]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        skills={[{ name: "pdf", path: "/skills/pdf" }]}
+        sending={false}
+        onSubmit={onSubmit}
+        placeholder=""
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      text: "Review",
+      contextFiles: ["/docs/a.pdf"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    });
+    expect(screen.getByRole("textbox", { name: /message/i })).toHaveValue("Review");
+    expect(onTextChange).not.toHaveBeenCalled();
   });
 
   it("Ctrl/Cmd+Enter submits", async () => {
@@ -59,7 +115,7 @@ describe("Composer", () => {
     const input = screen.getByRole("textbox", { name: /message/i });
     await userEvent.type(input, "hi");
     await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
-    expect(onSubmit).toHaveBeenCalledWith("hi");
+    expect(onSubmit).toHaveBeenCalledWith({ text: "hi", contextFiles: [], skills: [] });
   });
 
   it("@ inserts an inline mention token without creating an attachment card", async () => {
@@ -177,7 +233,11 @@ describe("Composer", () => {
     const send = screen.getByRole("button", { name: /send/i });
     expect(send).toBeEnabled();
     await userEvent.click(send);
-    expect(onSubmit).toHaveBeenCalledWith("");
+    expect(onSubmit).toHaveBeenCalledWith({
+      text: "",
+      contextFiles: ["src/x.ts"],
+      skills: []
+    });
   });
 
   it("grows the send button on hover (matches design micro-interaction)", () => {

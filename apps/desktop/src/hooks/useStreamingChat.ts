@@ -1,5 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import { emptyUsage, fullResultText, resultText } from "@marginalia/chat-core";
+import {
+  emptyUsage,
+  formatUserDisplayText,
+  fullResultText,
+  resultText
+} from "@marginalia/chat-core";
 import type {
   ChatAssistantMessage,
   ChatEntry,
@@ -7,9 +12,15 @@ import type {
   ChatToolExecutionResult,
   ChatToolResult
 } from "@marginalia/chat-core";
-import type { ApiClient, ApprovalPayload } from "@/api/client.js";
+import type { ApiClient, ApiError, ApprovalPayload } from "@/api/client.js";
+import type { TurnDraft } from "@/store/app-store.js";
 
-interface Options {
+export type SendCallbacks = {
+  onAccepted(turn: TurnDraft, optimisticEntry: ChatEntry): void;
+  onError(error: ApiError | Error, accepted: boolean): void;
+};
+
+interface Options extends SendCallbacks {
   api: ApiClient;
   sessionId: string | null;
   providerId: string;
@@ -37,7 +48,6 @@ interface Options {
     expired?: boolean;
   }) => void;
   onComplete: () => void;
-  onError?: (msg: string) => void;
 }
 
 /** The subset of a raw pi `AgentSessionEvent` the chat UI derives state from. */
@@ -57,6 +67,14 @@ function isAbortError(err: unknown): boolean {
   return err instanceof DOMException
     ? err.name === "AbortError"
     : err instanceof Error && err.name === "AbortError";
+}
+
+function cloneTurnDraft(turn: TurnDraft): TurnDraft {
+  return {
+    text: turn.text,
+    contextFiles: [...turn.contextFiles],
+    skills: turn.skills.map((skill) => ({ ...skill }))
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -166,9 +184,15 @@ export function useStreamingChat(opts: Options) {
   }, [flush]);
 
   const send = useCallback(
-    async (text: string, contextFiles: string[]) => {
+    async (input: TurnDraft) => {
       if (!opts.sessionId || sendingRef.current) return;
-      if (!text.trim() && contextFiles.length === 0) return;
+      const sentTurn = cloneTurnDraft(input);
+      if (
+        !sentTurn.text.trim() &&
+        sentTurn.contextFiles.length === 0 &&
+        sentTurn.skills.length === 0
+      )
+        return;
       const controller = new AbortController();
       abortRef.current = controller;
       sendingRef.current = true;
@@ -178,6 +202,7 @@ export function useStreamingChat(opts: Options) {
       let turn = 0;
       let currentAssistantId: string | null = null;
       let needNewAssistant = true;
+      let accepted = false;
 
       function startAssistant(message?: ChatAssistantMessage): string {
         turn += 1;
@@ -270,17 +295,14 @@ export function useStreamingChat(opts: Options) {
       }
 
       try {
-        opts.onUserAppend({
-          id: `local-user-${stamp}`,
-          message: { role: "user", content: text, timestamp: stamp }
-        });
         const events = await opts.api.runChat(
           opts.sessionId,
           {
             providerId: opts.providerId,
             model: opts.model,
-            message: text,
-            contextFiles,
+            message: sentTurn.text,
+            contextFiles: sentTurn.contextFiles,
+            skills: sentTurn.skills,
             permission: opts.permission,
             reasoning: opts.reasoning
           },
@@ -288,11 +310,30 @@ export function useStreamingChat(opts: Options) {
         );
         for await (const event of events) {
           if (controller.signal.aborted) break;
+          if (event.type === "run_started") {
+            if (accepted) continue;
+            accepted = true;
+            const optimisticEntry: ChatEntry = {
+              id: `local-user-${stamp}`,
+              message: {
+                role: "user",
+                content: formatUserDisplayText(
+                  sentTurn.text,
+                  sentTurn.skills.map((skill) => skill.name)
+                ),
+                timestamp: stamp
+              }
+            };
+            opts.onUserAppend(optimisticEntry);
+            opts.onAccepted(cloneTurnDraft(sentTurn), optimisticEntry);
+            continue;
+          }
           if (event.type === "run_failed") {
             throw new Error(
               (event.payload as { error?: string } | undefined)?.error ?? "run failed"
             );
           }
+          if (!accepted) continue;
           if (event.type === "approval_requested") {
             const approval = (
               event.payload as
@@ -331,10 +372,14 @@ export function useStreamingChat(opts: Options) {
           if (pi) handlePiEvent(pi);
         }
         flush();
-        opts.onComplete();
+        if (!controller.signal.aborted) {
+          if (!accepted) throw new Error("run ended before starting");
+          opts.onComplete();
+        }
       } catch (err) {
         flush();
-        if (!isAbortError(err)) opts.onError?.((err as Error).message);
+        if (!isAbortError(err))
+          opts.onError(err instanceof Error ? err : new Error(String(err)), accepted);
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         sendingRef.current = false;

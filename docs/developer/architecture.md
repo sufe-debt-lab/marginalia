@@ -96,7 +96,16 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
 3. lease 内先由 `buildAgentMessage`（`apps/pi-server/src/agent/agent-message.ts#buildAgentMessage`）构造附件信封，再调 `agentClient.prepare(...)`（`PiCodingAgentClient`，`apps/pi-server/src/agent/pi-coding-agent-client.ts`）取得已配置的 session。两步都成功后才创建 `runs` 记录并打开 SSE。
 4. SSE 先发 `run_started`，再以 `start(message)` 驱动 `@earendil-works/pi-coding-agent`。agent 产出的**原始 pi 事件**被原样包进 `agent_event` 逐条推回（`apps/pi-server/src/app.ts#agent_event`）。
 5. 正常结束时发 `run_completed`，出错发 `run_failed`，并完成 `runs` 表记录（`apps/pi-server/src/app.ts#completeRun`）。SSE disconnect 或事件异常会请求 `execution.abort()` 并立即拒绝挂起审批；request abort listener 保持安装直到 `execution.settled` 完成，随后 route 才执行幂等的审批清理、释放 lease。正常事件结束不会额外 abort。
-6. renderer 端 `streamSse`（`apps/desktop/src/api/sse-stream.ts`）解析流，`useStreamingChat` 从原始事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
+6. renderer 端 `streamSse`（`apps/desktop/src/api/sse-stream.ts`）解析流。`useStreamingChat` 只在首个
+   `run_started` 追加 optimistic user entry，并把完整 turn snapshot 标记为 accepted；在此之前的 HTTP/流
+   失败不清草稿。之后再从原始事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
+
+Composer turn state 由 `useAppStore` 按 `new:<workspaceId>` 或 `session:<sessionId>` owner 隔离，正文、附件和
+Skills selection 都不进入 persist partial。New chat 创建 session 成功后原子移动草稿并写入一次性
+`pendingTurn`；ChatView 只 claim 匹配 session 的 handoff，不删除实际 session draft。收到
+`run_started` 后才记录 retry snapshot，并仅在 owner 当前值仍等于 submitted snapshot 时清理；创建
+session 或等待接受期间的后续编辑会保留，Retry 也不会覆盖当前新草稿。因此 pre-start 401/409/413、
+stream EOF 或切换视图不会把未接受输入误记为已发送。
 
 服务端 single-flight 防止同一进程内两个请求并发驱动相同 session；不同 session 不共享 lease。该
 lease 不跨 pi-server 重启持久化，renderer 的 `sendingRef` 也仍只保护当前 hook 实例；ChatView

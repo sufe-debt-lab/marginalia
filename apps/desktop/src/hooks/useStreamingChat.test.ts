@@ -5,9 +5,14 @@ import { ApiError, type ApiClient, type RunEvent } from "@/api/client.js";
 import { useStreamingChat } from "./useStreamingChat.js";
 
 async function* makeEvents(events: RunEvent[]) {
+  yield { type: "run_started", payload: {} };
   for (const e of events) {
     yield e;
   }
+}
+
+async function* makePreStartEvents(events: RunEvent[]) {
+  for (const e of events) yield e;
 }
 
 /** Wrap a raw pi event in the SSE `agent_event` envelope the server now emits. */
@@ -61,6 +66,8 @@ function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
       sessionId: "s",
       providerId: "p",
       model: "m",
+      onAccepted: vi.fn(),
+      onError: vi.fn(),
       onUserAppend: vi.fn(),
       onAssistantStart: vi.fn(),
       onAssistantDelta: vi.fn(),
@@ -92,7 +99,7 @@ describe("useStreamingChat", () => {
     });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
@@ -120,7 +127,7 @@ describe("useStreamingChat", () => {
     const { result } = makeHook(api, { onAssistantStart, onAssistantDelta });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     expect(onAssistantStart).toHaveBeenCalledTimes(2);
@@ -154,7 +161,7 @@ describe("useStreamingChat", () => {
     const { result } = makeHook(api, { onAssistantStart, onToolCallUpsert });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     // read tool opened bubble #1, bash tool opened bubble #2, answer opened bubble #3.
@@ -169,7 +176,7 @@ describe("useStreamingChat", () => {
     const runChat = vi.fn(async () => makeEvents([textDelta("ok")]));
     const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
-      await result.current.send("", ["a.ts"]);
+      await result.current.send({ text: "", contextFiles: ["a.ts"], skills: [] });
     });
     expect(runChat).toHaveBeenCalled();
   });
@@ -178,7 +185,7 @@ describe("useStreamingChat", () => {
     const runChat = vi.fn();
     const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
-      await result.current.send("   ", []);
+      await result.current.send({ text: "   ", contextFiles: [], skills: [] });
     });
     expect(runChat).not.toHaveBeenCalled();
   });
@@ -190,13 +197,15 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onError });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
-    await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.any(Error), true));
   });
 
   it("surfaces a typed API error message without creating an assistant bubble", async () => {
     const onError = vi.fn();
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
     const onAssistantStart = vi.fn();
     const api = {
       runChat: vi.fn(async () => {
@@ -205,14 +214,87 @@ describe("useStreamingChat", () => {
         });
       })
     } as unknown as ApiClient;
-    const { result } = makeHook(api, { onError, onAssistantStart });
+    const { result } = makeHook(api, { onError, onAccepted, onUserAppend, onAssistantStart });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({
+        text: "hi",
+        contextFiles: [],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      });
     });
 
-    expect(onError).toHaveBeenCalledWith("Selections changed");
+    expect(onError).toHaveBeenCalledWith(expect.any(ApiError), false);
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(onUserAppend).not.toHaveBeenCalled();
     expect(onAssistantStart).not.toHaveBeenCalled();
+  });
+
+  it("accepts exactly once at run_started and preserves the full turn snapshot after failure", async () => {
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onUserAppend, onError });
+    const turn = {
+      text: "Review",
+      contextFiles: ["/docs/a.pdf"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    };
+
+    await act(async () => {
+      await result.current.send(turn);
+    });
+
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Review",
+        contextFiles: ["/docs/a.pdf"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }),
+      expect.objectContaining({
+        message: expect.objectContaining({ content: "$pdf\n\nReview" })
+      })
+    );
+    expect(onUserAppend).toHaveBeenCalledTimes(1);
+    expect(onUserAppend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ content: "$pdf\n\nReview" })
+      })
+    );
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), true);
+    expect(api.runChat).toHaveBeenCalledWith(
+      "s",
+      expect.objectContaining({
+        message: "Review",
+        contextFiles: ["/docs/a.pdf"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }),
+      expect.anything()
+    );
+  });
+
+  it("rejects a stream that ends before run_started without accepting or appending", async () => {
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makePreStartEvents([]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onUserAppend, onComplete, onError });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(onUserAppend).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), false);
   });
 
   it("appends a toolResult entry matched by toolCallId", async () => {
@@ -238,7 +320,7 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onToolResultUpsert });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() =>
       expect(onToolResultUpsert).toHaveBeenLastCalledWith(
@@ -265,7 +347,7 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onToolCallUpsert });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     expect(onToolCallUpsert).not.toHaveBeenCalled();
   });
@@ -300,7 +382,7 @@ describe("useStreamingChat", () => {
     const { result } = makeHook(api, { onAssistantReplace, onToolResultUpsert });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     expect(onAssistantReplace).toHaveBeenCalledWith(
@@ -325,7 +407,7 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onError: vi.fn() });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() => expect(result.current.sending).toBe(false));
     expect(onAssistantStart).not.toHaveBeenCalled();
@@ -340,7 +422,7 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onError: vi.fn() });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() => expect(result.current.sending).toBe(false));
     expect(onAssistantStart).toHaveBeenCalledTimes(1);
@@ -364,7 +446,7 @@ describe("useStreamingChat", () => {
     const { result } = makeHook(api);
 
     await act(async () => {
-      void result.current.send("hi", []);
+      void result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() => expect(result.current.sending).toBe(true));
 

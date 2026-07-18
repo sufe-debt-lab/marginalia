@@ -330,6 +330,11 @@ Catalog refresh、message build、agent preparation 或 run insert 的非 typed 
 > 设计约定：pi-server **不**把 pi 事件重映射成 desktop 专用形状，只加 run 级信封。详见[系统架构 · 单一事实源](./architecture.md#单一事实源single-source-of-truth)。
 
 客户端解析见 `apps/desktop/src/api/sse-stream.ts` 与 `apps/desktop/src/hooks/useStreamingChat.ts`。
+Desktop 把首个 `run_started` 作为唯一接受边界：此前不追加 optimistic user entry，也不清 scoped draft 或
+记录 retry snapshot；首个事件到达后用完整 `{ text, contextFiles, skills }` snapshot 追加 user entry，后续
+`run_failed` 保留该已接受轮并允许 Retry。接受时只在 owner 当前值仍等于 submitted snapshot 时清空；
+等待期间的新编辑和 Retry 期间已有的新草稿不受影响。HTTP 失败或 SSE 在 `run_started` 前结束会以
+`accepted: false` 报告并保留输入；重复 `run_started` 不会重复接受。
 
 ### 审批（`ask` 档）
 

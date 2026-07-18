@@ -42,8 +42,12 @@ Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/mode
 | Provider API key | SQLite `env_vars.value`                | 当前为明文，没有使用 OS keychain 或应用层加密               |
 | pi AuthStorage   | `~/.marginalia/auth.json`              | pi 运行时独立目录；不要与 SQLite 中的 provider key 混为一处 |
 | UI preferences   | Electron localStorage `marginalia-app` | 语言、布局、权限、推理档位、上次模型和 resume toggle        |
+| Turn drafts      | renderer memory                        | 按 New chat workspace/session 隔离；不写入 localStorage     |
 
 `defaultDbPath()` 通过 `os.homedir()` 解析用户目录。测试或临时运行可以用 `MARGINALIA_DB_PATH` 覆盖数据库路径。
+
+正文、附件路径、Skills selection 和 New chat 的一次性 handoff 只保存在当前 renderer 进程内。切换视图或
+workspace/session 时仍可恢复对应 owner 的草稿，但应用退出、renderer reload 或崩溃会丢失这些未接受内容。
 
 数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
 capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。
