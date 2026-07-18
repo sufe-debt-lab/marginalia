@@ -40,6 +40,7 @@ export function useSkillCatalog(
     const id = ++requestId.current;
     const requestedWorkspace = workspaceId;
     setStateWorkspaceId(requestedWorkspace);
+    setError(null);
     setLoading(true);
     try {
       const next = await api.listSkills(requestedWorkspace);
@@ -80,6 +81,7 @@ export function useSkillCatalog(
         );
       };
       setStateWorkspaceId(requestedWorkspace);
+      setError(null);
       setLoading(true);
       try {
         const next = await api.setSkillEnabled({

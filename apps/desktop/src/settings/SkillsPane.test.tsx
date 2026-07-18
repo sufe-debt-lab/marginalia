@@ -243,6 +243,41 @@ describe("SkillsPane", () => {
     await waitFor(() => expect(api.listSkills).toHaveBeenCalledTimes(2));
   });
 
+  it("does not let a retained refresh retry invalidate a pending toggle snapshot", async () => {
+    const toggle = deferred<SkillCatalogSnapshot>();
+    const api = fakeApi();
+    (api.listSkills as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(snapshot("w1", "catalog-a"))
+      .mockRejectedValueOnce(new Error("refresh failed"))
+      .mockResolvedValueOnce(snapshot("w1", "stale-catalog-a"));
+    (api.setSkillEnabled as ReturnType<typeof vi.fn>).mockReturnValueOnce(toggle.promise);
+    render(<SkillsPane api={api} workspace={{ id: "w1", name: "Research" }} />);
+    const alpha = await screen.findByRole("switch", { name: /alpha/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /^refresh$/i }));
+    expect(await screen.findByText(/skills could not be refreshed/i)).toBeInTheDocument();
+    expect(alpha).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.click(alpha);
+    const retry = screen.queryByRole("button", { name: /^retry$/i });
+    expect(retry === null || retry.hasAttribute("disabled")).toBe(true);
+    if (retry) await userEvent.click(retry);
+    expect(api.listSkills).toHaveBeenCalledTimes(2);
+
+    const shadowed = candidate({
+      name: "alpha",
+      description: "Search by name",
+      discoveredPath: "/repo/.marginalia/skills/alpha/SKILL.md",
+      canonicalPath: "/real/alpha/SKILL.md",
+      status: "shadowed",
+      enabled: true
+    });
+    await act(async () => toggle.resolve(snapshot("w1", "catalog-b", [shadowed])));
+    expect(await screen.findByText("Enabled · Shadowed")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: /alpha/i })).toHaveAttribute("aria-checked", "true");
+    expect(api.listSkills).toHaveBeenCalledTimes(2);
+  });
+
   it("supports manual refresh and retrying an initial global-only failure", async () => {
     const api = fakeApi(snapshot(null));
     (api.listSkills as ReturnType<typeof vi.fn>)

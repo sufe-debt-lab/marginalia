@@ -171,6 +171,7 @@ export function SkillsPane({ api, workspace }: SkillsPaneProps) {
   }
 
   function retryCatalog() {
+    if (catalog.loading || togglePath !== null) return;
     toggleRequestId.current += 1;
     toggleOperationRef.current = null;
     setTogglePath(null);
@@ -233,7 +234,11 @@ export function SkillsPane({ api, workspace }: SkillsPaneProps) {
             {!catalog.snapshot && catalog.loading ? (
               <PaneStatus>{t("common.loading")}</PaneStatus>
             ) : !catalog.snapshot && catalog.error ? (
-              <CatalogError onRetry={retryCatalog} message={t("settings.skillsRefreshFailed")} />
+              <CatalogError
+                disabled={catalog.loading || togglePath !== null}
+                onRetry={retryCatalog}
+                message={t("settings.skillsRefreshFailed")}
+              />
             ) : filteredCandidates.length === 0 ? (
               <PaneStatus>
                 {query ? t("settings.skillsNoMatches") : t("settings.skillsEmpty")}
@@ -257,6 +262,7 @@ export function SkillsPane({ api, workspace }: SkillsPaneProps) {
           {catalog.snapshot && catalog.error && (
             <div className="mt-3">
               <CatalogError
+                disabled={catalog.loading || togglePath !== null}
                 onRetry={retryCatalog}
                 message={
                   toggleFailed
@@ -527,7 +533,15 @@ function PaneStatus({ children }: { children: string }) {
   return <div className="flex min-h-20 items-center px-4 text-xs text-text-muted">{children}</div>;
 }
 
-function CatalogError({ message, onRetry }: { message: string; onRetry: () => void }) {
+function CatalogError({
+  message,
+  disabled,
+  onRetry
+}: {
+  message: string;
+  disabled: boolean;
+  onRetry: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <div
@@ -537,8 +551,9 @@ function CatalogError({ message, onRetry }: { message: string; onRetry: () => vo
       <span>{message}</span>
       <button
         type="button"
+        disabled={disabled}
         onClick={onRetry}
-        className="h-10 shrink-0 rounded-md px-3 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-10 shrink-0 rounded-md px-3 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
         {t("common.retry")}
       </button>

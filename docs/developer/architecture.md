@@ -128,7 +128,9 @@ Settings 的 Skills pane 复用 `useSkillCatalog`，但展示 snapshot 中的全
 加载 workspace 列表解析出的 active workspace 传给 pane，否则用 global-only context。列表按名称、描述、
 discovered/canonical path 过滤；详情选择触发 `readSkillContent()`，toggle 触发 `setSkillEnabled()` 并以返回
 snapshot 为唯一状态源。Catalog、content 和 toggle 都以 request generation、workspace identity 和 exact
-canonical path 防止跨行或跨 workspace 的迟到响应污染当前视图。
+canonical path 防止跨行或跨 workspace 的迟到响应污染当前视图。新 catalog 操作会清除 retained error；
+catalog loading 或 toggle pending 时，Retry 在 DOM 与 handler 两层都被阻止，避免额外 refresh 使 pending
+PATCH 的 generation 失效并重新发布旧 snapshot。
 
 ChatView 的错误状态同时记录 `accepted` 与派生的 `retryable`。Retry 只在失败属于当前已接受轮且
 `lastSent` 已由该轮 acceptance 更新时出现；后续 pre-start 401/409/413/EOF 会保留新草稿并隐藏 Retry，

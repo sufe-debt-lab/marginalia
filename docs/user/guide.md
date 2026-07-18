@@ -123,6 +123,7 @@ candidate；当前 workspace 无法从已加载列表解析时只展示 user/glo
 canonical path 搜索，并查看 Effective、Enabled · Shadowed、Disabled、Invalid 四种状态、warning、
 explicit-only、来源及 diagnostics。选择任意行（包括 Invalid）才会按需加载服务端保存的内容预览；截断
 内容会明确提示。启停不会乐观更新，而是以服务端返回的新 snapshot 为准；刷新、预览或启停失败均可重试。
+新刷新或启停开始时会清除上一条 catalog 错误；请求进行中不能触发旧错误上的 Retry，避免旧刷新覆盖新的启停结果。
 
 Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。显式 block 单项
 最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB。选择失效和 payload 超限分别返回稳定的

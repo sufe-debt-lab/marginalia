@@ -13,7 +13,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function candidate(path: string, enabled = true): SkillCandidate {
+function candidate(
+  path: string,
+  enabled = true,
+  status: SkillCandidate["status"] = enabled ? "effective" : "disabled",
+  shadowedBy: string | null = null
+): SkillCandidate {
   return {
     name: "pdf",
     description: "Read PDFs",
@@ -21,12 +26,12 @@ function candidate(path: string, enabled = true): SkillCandidate {
     canonicalPath: path,
     source: "user_marginalia",
     scope: "user",
-    status: enabled ? "effective" : "disabled",
+    status,
     enabled,
-    effective: enabled,
+    effective: status === "effective",
     explicitOnly: false,
     explicitEligible: true,
-    shadowedBy: null,
+    shadowedBy,
     bytesTotal: 12,
     diagnostics: []
   };
@@ -196,6 +201,55 @@ describe("useSkillCatalog", () => {
     expect(result.current.snapshot?.catalogRevision).toBe("before");
     expect(result.current.snapshot?.candidates[0]?.enabled).toBe(true);
     expect(result.current.error).toBe(failure);
+  });
+
+  it("clears retained errors when new refreshes or toggles start and accepts the toggle snapshot", async () => {
+    const refreshRecovery = deferred<SkillCatalogSnapshot>();
+    const toggle = deferred<SkillCatalogSnapshot>();
+    const before = snapshot("w1", "catalog-a", [
+      candidate("/skills/loser/SKILL.md", true, "shadowed", "/skills/winner-a/SKILL.md")
+    ]);
+    const after = snapshot("w1", "catalog-b", [
+      candidate("/skills/loser/SKILL.md", true, "shadowed", "/skills/winner-b/SKILL.md")
+    ]);
+    const api = {
+      listSkills: vi
+        .fn<ApiClient["listSkills"]>()
+        .mockResolvedValueOnce(before)
+        .mockRejectedValueOnce(new Error("refresh failed"))
+        .mockReturnValueOnce(refreshRecovery.promise)
+        .mockRejectedValueOnce(new Error("refresh failed again")),
+      setSkillEnabled: vi.fn(() => toggle.promise)
+    } as unknown as ApiClient;
+    const { result } = renderHook(() => useSkillCatalog(api, "w1"));
+    await waitFor(() => expect(result.current.snapshot?.catalogRevision).toBe("catalog-a"));
+
+    await act(async () => void (await result.current.refresh()));
+    expect(result.current.error).toEqual(expect.any(Error));
+
+    let recovery!: Promise<SkillCatalogSnapshot | null>;
+    act(() => {
+      recovery = result.current.refresh();
+    });
+    expect(result.current.error).toBeNull();
+    await act(async () => refreshRecovery.resolve(before));
+    await expect(recovery).resolves.toEqual(before);
+
+    await act(async () => void (await result.current.refresh()));
+    expect(result.current.error).toEqual(expect.any(Error));
+
+    let pendingToggle!: Promise<SkillCatalogSnapshot | null>;
+    act(() => {
+      pendingToggle = result.current.setEnabled("/skills/loser/SKILL.md", false);
+    });
+    expect(result.current.error).toBeNull();
+    await act(async () => toggle.resolve(after));
+    await expect(pendingToggle).resolves.toEqual(after);
+    expect(result.current.snapshot?.catalogRevision).toBe("catalog-b");
+    expect(result.current.snapshot?.candidates[0]).toMatchObject({
+      status: "shadowed",
+      shadowedBy: "/skills/winner-b/SKILL.md"
+    });
   });
 
   it("rejects stale toggle responses by request, workspace, and path", async () => {
