@@ -46,7 +46,8 @@ Testing Library、Electron screenshot verification。
 - `agent_event` 保持 raw pi payload；只保留现有 run-level SSE envelopes。
 - `packages/chat-core` 只放 pi-shaped 类型桥和无 UI 依赖的纯展示辅助。
 - Skill identity、偏好、去重和选择校验统一使用 canonical realpath；客户端 path 永远不是任意文件读取权限。
-- 显式选择最多 16 个；单项正文最多 512 KiB；合计 blocks 最多 2 MiB；preview 最多 256 KiB。
+- Run body 最多 4 MiB；raw 显式选择最多 16 个，每个 name/path 最多 16 KiB UTF-8；单项正文最多
+  512 KiB；合计 blocks 最多 2 MiB；preview 最多 256 KiB。
 - 每任务测试先行，先观察目标失败，再写最小实现；每个任务独立 Conventional Commit。
 - 用户流程、HTTP、SQLite、权限或架构进入正常路径时，在同一任务同步正式文档。
 - UI 交付必须运行 `pnpm verify:visual` 并逐张裁决，不以命令退出码代替视觉判断。
@@ -1542,7 +1543,7 @@ export function prepareSkillTurn(
 ): PreparedSkillTurn;
 ```
 
-- [ ] **Step 1: 写纯 preflight 失败测试**
+- [x] **Step 1: 写纯 preflight 失败测试**
 
 覆盖 0/1/N selections、canonical path 首次去重与顺序、全部 invalid reasons、name mismatch 不自动
 改绑、disabled winner 后旧 path 不改绑 successor、16/17 数量边界、512 KiB item、2 MiB total、
@@ -1557,7 +1558,7 @@ expect(plan.blocks.join("\n\n")).toBe(
 
 测试所有 409/413 都发生在 `prepare`/`createRun` 之前，数据库 run count 保持 0。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -1567,9 +1568,10 @@ pnpm --filter @marginalia/pi-server test -- skill-turn-preflight agent-message a
 
 Expected: FAIL，run body 不认识 `skills`，loader 仍固定无 Skills。
 
-- [ ] **Step 3: 实现选择校验与 Pi-compatible body extraction**
+- [x] **Step 3: 实现选择校验与 Pi-compatible body extraction**
 
-先按 path 去重保留第一次，再逐项 exact membership。用与 Pi 0.75.5 一致的 newline/frontmatter
+先检查 raw selection count 和 identity field bytes，再按 path 去重保留第一次并逐项 exact membership。
+用与 Pi 0.75.5 一致的 newline/frontmatter
 规则提取 body，避免引入 YAML parser：
 
 ```ts
@@ -1584,13 +1586,13 @@ export function stripPiFrontmatter(content: string): string {
 builder 分别实现 `escapeXmlAttribute`（`& " < > '`）和 `escapeXmlText`（`& < >`），绝不有损替换
 control chars。block UTF-8 byte size 用 `Buffer.byteLength`，合计超过限制抛 typed 413 error。
 
-- [ ] **Step 4: 让 registry 按 effectiveRevision 重建**
+- [x] **Step 4: 让 registry 按 effectiveRevision 重建**
 
 `AcquireInput` 增加 `resourceRevision: string`，`SessionHandle` 保存同字段。cache hit 只有 revision 相同
 才复用；不同则先 evict 旧 handle，再以同一个 `agentSessionPath` 建新 session。该方法只在 Task 3
 lease 内调用。测试 active execution 期间 route 不会调用 acquire；空闲后的 revision 变化才重建。
 
-- [ ] **Step 5: 注入 pinned skillsOverride**
+- [x] **Step 5: 注入 pinned skillsOverride**
 
 `AgentPrepareInput` 增加 `runtimeSkills: AgentRuntimeSkills`。Pi client 创建 loader：
 
@@ -1619,7 +1621,7 @@ Pi client integration test 还要读取 loader 的 `getSkills()` 和最终 syste
 Skills 被注入；`disableModelInvocation=true` 的 Skill 保留在 loader 供显式调用，但被 Pi 原生
 `formatSkillsForPrompt` 排除在隐式 system prompt 之外。
 
-- [ ] **Step 6: 集成 run preflight transaction**
+- [x] **Step 6: 集成 run preflight transaction**
 
 run body 增加 `skills?: SkillSelection[]`。lease 内先 `catalog.refresh`，再 `prepareSkillTurn`，然后
 `buildAgentMessage({ skillBlocks: plan.blocks, ... })`，成功后才 `agentClient.prepare({ runtimeSkills:
@@ -1639,13 +1641,13 @@ return c.json(
 数量/total payload 返回 `413 { error: "skill_payload_too_large" }`。0 Skills 仍传当前 runtime snapshot，
 因为 Pi system prompt 需要隐式 effective Skills；因此所有 run 都需 capability。
 
-- [ ] **Step 7: 更新 run API 与架构**
+- [x] **Step 7: 更新 run API 与架构**
 
 `docs/developer/api.md` 记录 `skills` body、去重、409 body/reasons、413 和 createRun 前置性；
 architecture 记录 `skillsOverride`、effectiveRevision session rebuild、完整 prompt 顺序：Skill blocks
 → user text → attached_files。
 
-- [ ] **Step 8: focused 验证**
+- [x] **Step 8: focused 验证**
 
 Run:
 
@@ -1658,7 +1660,37 @@ pnpm docs:check
 Expected: PASS；0/1/N Skills 与隐式 loader 使用同一 effectiveRevision，所有 precondition failure
 无 run row、无 start。
 
-- [ ] **Step 9: 提交**
+**Task 9 results (2026-07-18):**
+
+- 实际完成：新增纯 `prepareSkillTurn()`，从 immutable Catalog snapshot 构建 ordered explicit blocks 和
+  pinned runtime。Canonical path 首次去重、exact path/name/status 校验、全部七种 invalid reason、
+  explicit-only、16/17、512 KiB item、2 MiB total、Pi 0.75.5 frontmatter/newline、XML entities 与
+  control-character fail-closed 均有单元测试。
+- Runtime/cache：每次 run 在 session lease 内 refresh，包括零显式选择；Pi loader 以
+  `noSkills: true + skillsOverride` 注入 effective Skills/diagnostics，explicit-only 保留在 loader 并由 Pi
+  原生隐式 prompt formatter 排除。Registry 只在 `effectiveRevision` 变化时 dispose/rebuild，并保留
+  `agentSessionPath`；busy request 不 refresh 或 prepare/acquire。
+- Transaction：固定顺序为 refresh → preflight → message build → prepare → run insert → SSE/start。所有
+  Skill 409/413、refresh、body/message 和 prepare failure 都在 run insert/start 前返回，run count 保持 0。
+- RED：规定 focused command exit 1；preflight module 缺失，registry revision 未重建，Pi acquire 没有
+  revision/pinned Skills，route 未 refresh 或识别 selections，共 4 suites failed、6 tests failed、36 passed。
+  Security review 追加 Pi native `/skill:name` bypass RED 2 failed/10 passed；强制关闭 native expansion 后
+  GREEN。最终规定 Task 9 focused suite 78/78，pi-server typecheck、static/diff docs check 均通过。
+- 全门禁：`pnpm verify` 通过，包含 docs 28、chat-core 14、pi-server 261（另 1 个 opt-in smoke skip）、
+  desktop 330 tests，以及 formatting、lint、typecheck 和全部 builds。
+- 正式文档：更新 user guide/configuration、developer API/architecture/readiness issue 与 product status，
+  记录 runtime、error/limits、prompt order、revision cache、仍缺 Desktop picker/Settings flow 的边界。
+- Review：deep security pass 发现 Pi native `/skill:name` 会按 loader filePath 重读磁盘，绕过 snapshot body
+  和 payload/control checks；已用 RED 测试固定 `expandPromptTemplates: false` 且保留其他 prompt options。
+  另以 bounded stream 在 JSON decode 前限制 4 MiB run body，并在 path 去重前限制 16 raw selections 与
+  每个 name/path 16 KiB UTF-8；declared 和 chunked/actual oversize、auth precedence 均有 RED/GREEN。
+  Base/architecture/adversarial re-review 无 hard stop。无依赖或 UI-visible change，因此未运行 visual
+  verification。
+- 偏差：Task 3 已预先实现 `skillBlocks` message order 和对应 agent-message test，Task 9 直接复用且未重复
+  修改这两个文件。Documentation impact gate 要求同步 brief 未列出的 guide/configuration/status/readiness
+  mirror；这些正式文档已同改动更新。无行为或设计偏差。
+
+- [x] **Step 9: 提交**
 
 ```bash
 git add apps/pi-server docs/developer/api.md docs/developer/architecture.md

@@ -89,6 +89,10 @@ Catalog 只在调用方显式请求 refresh 或修改 preference 时重新发现
 `catalogRevision`；只有 effective Skill 的 metadata、canonical path、顺序或正文 hash 变化才更新
 `effectiveRevision`。
 
+Run request body 最多 4 MiB；最多提交 16 个 raw Skill selections，且每个 name/path 分别最多 16 KiB
+UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB，
+全部 blocks 合计最多 2 MiB。
+
 ### Skills 管理 API 与当前可用性
 
 pi-server 已提供三个管理接口：刷新并列出公开 snapshot、按 exact canonical path 更新启停 preference、
@@ -106,8 +110,12 @@ snapshot 外 path 都返回 not found。
 Skill object 或 runtime effective collection。Catalog/internal failure 只返回通用错误，不返回内部 path
 或 bytes。
 
-这套后端不创建、导入、安装、编辑或删除 Skill 文件。当前桌面 Settings/Composer 尚未接入，agent
-runtime 仍使用 `noSkills: true`，所以它还不是用户可操作的正常产品流程。
+这套后端不创建、导入、安装、编辑或删除 Skill 文件。Run API 会在每个 session lease 内刷新 Catalog，
+把 effective Skills 和 diagnostics 以 `effectiveRevision` 固定到 agent loader，并允许按 exact
+`{ name, canonical path }` 显式选择。通过 raw request/field limits 后，显式列表按 path 保留第一次出现，
+旧 path 或 name mismatch 不会自动改绑。Loader 使用 `noSkills: true` 关闭自身磁盘 discovery，
+再通过 pinned override 注入 snapshot，并非禁用 runtime Skills。当前桌面 Settings/Composer 尚未接入，
+所以它还不是用户可操作的正常产品流程。
 
 Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
 预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的

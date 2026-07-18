@@ -65,6 +65,7 @@ import { resolveWorkspacePath } from "./files/path-sandbox.js";
 import { createHealthInfo } from "./health.js";
 import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
 import { SessionRunLeases } from "./run/session-run-leases.js";
+import { RequestBodyTooLargeError, readJsonBodyWithinLimit } from "./run/request-body.js";
 import {
   authorizeCapability,
   isAllowedOrigin,
@@ -76,6 +77,12 @@ import {
   toPublicSkillCatalogSnapshot
 } from "./skills/catalog.js";
 import type { SkillCatalogService } from "./skills/types.js";
+import {
+  SkillPayloadTooLargeError,
+  SkillPreconditionError,
+  prepareSkillTurn,
+  type SkillSelection
+} from "./skills/turn-preflight.js";
 
 export type AppOptions = {
   startedAt?: Date;
@@ -432,14 +439,23 @@ export function createApp(options: AppOptions = {}) {
     const workspace = getWorkspace(db, session.workspaceId);
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
 
-    const body = await c.req.json<{
+    let body: {
       providerId: string;
       message: string;
       model?: string;
       contextFiles?: string[];
+      skills?: SkillSelection[];
       permission?: "full" | "ask" | "readonly";
       reasoning?: "low" | "medium" | "high" | "xhigh" | null;
-    }>();
+    };
+    try {
+      body = await readJsonBodyWithinLimit(c.req.raw);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return c.json({ error: "skill_payload_too_large" }, 413);
+      }
+      throw error;
+    }
     const provider = getProvider(db, body.providerId);
     if (!provider) return c.json({ error: "provider not found" }, 404);
     if (!provider.enabled) return c.json({ error: "provider disabled" }, 409);
@@ -451,11 +467,32 @@ export function createApp(options: AppOptions = {}) {
     let agentMessage: string;
     let prepared: Awaited<ReturnType<AgentClient["prepare"]>>;
     let run: ReturnType<typeof createRun>;
+    let catalogRevision: string | null = null;
     try {
+      if (
+        body.skills !== undefined &&
+        (!Array.isArray(body.skills) ||
+          body.skills.some(
+            (selection) =>
+              !selection ||
+              typeof selection !== "object" ||
+              typeof selection.name !== "string" ||
+              typeof selection.path !== "string"
+          ))
+      ) {
+        throw new Error("invalid skills");
+      }
+      const snapshot = await skillCatalog.refresh({
+        workspaceId: workspace.id,
+        workspaceRoot: workspace.rootDir
+      });
+      catalogRevision = snapshot.catalogRevision;
+      const skillTurn = prepareSkillTurn(snapshot, body.skills ?? []);
       agentMessage = await buildAgentMessage({
         workspaceRoot: workspace.rootDir,
         text: body.message,
-        contextFiles: body.contextFiles ?? []
+        contextFiles: body.contextFiles ?? [],
+        skillBlocks: skillTurn.blocks
       });
       prepared = await agentClient.prepare({
         sessionId,
@@ -464,12 +501,26 @@ export function createApp(options: AppOptions = {}) {
         modelId,
         agentSessionPath: session.agentSessionPath ?? null,
         permission: body.permission,
-        reasoning: body.reasoning ?? null
+        reasoning: body.reasoning ?? null,
+        runtimeSkills: skillTurn.runtime
       });
       if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
       run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
     } catch (error) {
       lease.release();
+      if (error instanceof SkillPreconditionError && catalogRevision !== null) {
+        return c.json(
+          {
+            error: "skill_precondition_failed",
+            catalogRevision,
+            invalidSelections: error.invalidSelections
+          },
+          409
+        );
+      }
+      if (error instanceof SkillPayloadTooLargeError) {
+        return c.json({ error: "skill_payload_too_large" }, 413);
+      }
       return c.json({ error: (error as Error).message }, 500);
     }
 

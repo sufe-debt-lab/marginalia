@@ -362,7 +362,10 @@ SSE disconnect 只触发 `abort()`，不能直接释放 lease。Route 的 `final
 
 显式选择的 preflight 规则：
 
-- 每轮最多 16 个 Skill selections。
+- 每轮 request body 最多 4 MiB，在 JSON decode 前同时检查 declared 和实际 streamed bytes；capability
+  auth 必须先于 body 读取。
+- 每轮最多提交 16 个 raw Skill selections，在 canonical path 去重前检查；每个 selection 的 name/path
+  分别最多 16 KiB UTF-8。
 - 每个当前 Skill body 最多 512 KiB；超过时仍可作为 Pi warning candidate/隐式元数据存在，
   但 `explicitEligible: false`，不出现在 picker。
 - 本轮展开后的全部 Skill blocks 最多 2 MiB。
@@ -532,7 +535,8 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 
 ## 资源与隔离边界
 
-- 最多 16 个显式 Skills、单项 512 KiB、总展开 2 MiB、preview 256 KiB。
+- Run request 最多 4 MiB；最多 16 个 raw 显式 selections；每个 selection name/path 最多 16 KiB
+  UTF-8；单项 block 512 KiB、总展开 2 MiB、preview 256 KiB。
 - Catalog refresh 按 workspace 串行；snapshot 发布后不可变。
 - AgentSession 不共享可变 loader 实例；Settings refresh 不会在运行中热改资源。
 - Global-only 与各 workspace Catalog 分开缓存，workspace key 使用 canonical workspace root。
@@ -635,5 +639,16 @@ V1 使用严格、fail-closed 的展示归一化；若真实 Skill 内容触发�
 
 ## Deviation
 
-当前无实现偏差。实现过程中任何目录规则、API、持久化、认证、历史展示或大小限制变化，必须先
-更新本节并重新确认相应正式文档。
+Task 9 deep security review 确认两项必须收紧的边界，已由 repository maintainer 批准：
+
+1. Pi 0.75.5 默认会把 leading `/skill:name` 按 loader `filePath` 重读磁盘。这会绕过 Marginalia 的
+   immutable snapshot body、XML control 和 payload limits。`PreparedAgentRun.start()` 因此在合并
+   caller prompt options 后强制 `expandPromptTemplates: false`；原生命令和 file prompt template 都不
+   再展开，显式 Skill 只能通过本设计的 preflight blocks 调用。
+2. 原设计只限制去重后的 selections 和展开 blocks，仍允许 raw duplicates、超长 identity fields 或
+   大 JSON body 消耗解析资源。Run route 现在在 capability auth 后、JSON decode 前以 streaming cap
+   限制 4 MiB body，并在去重前限制 16 个 raw selections 与每个 name/path 16 KiB UTF-8。
+
+这些变更不改变 canonical first-path dedupe、exact membership、512 KiB block 或 2 MiB expanded total
+语义。后续任何目录规则、API、持久化、认证、历史展示或大小限制变化，仍必须先更新本节并重新确认
+相应正式文档。

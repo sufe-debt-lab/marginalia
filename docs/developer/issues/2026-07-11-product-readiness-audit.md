@@ -28,7 +28,7 @@ owner: repository-maintainers
 | P0-SEC-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/security/capability.ts`、`apps/pi-server/src/app.ts`、`apps/desktop/electron/pi-server-spawner.ts`                |
 | P0-SEC-002        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
 | P0-SEC-003        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
-| P0-SEC-004        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`                                                                                  |
+| P0-SEC-004        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`                                                                                  |
 | P0-SEC-005        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`                                                               |
 | P0-SEC-006        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
 | P0-RUN-001        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
@@ -40,7 +40,7 @@ owner: repository-maintainers
 | P1-MESSAGE-001    | P1       | open        | 2026-07-11    | post-M0                    | `docs/internal/plans/2026-07-10-message-stream.md`                                                                                    |
 | P1-QUALITY-001    | P1       | open        | 2026-07-13    | M0-trustworthy-local-alpha | `apps/desktop/scripts/compare-screenshots.mjs`、2026-07-11 视觉审计                                                                   |
 | P1-RELEASE-001    | P1       | open        | 2026-07-11    | public-release             | `apps/desktop/electron-builder.yml`、`.github/workflows/build-desktop.yml`                                                            |
-| P1-EXTENSIONS-001 | P1       | open        | 2026-07-11    | post-M0                    | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/desktop/src/settings/SettingsView.tsx`                                    |
+| P1-EXTENSIONS-001 | P1       | open        | 2026-07-18    | post-M0                    | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/desktop/src/settings/SettingsView.tsx`                                    |
 | P1-A11Y-001       | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src`                                                                                                                    |
 | P1-DOCS-001       | P1       | in-progress | 2026-07-12    | M0-trustworthy-local-alpha | `scripts/docs-check.mjs`、`.github/workflows/ci.yml`、`.github/workflows/docs-gate.yml`                                               |
 
@@ -79,7 +79,10 @@ capability 都不是整套 API 的授权机制。
 
 ## P0-SEC-004: 缓存 session 保留旧配置
 
-`AgentSessionRegistry.acquire()` 以 session ID 命中缓存后直接返回旧 handle。后续传入的 model、tools 和 resource loader 不会重新应用。Reasoning 有动态 setter，工具集没有同类更新路径，因此 full 切到 readonly 后仍可能保留旧 session 的工具能力。
+`AgentSessionRegistry.acquire()` 已把 Skill `effectiveRevision` 纳入 resource cache identity；revision 变化
+会淘汰旧 handle，并以持久化 session path 重建，因此 Skill runtime 不再保留旧 loader。后续传入的
+model 和 tools 仍不会重新应用。Reasoning 有动态 setter，工具集没有同类更新路径，因此 full 切到
+readonly 后仍可能保留旧 session 的工具能力。
 
 修复目标：把影响能力边界的配置纳入缓存 key，或在不兼容变化时显式淘汰并重建 AgentSession。
 
@@ -177,9 +180,13 @@ macOS 配置 `identity: null`，Windows 也未签名；没有 macOS notarization
 
 ## P1-EXTENSIONS-001: Skills 与 MCP 不可用
 
-Settings 中两个入口被禁用。Pi resource loader 明确设置 `noSkills: true`，仓库没有 MCP server 配置、连接、发现或工具注入链路。
+Settings 中 Skills/MCP 两个入口仍被禁用，Composer 也没有 Skill picker。Skills 已有 Catalog、受保护
+管理 API、显式 run preflight 和 revision-pinned runtime；loader 的 `noSkills: true` 只关闭 Pi 自身磁盘
+discovery，再由 snapshot override 注入 effective Skills。仓库仍没有 MCP server 配置、连接、发现或
+工具注入链路。
 
-修复目标：在安全边界稳定后分别设计 Skills 和 MCP 的来源、权限、诊断和管理流程。在此之前正式文档只标为 disabled/planned。
+修复目标：完成 Skills 桌面管理与 Composer 选择流程；在安全边界稳定后设计 MCP 的来源、权限、诊断
+和管理流程。正式文档保持区分已实现的 Skills 后端与尚未接入的正常产品路径。
 
 验收：能力状态变更前有独立 spec、威胁模型、故障诊断和端到端测试。
 

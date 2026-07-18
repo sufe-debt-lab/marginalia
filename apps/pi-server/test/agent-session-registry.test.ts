@@ -33,12 +33,55 @@ function deps() {
 }
 
 describe("AgentSessionRegistry", () => {
+  it("rebuilds only when resourceRevision changes and preserves the agent session path", async () => {
+    const { built, factoryDeps } = deps();
+    const reg = new AgentSessionRegistry({ ...factoryDeps, maxEntries: 2 });
+
+    const first = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: "/tmp/persisted.jsonl",
+      resourceRevision: "rev-1"
+    });
+    const cached = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: "/tmp/persisted.jsonl",
+      resourceRevision: "rev-1"
+    });
+    const rebuilt = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: "/tmp/persisted.jsonl",
+      resourceRevision: "rev-2"
+    });
+
+    expect(cached.session).toBe(first.session);
+    expect(rebuilt.session).not.toBe(first.session);
+    expect((first.session as any).disposed).toBe(true);
+    expect(built).toEqual(["s-0", "s-1"]);
+    expect(factoryDeps.sessionManagerFor).toHaveBeenCalledTimes(2);
+    expect(factoryDeps.sessionManagerFor).toHaveBeenLastCalledWith("/tmp", "/tmp/persisted.jsonl");
+    expect(first.resourceRevision).toBe("rev-1");
+    expect(rebuilt.resourceRevision).toBe("rev-2");
+  });
+
   it("returns cached session for repeated sessionId", async () => {
     const { built, factoryDeps } = deps();
     const reg = new AgentSessionRegistry({ ...factoryDeps, maxEntries: 2 });
 
-    const a = await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null });
-    const b = await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null });
+    const a = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null,
+      resourceRevision: "rev"
+    });
+    const b = await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null,
+      resourceRevision: "rev"
+    });
 
     expect(a.session).toBe(b.session);
     expect(built).toEqual(["s-0"]);
@@ -48,14 +91,30 @@ describe("AgentSessionRegistry", () => {
     const { built, factoryDeps } = deps();
     const reg = new AgentSessionRegistry({ ...factoryDeps, maxEntries: 2 });
 
-    await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null });
+    await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null,
+      resourceRevision: "rev"
+    });
     const beforeEvict = await reg.acquire({
       sessionId: "s2",
       workspaceRoot: "/tmp",
-      agentSessionPath: null
+      agentSessionPath: null,
+      resourceRevision: "rev"
     });
-    await reg.acquire({ sessionId: "s1", workspaceRoot: "/tmp", agentSessionPath: null }); // touch s1
-    await reg.acquire({ sessionId: "s3", workspaceRoot: "/tmp", agentSessionPath: null }); // pushes out s2
+    await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null,
+      resourceRevision: "rev"
+    }); // touch s1
+    await reg.acquire({
+      sessionId: "s3",
+      workspaceRoot: "/tmp",
+      agentSessionPath: null,
+      resourceRevision: "rev"
+    }); // pushes out s2
 
     expect(built).toEqual(["s-0", "s-1", "s-2"]);
     expect((beforeEvict.session as any).disposed).toBe(true);
@@ -67,14 +126,16 @@ describe("AgentSessionRegistry", () => {
     const first = await reg.acquire({
       sessionId: "s1",
       workspaceRoot: "/tmp",
-      agentSessionPath: null
+      agentSessionPath: null,
+      resourceRevision: "rev"
     });
     reg.evict("s1");
     expect((first.session as any).disposed).toBe(true);
     const second = await reg.acquire({
       sessionId: "s1",
       workspaceRoot: "/tmp",
-      agentSessionPath: null
+      agentSessionPath: null,
+      resourceRevision: "rev"
     });
     expect(second.session).not.toBe(first.session);
   });
@@ -89,7 +150,12 @@ describe("AgentSessionRegistry", () => {
         return { kind: "sm" } as any;
       }
     });
-    await reg.acquire({ sessionId: "s1", workspaceRoot: "/root", agentSessionPath: "/old.jsonl" });
+    await reg.acquire({
+      sessionId: "s1",
+      workspaceRoot: "/root",
+      agentSessionPath: "/old.jsonl",
+      resourceRevision: "rev"
+    });
     expect(calls).toEqual([["/root", "/old.jsonl"]]);
   });
 });

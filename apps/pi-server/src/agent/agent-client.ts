@@ -6,6 +6,7 @@ import type {
   PromptOptions,
   SessionManager
 } from "@earendil-works/pi-coding-agent";
+import type { AgentRuntimeSkills } from "../skills/turn-preflight.js";
 
 /**
  * Re-export pi types as the single source of truth. Do not redefine these locally.
@@ -48,7 +49,10 @@ export type AgentRunInput = {
   abortSignal?: AbortSignal;
 };
 
-export type AgentPrepareInput = Omit<AgentRunInput, "message" | "promptOptions" | "abortSignal">;
+export type AgentPrepareInput = Omit<AgentRunInput, "message" | "promptOptions" | "abortSignal"> & {
+  /** Immutable Skill runtime pinned by the turn preflight snapshot. */
+  runtimeSkills: AgentRuntimeSkills;
+};
 
 export type AgentRunExecution = {
   /** Stream of pi-native events. Consumer is responsible for full drain. */

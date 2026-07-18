@@ -93,9 +93,11 @@ workspace、provider、文件、审批等既有 route 仍未认证，缺少 Orig
 
 ## Skills 管理后端
 
-pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate，以及读取 candidate 的截断预览。
-这些能力目前只存在于受 capability 保护的管理 API；Settings 中的 Skills 页、Composer picker、显式
-调用和 agent runtime 接入尚未完成，因此普通桌面流程仍不能管理或使用 Skills。
+pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate、读取 candidate 的截断预览，
+并在受 capability 保护的 run API 中按 exact `{ name, canonical path }` 显式调用 Skill。每个 run 都会
+把当前 effective Skills 固定到 agent runtime；explicit-only Skill 不会出现在模型的隐式清单中，但可
+通过显式 selection 调用。Settings 中的 Skills 页和 Composer picker 尚未接入，因此普通桌面流程仍
+不能选择或管理 Skills。
 
 管理后端只发现磁盘上已经存在的 Skill。它不提供创建、导入、安装、编辑或删除文件的能力。省略
 workspace 时只查看三个 user/global roots；指定 workspace 时还加入该 workspace 的三个来源，详细目录
@@ -109,7 +111,7 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 
 ## 当前不可用
 
-- Skills 桌面流程：管理 API 已存在，但 Settings 入口仍禁用，agent runtime 仍设置 `noSkills: true`。
+- Skills 桌面流程：管理和 run runtime API 已存在，但 Settings 入口与 Composer picker 仍禁用。
 - MCP：没有 server 配置、连接或工具注入，设置入口禁用。
 - 独立 Quick chat 入口、版本快照、自动更新和数据导入导出仍未完成。
 - Slash menu 会显示 clear/help/model，但选择后当前不会执行对应动作。

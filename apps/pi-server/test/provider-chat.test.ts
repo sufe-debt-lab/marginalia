@@ -14,6 +14,7 @@ import {
 } from "../src/db/repositories.js";
 import { FakeAgentClient } from "../src/agent/fake-agent-client.js";
 import type { AgentRunEvent, AgentSessionEvent } from "../src/agent/agent-client.js";
+import type { SkillCatalogService, SkillCatalogSnapshot } from "../src/skills/types.js";
 
 const dbs: Database.Database[] = [];
 const capability = { token: "test-token", allowedOrigins: new Set<string>() };
@@ -59,6 +60,30 @@ function runStatuses(db: Database.Database) {
     .prepare("select status from runs order by created_at")
     .all()
     .map((row) => (row as { status: string }).status);
+}
+
+function catalogSnapshot(overrides: Partial<SkillCatalogSnapshot> = {}): SkillCatalogSnapshot {
+  return {
+    workspaceId: null,
+    workspaceRoot: null,
+    catalogRevision: "catalog-1",
+    effectiveRevision: "effective-1",
+    refreshedAt: 1,
+    candidates: [],
+    effectiveSkills: [],
+    diagnostics: [],
+    ...overrides
+  };
+}
+
+function fixedCatalog(
+  current: SkillCatalogSnapshot = catalogSnapshot()
+): SkillCatalogService & { refresh: ReturnType<typeof vi.fn> } {
+  return {
+    refresh: vi.fn(async () => current),
+    current: vi.fn(() => current),
+    setEnabled: vi.fn(async () => current)
+  };
 }
 
 function setupRun(rootDir = "/tmp/docs-run-transaction") {
@@ -198,7 +223,8 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const skillCatalog = fixedCatalog();
+    const app = createApp({ db, agentClient, capability, skillCatalog });
 
     const first = await runRequest(app, session.id, providerId);
     const firstBody = first.text();
@@ -208,6 +234,7 @@ describe("chat runs", () => {
     expect(overlap.status).toBe(409);
     expect(await overlap.json()).toEqual({ error: "session_busy" });
     expect(runCount(db)).toBe(1);
+    expect(skillCatalog.refresh).toHaveBeenCalledTimes(1);
 
     settled.resolve();
     await firstBody;
@@ -217,6 +244,203 @@ describe("chat runs", () => {
     await next.text();
     expect(next.status).toBe(200);
     expect(runCount(db)).toBe(2);
+  });
+
+  it("refreshes skills and pins the runtime even when the run selects zero skills", async () => {
+    const { db, workspace, session, providerId } = setupRun();
+    const skillCatalog = fixedCatalog(
+      catalogSnapshot({ workspaceId: workspace.id, workspaceRoot: workspace.rootDir })
+    );
+    let preparedInput: any;
+    const agentClient = {
+      async prepare(input: any) {
+        preparedInput = input;
+        return preparedRun([]);
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability, skillCatalog });
+
+    const response = await runRequest(app, session.id, providerId, { skills: [] });
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(skillCatalog.refresh).toHaveBeenCalledWith({
+      workspaceId: workspace.id,
+      workspaceRoot: workspace.rootDir
+    });
+    expect(preparedInput.runtimeSkills).toEqual({
+      effectiveRevision: "effective-1",
+      loadResult: { skills: [], diagnostics: [] }
+    });
+    expect(runCount(db)).toBe(1);
+  });
+
+  it("returns skill 409/413 failures before prepare and before creating a run", async () => {
+    const { db, session, providerId } = setupRun();
+    const skillCatalog = fixedCatalog();
+    const prepare = vi.fn(async () => preparedRun([]));
+    const agentClient = {
+      prepare,
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability, skillCatalog });
+
+    const invalid = await runRequest(app, session.id, providerId, {
+      skills: [{ name: "missing", path: "/tmp/missing/SKILL.md" }]
+    });
+    expect(invalid.status).toBe(409);
+    expect(await invalid.json()).toEqual({
+      error: "skill_precondition_failed",
+      catalogRevision: "catalog-1",
+      invalidSelections: [{ name: "missing", path: "/tmp/missing/SKILL.md", reason: "missing" }]
+    });
+
+    const tooMany = await runRequest(app, session.id, providerId, {
+      skills: Array.from({ length: 17 }, () => ({
+        name: "duplicate",
+        path: "/tmp/duplicate/SKILL.md"
+      }))
+    });
+    expect(tooMany.status).toBe(413);
+    expect(await tooMany.json()).toEqual({ error: "skill_payload_too_large" });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(runCount(db)).toBe(0);
+  });
+
+  it("rejects oversized Skill fields before preparation or run creation", async () => {
+    const { db, session, providerId } = setupRun();
+    const skillCatalog = fixedCatalog();
+    const prepare = vi.fn(async () => preparedRun([]));
+    const agentClient = {
+      prepare,
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability, skillCatalog });
+
+    for (const selection of [
+      { name: "n".repeat(16 * 1024 + 1), path: "/tmp/name/SKILL.md" },
+      { name: "path", path: `/tmp/${"p".repeat(16 * 1024)}é` }
+    ]) {
+      const response = await runRequest(app, session.id, providerId, { skills: [selection] });
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({ error: "skill_payload_too_large" });
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(runCount(db)).toBe(0);
+  });
+
+  it("caps declared and streamed run bodies after authorization and before JSON decode", async () => {
+    const { db, session } = setupRun();
+    const prepare = vi.fn(async () => preparedRun([]));
+    const agentClient = {
+      prepare,
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability, skillCatalog: fixedCatalog() });
+
+    const declared = await app.request(
+      new Request(`http://localhost/sessions/${session.id}/runs`, {
+        method: "POST",
+        headers: { ...runHeaders, "content-length": String(4 * 1024 * 1024 + 1) },
+        body: "{}"
+      })
+    );
+    expect(declared.status).toBe(413);
+    expect(await declared.json()).toEqual({ error: "skill_payload_too_large" });
+
+    const encoder = new TextEncoder();
+    const streamedRequest = new Request(`http://localhost/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: runHeaders,
+      body: new ReadableStream({
+        start(controller) {
+          const chunk = encoder.encode("x".repeat(1024 * 1024));
+          for (let index = 0; index < 5; index += 1) controller.enqueue(chunk);
+          controller.close();
+        }
+      }),
+      duplex: "half"
+    } as RequestInit & { duplex: "half" });
+    const streamed = await app.request(streamedRequest);
+    expect(streamed.status).toBe(413);
+    expect(await streamed.json()).toEqual({ error: "skill_payload_too_large" });
+
+    const unauthorized = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(4 * 1024 * 1024 + 1)
+      },
+      body: "{}"
+    });
+    expect(unauthorized.status).toBe(401);
+    expect(await unauthorized.json()).toEqual({ error: "unauthorized" });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(runCount(db)).toBe(0);
+  });
+
+  it("leaves no run when catalog refresh or request body processing fails", async () => {
+    const { db, session, providerId } = setupRun();
+    const prepare = vi.fn(async () => preparedRun([]));
+    const agentClient = {
+      prepare,
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const refresh = vi
+      .fn<SkillCatalogService["refresh"]>()
+      .mockRejectedValueOnce(new Error("refresh failed"))
+      .mockResolvedValue(catalogSnapshot());
+    const skillCatalog: SkillCatalogService = {
+      refresh,
+      current: () => null,
+      setEnabled: async () => catalogSnapshot()
+    };
+    const app = createApp({ db, agentClient, capability, skillCatalog });
+
+    const refreshFailure = await runRequest(app, session.id, providerId);
+    expect(refreshFailure.status).toBe(500);
+    expect(runCount(db)).toBe(0);
+    expect(prepare).not.toHaveBeenCalled();
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const badBody = await app.request(`/sessions/${session.id}/runs`, {
+        method: "POST",
+        headers: runHeaders,
+        body: "{"
+      });
+      expect(badBody.status).toBe(500);
+      expect(runCount(db)).toBe(0);
+      expect(prepare).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("aborts on disconnect but keeps the session busy until execution settles", async () => {

@@ -222,15 +222,37 @@ State route 只接受 `{ path: string, enabled: boolean, workspaceId?: string }`
 统一映射为不含内部 path/bytes 的错误。该 API 只管理已经发现的文件，不创建、导入、安装、编辑或删除
 Skill。
 
-Desktop 尚未调用这三个 route：Settings Skills 入口仍禁用，Composer 没有 picker，agent resource loader
-仍使用 `noSkills: true`。因此 Task 8 建立的是管理后端和信任边界，不是已可用的用户工作流或 runtime
-Skills 集成。
+Desktop 尚未调用这三个管理 route，Settings Skills 入口仍禁用，Composer 也没有 picker。Run API
+已经接受显式 Skill selections 并接通 runtime；因此这是可由受保护 API 使用的后端能力，仍不是普通
+桌面流程可操作的用户功能。
 
 ## Agent session 与资源
 
-`PiCodingAgentClient.prepare()` 为每次 run 构造 `DefaultResourceLoader`，关闭磁盘 extension、skills、prompt template、theme 和 context file 发现，只注入 Marginalia 的审批 extension，并取得已配置的 AgentSession；此阶段不会调用 prompt。`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的事件流和始终可等待的 `settled` Promise。Skills 因 `noSkills: true` 处于禁用状态；MCP 没有配置或工具注入链路。
+每个 run 先在 capability auth 后以 bounded stream 读取最多 4 MiB body，再在持有 per-session lease 后
+刷新一次 workspace Catalog，即使请求没有显式 Skill selection也一样。`prepareSkillTurn()`
+（`apps/pi-server/src/skills/turn-preflight.ts#prepareSkillTurn`）先在去重前限制 16 个 raw selections 和
+每个 identity field 16 KiB UTF-8，再只使用该 immutable snapshot：显式选择按 canonical path 首次去重
+和排序，再按 exact path/name/status 校验；XML
+block 的 body 只来自 snapshot `rawContent`，不会重新读盘。Builder 与 Pi 0.75.5 使用相同的 newline 和
+frontmatter boundary，分别转义 XML attribute/text，并拒绝 XML 1.0 不支持的 control character。Prompt
+拼接顺序固定为 Skill blocks → user text → trailing `attached_files` envelope。
 
-AgentSession 由 `AgentSessionRegistry` 按 session ID 缓存。首次创建时传入 model、resource loader、tool allowlist 和 session manager；缓存命中后直接返回旧 handle，不重新应用配置。Reasoning 通过 setter 动态更新，权限工具集没有同类更新路径。Provider、model、permission 或资源边界变化时，当前缓存不能保证一致。
+同一 preflight 还产出 `{ effectiveRevision, loadResult }` runtime snapshot。`PiCodingAgentClient.prepare()`
+为 run 构造 `DefaultResourceLoader`，保持 `noSkills: true` 以关闭磁盘 discovery，同时通过
+`skillsOverride` 注入 pinned effective Skills 和 diagnostics；extension、prompt template、theme 和
+context file discovery 也保持关闭，只注入 Marginalia 审批 extension。Explicit-only Skill 仍保留在
+loader，供显式 block 调用；Pi 原生 `formatSkillsForPrompt()` 按 `disableModelInvocation` 把它排除在
+隐式 system prompt 列表之外。启动 prompt 时服务端强制 `expandPromptTemplates: false`，禁止 Pi 原生
+`/skill:name` 从 `skill.filePath` 重读磁盘；显式调用只能经过 snapshot preflight 生成的 block。
+`prepare()` 不调用 prompt；`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的
+事件流和始终可等待的 `settled` Promise。MCP 仍没有配置或工具注入链路。
+
+AgentSession 由 `AgentSessionRegistry` 按 session ID 和 `resourceRevision` 缓存，其中 revision 固定使用
+Catalog `effectiveRevision`。相同 revision 的 cache hit 复用 handle；revision 变化时先 dispose 旧
+handle，再用同一个已持久化 `agentSessionPath` 创建 session。仅 diagnostic、disabled loser 或 preview
+变化不会改变 effective revision，因此不会重建 session。Run lease 在整个 refresh/preflight/prepare/
+execution settled 边界内阻止同 session 的第二次 refresh 或 acquire。Reasoning 仍通过 setter 动态更新，
+权限工具集没有同类更新路径；provider、model 或 permission 变化时缓存仍不能保证一致。
 
 Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provider.name)` 和 model ID 调用 `getModel()`，没有把该 URL 注入请求。Provider Test 只检查本地 ModelRegistry 和是否配置凭据，不验证 key 或网络。
 

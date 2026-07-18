@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { formatSkillsForPrompt, type Skill } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { PiCodingAgentClient } from "../src/agent/pi-coding-agent-client.js";
 import type { AgentRunEvent, AgentSessionEvent } from "../src/agent/agent-client.js";
@@ -37,7 +38,74 @@ async function collect(events: AsyncIterable<AgentRunEvent>): Promise<AgentRunEv
   return collected;
 }
 
+function emptyRuntimeSkills() {
+  return {
+    effectiveRevision: "empty-revision",
+    loadResult: { skills: [], diagnostics: [] }
+  };
+}
+
 describe("PiCodingAgentClient", () => {
+  it("pins the effective skill loader and registry revision for the prepared runtime", async () => {
+    const session = fakeSession([]);
+    const acquire = vi.fn(async () => ({
+      sessionId: "s1",
+      session,
+      sessionFile: "/tmp/fake.jsonl",
+      resourceRevision: "effective-1",
+      dispose() {}
+    }));
+    const registry = { acquire } as unknown as AgentSessionRegistry;
+    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
+    const skill = (name: string, disableModelInvocation: boolean): Skill => ({
+      name,
+      description: `${name} description`,
+      filePath: `/tmp/${name}/SKILL.md`,
+      baseDir: `/tmp/${name}`,
+      sourceInfo: {
+        path: `/tmp/${name}/SKILL.md`,
+        source: "local",
+        scope: "project",
+        origin: "test"
+      },
+      disableModelInvocation
+    });
+    const visible = skill("visible", false);
+    const explicit = skill("manual", true);
+
+    await client.prepare({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      piProviderId: "openai",
+      modelId: "m",
+      runtimeSkills: {
+        effectiveRevision: "effective-1",
+        loadResult: {
+          skills: [visible, explicit],
+          diagnostics: [{ type: "warning", message: "pinned warning", path: visible.filePath }]
+        }
+      }
+    });
+
+    const acquireInput = acquire.mock.calls[0]![0];
+    const loader = (
+      acquireInput.config as {
+        resourceLoader: {
+          getSkills(): { skills: Skill[]; diagnostics: unknown[] };
+        };
+      }
+    ).resourceLoader;
+    expect(acquireInput.resourceRevision).toBe("effective-1");
+    expect(loader.getSkills()).toEqual({
+      skills: [visible, explicit],
+      diagnostics: [{ type: "warning", message: "pinned warning", path: visible.filePath }]
+    });
+
+    const promptFixture = formatSkillsForPrompt(loader.getSkills().skills);
+    expect(promptFixture).toContain("<name>visible</name>");
+    expect(promptFixture).not.toContain("<name>manual</name>");
+  });
+
   it("does not prompt during prepare", async () => {
     const session = fakeSession([]);
     const registry = {
@@ -54,12 +122,45 @@ describe("PiCodingAgentClient", () => {
       sessionId: "s1",
       workspaceRoot: "/tmp",
       piProviderId: "openai",
-      modelId: "m"
+      modelId: "m",
+      runtimeSkills: emptyRuntimeSkills()
     });
 
     expect(session.prompt).not.toHaveBeenCalled();
     const execution = prepared.start("hello");
-    expect(session.prompt).toHaveBeenCalledWith("hello", undefined);
+    expect(session.prompt).toHaveBeenCalledWith("hello", { expandPromptTemplates: false });
+    await execution.settled;
+  });
+
+  it("forces Pi native Skill and template expansion off while preserving prompt options", async () => {
+    const session = fakeSession([]);
+    const registry = {
+      acquire: vi.fn(async () => ({
+        sessionId: "s1",
+        session,
+        sessionFile: "/tmp/fake.jsonl",
+        dispose() {}
+      }))
+    } as unknown as AgentSessionRegistry;
+    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
+    const prepared = await client.prepare({
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      piProviderId: "openai",
+      modelId: "m",
+      runtimeSkills: emptyRuntimeSkills()
+    });
+
+    const options = { images: [] };
+    const execution = prepared.start("/skill:visible", {
+      ...options,
+      expandPromptTemplates: true
+    });
+
+    expect(session.prompt).toHaveBeenCalledWith("/skill:visible", {
+      images: [],
+      expandPromptTemplates: false
+    });
     await execution.settled;
   });
 
@@ -83,7 +184,8 @@ describe("PiCodingAgentClient", () => {
         sessionId: "s1",
         workspaceRoot: "/tmp",
         piProviderId: "openai",
-        modelId: "m"
+        modelId: "m",
+        runtimeSkills: emptyRuntimeSkills()
       })
     ).start("hello");
 
@@ -122,7 +224,8 @@ describe("PiCodingAgentClient", () => {
         sessionId: "s1",
         workspaceRoot: "/tmp",
         piProviderId: "openai",
-        modelId: "m"
+        modelId: "m",
+        runtimeSkills: emptyRuntimeSkills()
       })
     ).start("hello");
     const pendingEvent = execution.events[Symbol.asyncIterator]().next();
@@ -152,7 +255,8 @@ describe("PiCodingAgentClient", () => {
         sessionId: "s1",
         workspaceRoot: "/tmp",
         piProviderId: "openai",
-        modelId: "m"
+        modelId: "m",
+        runtimeSkills: emptyRuntimeSkills()
       })
     ).start("hello");
 
@@ -176,7 +280,8 @@ describe("PiCodingAgentClient", () => {
       sessionId: "s1",
       workspaceRoot: "/tmp",
       piProviderId: "openai",
-      modelId: "m"
+      modelId: "m",
+      runtimeSkills: emptyRuntimeSkills()
     });
 
     const execution = prepared.start("first");
@@ -197,6 +302,7 @@ describe("PiCodingAgentClient", () => {
     const session = fakeSession(events);
     const handle: SessionHandle = {
       sessionId: "s1",
+      resourceRevision: "empty-revision",
       session: session as any,
       sessionFile: "/tmp/fake.jsonl",
       dispose: () => session.dispose()
@@ -215,7 +321,8 @@ describe("PiCodingAgentClient", () => {
       sessionId: "s1",
       workspaceRoot: "/tmp",
       piProviderId: "minimax-cn",
-      modelId: "MiniMax-M2.7"
+      modelId: "MiniMax-M2.7",
+      runtimeSkills: emptyRuntimeSkills()
     });
     expect(prepared.sessionFile).toBe("/tmp/fake.jsonl");
     const execution = prepared.start("hello");
@@ -232,6 +339,7 @@ describe("PiCodingAgentClient", () => {
     ]);
     const handle: SessionHandle = {
       sessionId: "s1",
+      resourceRevision: "empty-revision",
       session: session as any,
       sessionFile: "/tmp/fake.jsonl",
       dispose: () => session.dispose()
@@ -250,7 +358,8 @@ describe("PiCodingAgentClient", () => {
       piProviderId: "minimax-cn",
       modelId: "MiniMax-M2.7",
       permission: "readonly",
-      reasoning: "high"
+      reasoning: "high",
+      runtimeSkills: emptyRuntimeSkills()
     });
     const execution = prepared.start("hello");
     for await (const _e of execution.events) void _e;
@@ -267,6 +376,7 @@ describe("PiCodingAgentClient", () => {
     ]);
     const handle: SessionHandle = {
       sessionId: "s1",
+      resourceRevision: "empty-revision",
       session: session as any,
       sessionFile: "/tmp/fake.jsonl",
       dispose: () => session.dispose()
@@ -279,7 +389,8 @@ describe("PiCodingAgentClient", () => {
       workspaceRoot: "/tmp",
       piProviderId: "minimax-cn",
       modelId: "m",
-      permission: "full"
+      permission: "full",
+      runtimeSkills: emptyRuntimeSkills()
     });
     const config = acquire.mock.calls[0][0].config as Record<string, unknown>;
     expect(config.tools).toBeUndefined();
@@ -293,7 +404,8 @@ describe("PiCodingAgentClient", () => {
         sessionId: "s1",
         workspaceRoot: "/tmp",
         piProviderId: "unknown",
-        modelId: "nope"
+        modelId: "nope",
+        runtimeSkills: emptyRuntimeSkills()
       })
     ).rejects.toThrow(/unknown\/nope/);
   });
@@ -341,7 +453,8 @@ describe("PiCodingAgentClient approval merge", () => {
       workspaceRoot,
       piProviderId: "openai",
       modelId: "gpt",
-      permission: "ask"
+      permission: "ask",
+      runtimeSkills: emptyRuntimeSkills()
     });
     const execution = prepared.start("hi");
     // Policy was registered for the session by prepare().

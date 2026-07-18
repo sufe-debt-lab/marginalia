@@ -233,12 +233,13 @@ workspace 返回 `404 { "error": "workspace not found" }`，snapshot 不含该 p
 `settled` Promise 完成后才释放 session lease，因此紧随断连到达的重试仍可能收到
 `session_busy`。
 
-消息附件构建、agent preparation 或 `runs` 记录创建在 SSE/start 之前完成。其中任一步骤失败都
-返回 JSON 错误且不保留 `runs` 记录；`start()` 之后的失败则已有一条 run，并以 `failed` 终态完成。
-完整顺序为：capability auth → session/workspace lookup → request decode/validation（含 provider）→
-session lease → message build → agent preparation → `runs` insert → SSE/start。message build、
-preparation 和 run insert 都在 lease 内；request abort listener 保持到 execution `settled` 完成后
-才移除，因此事件已结束但 execution 仍在收尾时的 disconnect 仍会触发 abort 和审批取消。
+Catalog refresh、Skill preflight、消息附件构建、agent preparation 或 `runs` 记录创建都在 SSE/start
+之前完成。其中任一步骤失败都返回 JSON 错误且不保留 `runs` 记录；`start()` 之后的失败则已有一条
+run，并以 `failed` 终态完成。完整顺序为：capability auth → session/workspace lookup → request
+decode/validation（含 provider）→ session lease → Catalog refresh → Skill preflight → message build →
+agent preparation → `runs` insert → SSE/start。refresh、preflight、message build、preparation 和 run
+insert 都在 lease 内；request abort listener 保持到 execution `settled` 完成后才移除，因此事件已结束
+但 execution 仍在收尾时的 disconnect 仍会触发 abort 和审批取消。
 
 请求 Body：
 
@@ -248,10 +249,46 @@ preparation 和 run insert 都在 lease 内；request abort listener 保持到 e
   "message": "用户输入",
   "model": "可选，缺省用 provider.defaultModel",
   "contextFiles": ["相对路径", "..."],            // @文件 上下文，会内联进消息
+  "skills": [{ "name": "pdf", "path": "/canonical/pdf/SKILL.md" }], // 可选
   "permission": "full" | "ask" | "readonly",      // 可选
   "reasoning": "low" | "medium" | "high" | "xhigh" // 可选
 }
 ```
+
+Run body 最多 4 MiB。服务端在 capability auth 之后、JSON decode 之前检查 declared Content-Length 和
+实际 streamed bytes；二者任一超限都返回 `413 { "error": "skill_payload_too_large" }`。因此无 bearer
+的超限请求仍先返回 401，chunked body 也不能绕过限制。
+
+每次 run（包括省略 `skills` 或传空数组）都会在 session lease 内刷新该 workspace 的 Catalog，并把
+同一 snapshot 的 `effectiveRevision` 和 effective Skills 固定到 Pi loader。请求最多包含 16 个 raw
+selections，每个 `name` / `path` 分别最多 16 KiB UTF-8；这些限制在 path 去重之前检查。之后按 `path`
+保留第一次出现的顺序，再以 `{ name, path }` 对当前 snapshot 做 exact membership 与 identity 校验；
+不会按 name 查找替代项，也不会把 disabled winner 的旧 path 改绑到同名 successor。Explicit-only
+Skill 可以被显式选择，但 Pi 会把它从隐式 system prompt 的可用清单中排除。
+
+任一选择不可用时返回 `409`，且不会调用 agent preparation、创建 run 或打开 SSE：
+
+```jsonc
+{
+  "error": "skill_precondition_failed",
+  "catalogRevision": "<sha256>",
+  "invalidSelections": [
+    {
+      "name": "pdf",
+      "path": "/canonical/pdf/SKILL.md",
+      "reason": "missing" | "disabled" | "invalid" | "shadowed" | "name_mismatch" | "too_large" | "unsupported_identifier"
+    }
+  ]
+}
+```
+
+Raw selections 超过 16、selection identity field 超限、单个 XML block 超过 512 KiB 或全部 block 合计
+超过 2 MiB 时返回
+`413 { "error": "skill_payload_too_large" }`，同样发生在 preparation 和 run insert 之前。Block 只由
+immutable snapshot 中保存的 `rawContent` 构建，使用 Pi 0.75.5 的 newline/frontmatter body 规则；
+XML 1.0 不支持的 control character 会 fail closed。最终用户 prompt 顺序固定为：连续 Skill blocks →
+用户 `message` → trailing `<attached_files>` envelope（如果有附件）。Prompt start 强制关闭 Pi 的原生
+Skill/template expansion，因此用户文本 `/skill:name` 不会重新读磁盘或绕过上述 preflight。
 
 每个 SSE `data` 是一个 JSON 信封：
 

@@ -46,6 +46,7 @@ export class PiCodingAgentClient implements AgentClient {
       workspaceRoot: input.workspaceRoot
     });
 
+    const pinnedSkills = input.runtimeSkills.loadResult;
     const loader = new DefaultResourceLoader({
       cwd: input.workspaceRoot,
       agentDir: path.join(homedir(), ".marginalia", "pi-agent"),
@@ -54,6 +55,10 @@ export class PiCodingAgentClient implements AgentClient {
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
+      skillsOverride: () => ({
+        skills: [...pinnedSkills.skills],
+        diagnostics: [...pinnedSkills.diagnostics]
+      }),
       extensionFactories: [
         createApprovalExtension(this.gateway, input.sessionId) as unknown as ExtensionFactory
       ]
@@ -69,6 +74,7 @@ export class PiCodingAgentClient implements AgentClient {
       sessionId: input.sessionId,
       workspaceRoot: input.workspaceRoot,
       agentSessionPath: input.agentSessionPath ?? null,
+      resourceRevision: input.runtimeSkills.effectiveRevision,
       config
     });
 
@@ -116,7 +122,14 @@ export class PiCodingAgentClient implements AgentClient {
         };
 
         try {
-          Promise.resolve(handle.session.prompt(message, promptOptions)).then(
+          Promise.resolve(
+            handle.session.prompt(message, {
+              ...(promptOptions ?? {}),
+              // Explicit Skills must pass through Task 9's snapshot-only preflight.
+              // Pi's native expansion rereads skill.filePath and bypasses those limits.
+              expandPromptTemplates: false
+            })
+          ).then(
             () => finish(),
             (failure) => finish(failure)
           );

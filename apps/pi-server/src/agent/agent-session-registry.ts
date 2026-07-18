@@ -31,12 +31,14 @@ export type AcquireInput = {
   sessionId: string;
   workspaceRoot: string;
   agentSessionPath: string | null;
+  resourceRevision: string;
   /** Extra config (model, tools, etc.). Forwarded to createSession. */
   config?: Record<string, unknown>;
 };
 
 export type SessionHandle = {
   sessionId: string;
+  resourceRevision: string;
   session: AgentSession;
   sessionFile: string;
   dispose(): void;
@@ -66,11 +68,12 @@ export class AgentSessionRegistry {
 
   async acquire(input: AcquireInput): Promise<SessionHandle> {
     const hit = this.entries.get(input.sessionId);
-    if (hit) {
+    if (hit && hit.resourceRevision === input.resourceRevision) {
       this.entries.delete(input.sessionId); // move to MRU
       this.entries.set(input.sessionId, hit);
       return hit;
     }
+    if (hit) this.evict(input.sessionId);
 
     const sessionManager = this.sessionManagerFor(
       input.workspaceRoot,
@@ -86,6 +89,7 @@ export class AgentSessionRegistry {
 
     const handle: SessionHandle = {
       sessionId: input.sessionId,
+      resourceRevision: input.resourceRevision,
       session,
       sessionFile: session.sessionFile ?? "",
       dispose: () => session.dispose()
