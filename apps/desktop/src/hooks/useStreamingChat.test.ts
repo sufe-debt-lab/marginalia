@@ -205,6 +205,108 @@ describe("useStreamingChat", () => {
     await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.any(Error), true));
   });
 
+  it("keeps sending and defers run_failed reporting until the stream reaches EOF", async () => {
+    let finishTail!: () => void;
+    let terminalYielded!: () => void;
+    const tail = new Promise<void>((resolve) => {
+      finishTail = resolve;
+    });
+    const terminal = new Promise<void>((resolve) => {
+      terminalYielded = resolve;
+    });
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          terminalYielded();
+          yield { type: "run_failed", payload: { error: "stable failure" } } as RunEvent;
+          await tail;
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError });
+
+    let sendPromise: Promise<void> | undefined;
+    act(() => {
+      sendPromise = result.current.send({ text: "hi", contextFiles: [], skills: [] });
+    });
+    await terminal;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result.current.sending).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    finishTail();
+    await act(async () => {
+      await sendPromise;
+    });
+    expect(result.current.sending).toBe(false);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "stable failure" }),
+      true
+    );
+  });
+
+  it("drains the real message_end error then run_failed sequence and uses the envelope error", async () => {
+    let consumedTail = false;
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield agentEvent({
+            type: "message_end",
+            message: { stopReason: "error", errorMessage: "raw pi failure" }
+          });
+          yield { type: "run_failed", payload: { error: "stable run failure" } } as RunEvent;
+          consumedTail = true;
+          yield agentEvent({
+            type: "message_update",
+            assistantMessageEvent: { type: "text_delta", delta: "ignored" }
+          });
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError, onAssistantDelta: vi.fn() });
+
+    await act(async () => {
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
+    });
+
+    expect(consumedTail).toBe(true);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "stable run failure" }),
+      true
+    );
+  });
+
+  it("preserves the run_failed error when transport draining throws", async () => {
+    let drainAttempted = false;
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield { type: "run_failed", payload: { error: "stable failure" } } as RunEvent;
+          drainAttempted = true;
+          throw new Error("transport reset");
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError });
+
+    await act(async () => {
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
+    });
+
+    expect(drainAttempted).toBe(true);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "stable failure" }),
+      true
+    );
+  });
+
   it("surfaces a typed API error message without creating an assistant bubble", async () => {
     const onError = vi.fn();
     const onAccepted = vi.fn();

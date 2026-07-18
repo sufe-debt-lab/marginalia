@@ -103,6 +103,10 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
    lease 清理前过早允许下一轮；drain 阶段的 transport 异常不反转已经收到的成功 terminal。之后再从原始
    事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
 
+失败 terminal 使用同样的 drain 边界：`run_failed` 只记录 authoritative envelope error，直到 EOF 才上报并
+结束 sending，让服务端先完成 `execution.settled` 与 lease release。raw pi `message_end(error)` 只提供缺失
+`run_failed` 时的 fallback；若两者都出现，envelope error 胜出，后续 drain 异常也不能覆盖它。
+
 Composer turn state 由 `useAppStore` 按 `new:<workspaceId>` 或 `session:<sessionId>` owner 隔离，正文、附件和
 Skills selection 都不进入 persist partial。New chat 创建 session 成功后原子移动草稿并写入一次性
 `pendingTurn`；ChatView 只 claim 匹配 session 的 handoff，不删除实际 session draft。收到

@@ -205,11 +205,20 @@ export function useStreamingChat(opts: Options) {
       let accepted = false;
       let completed = false;
       let completionNotified = false;
+      let rawFailure: Error | null = null;
+      let terminalFailure: Error | null = null;
+      let failureNotified = false;
 
       function notifyComplete() {
         if (completionNotified) return;
         completionNotified = true;
         opts.onComplete();
+      }
+
+      function notifyFailure(error: Error) {
+        if (failureNotified) return;
+        failureNotified = true;
+        opts.onError(error, accepted);
       }
 
       function startAssistant(message?: ChatAssistantMessage): string {
@@ -261,7 +270,7 @@ export function useStreamingChat(opts: Options) {
             }
             if (isRecord(pi.message) && pi.message.stopReason === "error") {
               const detail = pi.message.errorMessage;
-              throw new Error(typeof detail === "string" ? detail : "agent failed");
+              rawFailure ??= new Error(typeof detail === "string" ? detail : "agent failed");
             }
             break;
           }
@@ -318,7 +327,7 @@ export function useStreamingChat(opts: Options) {
         );
         for await (const event of events) {
           if (controller.signal.aborted) break;
-          if (completed) continue;
+          if (completed || terminalFailure) continue;
           if (event.type === "run_started") {
             if (accepted) continue;
             accepted = true;
@@ -338,15 +347,17 @@ export function useStreamingChat(opts: Options) {
             continue;
           }
           if (event.type === "run_failed") {
-            throw new Error(
+            terminalFailure = new Error(
               (event.payload as { error?: string } | undefined)?.error ?? "run failed"
             );
+            continue;
           }
           if (!accepted) continue;
           if (event.type === "run_completed") {
             completed = true;
             continue;
           }
+          if (rawFailure) continue;
           if (event.type === "approval_requested") {
             const approval = (
               event.payload as
@@ -386,15 +397,19 @@ export function useStreamingChat(opts: Options) {
         }
         flush();
         if (!controller.signal.aborted) {
-          if (!accepted) throw new Error("run ended before starting");
-          if (!completed) throw new Error("run ended before completion");
-          notifyComplete();
+          const failure = terminalFailure ?? rawFailure;
+          if (failure) notifyFailure(failure);
+          else if (!accepted) notifyFailure(new Error("run ended before starting"));
+          else if (!completed) notifyFailure(new Error("run ended before completion"));
+          else notifyComplete();
         }
       } catch (err) {
         flush();
-        if (completed) notifyComplete();
+        const failure = terminalFailure ?? rawFailure;
+        if (failure) notifyFailure(failure);
+        else if (completed) notifyComplete();
         else if (!isAbortError(err))
-          opts.onError(err instanceof Error ? err : new Error(String(err)), accepted);
+          notifyFailure(err instanceof Error ? err : new Error(String(err)));
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         sendingRef.current = false;

@@ -16,6 +16,8 @@ workspace、session 或 Settings 不会串用或立即清空正文与附件。Ne
 等待期间的后续编辑会保留。此前的 401/409/413 或流提前结束会保留输入，接受后的失败则可用 Retry
 重发同一轮正文、附件和 Skills selection，而不会覆盖当前新草稿。只有服务端明确发送
 `run_completed` 才算成功；未接受的失败只显示错误，不会出现可能重发旧消息的 Retry。
+服务端报告已接受 run 失败后，Composer 会等流完全结束再开放 Retry，避免服务端仍在清理当前 run 时立即
+重试并得到 `session_busy`。
 
 ## Workspace 与会话
 

@@ -2235,6 +2235,9 @@ git commit -m "feat(desktop): preserve scoped Skill turn drafts"
   RED regressions cover duplicate `run_started`, started EOF, stale retry after pre-start 401/409/413/EOF, iterator
   draining and post-terminal transport failure, retry-preflight rejection, and accepted replacement of a complete
   multi-bubble/tool-result failed attempt.
+- Formal re-review follow-up records `run_failed`/raw `message_end(error)` instead of throwing immediately, drains the
+  authoritative failure through server settlement/lease release, prefers the stable envelope error, and prevents
+  drain transport errors from replacing it. Deferred-tail and real dual-event regressions cover the contract.
 
 ---
 

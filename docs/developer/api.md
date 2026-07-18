@@ -336,7 +336,10 @@ Desktop 把首个 `run_started` 作为唯一接受边界：此前不追加 optim
 等待期间的新编辑和 Retry 期间已有的新草稿不受影响。HTTP 失败或 SSE 在 `run_started` 前结束会以
 `accepted: false` 报告并保留输入；收到 `run_started` 后流提前结束则以 `accepted: true` 报错。只有显式
 `run_completed` 才调用完成回调；重复 `run_started` 不会重复接受。错误 UI 只对本轮已接受且存在对应
-retry snapshot 的失败显示 Retry，pre-start 401/409/413/EOF 不会复用更早一轮的 snapshot。
+retry snapshot 的失败显示 Retry，pre-start 401/409/413/EOF 不会复用更早一轮的 snapshot。客户端收到
+`run_failed` 后仍 drain 到 EOF，再用 envelope error 上报并结束 sending；raw pi `message_end(error)` 作为
+缺失 envelope 时的 fallback，真实双事件序列优先使用稳定的 `run_failed.payload.error`。drain transport
+异常不会覆盖已经收到的 terminal failure。
 
 ### 审批（`ask` 档）
 
