@@ -122,7 +122,10 @@ Candidate 表示磁盘上被发现的一个 `SKILL.md` 或 Pi-mode 根级 Markdo
 
 Pi warning 不等于 invalid。非法 name 或过长 description 等 warning 在 Pi 返回 Skill 时仍允许
 加载；只有缺少必需 description、读取失败或 Pi 没有返回 Skill 时才标记 `invalid`。Collision
-单独表现为 `shadowed`。
+单独表现为 `shadowed`。单一 `status` 的优先级固定为
+`invalid > disabled > shadowed > effective`，而 `enabled` 保留为独立布尔值。因此一个被用户关闭
+且解析失败的 candidate 显示 Invalid，同时 toggle 仍能反映其 disabled preference，不会因
+关闭而隐藏真实诊断。
 
 ### Catalog snapshot
 
@@ -155,7 +158,8 @@ Pi warning 不等于 invalid。非法 name 或过长 description 等 warning 在
 
 Pi mode 支持目录中的 Skill roots，以及 Pi 兼容的根级 Markdown Skill 文件。Agents mode 只按
 Agent Skills 目录语义发现 `SKILL.md`，不把 `.agents/skills` 根目录下任意 Markdown 文件当作
-Skill。
+Skill。每个 discovery root 内按规范化 POSIX relative path 做 Unicode code-point 升序排序；
+source priority、ancestor 由近到远、relative path 三者共同组成完整且跨文件系统稳定的顺序。
 
 Ancestor `.agents/skills` 从 workspace root 向上按由近到远枚举：存在 Git repository root 时
 在该 root 停止，否则到文件系统 root。若其中某项 canonicalize 后等于 `~/.agents/skills`，从
@@ -163,15 +167,33 @@ workspace 组排除，确保全局通用目录只在 priority 6 出现一次。
 
 `.marginalia` 和 `.pi` 只读取 workspace root 自身的目录，不向祖先查找。
 
-### 解析、禁用与 collision
+### 稳定解析、禁用与 collision
 
-Catalog 先按来源顺序发现候选并 canonicalize，同一 realpath 只保留第一次出现。随后读取
-Marginalia preference，在交给 Pi 进行同名 first-wins 之前排除 disabled paths。这样禁用
-高优先级胜者后，下一个已启用同名候选可以自动成为 effective。
+Catalog 使用明确的两阶段 pipeline。
 
-有效候选按顺序传给 Pi 导出的 `loadSkills({ skillPaths, includeDefaults: false })`，由 Pi 完成
-frontmatter 解析、warning 和同名 collision。不能依赖 `DefaultResourceLoader.skillsOverride`
-在 collision 之后删除 disabled winner，因为被丢弃的 loser 无法在该阶段复活。
+第一阶段按确定顺序发现 candidate descriptors 并 canonicalize，同一 realpath 只保留第一次
+出现。每个 candidate 都必须独立解析，不因 disabled 或同名关系跳过：
+
+1. 读取 canonical file 得到 bytes A 和 hash A。
+2. 只用该单一 path 调用 Pi 导出的 `loadSkills({ skillPaths: [path], includeDefaults: false })`，
+   获取 parsed Skill 和 diagnostics；单文件调用不会产生跨 candidate collision。
+3. 再次解析 realpath 并读取 bytes B/hash B。
+4. 只有 realpath 未改变且 hash A 等于 hash B 时，才把 Pi parsed result 与 bytes B 组合成
+   candidate。解析发生在两次相同读取之间，因此 metadata、diagnostics 和保留正文属于同一个
+   稳定文件版本。
+5. 不一致时最多重试三次；仍不稳定则发布 `invalid` candidate 和 `unstable_file` diagnostic，
+   不让一个持续变化的文件阻止其他 Skills 刷新。
+
+第二阶段读取 Marginalia preferences，并按 status precedence 处理全部 parsed candidates：
+
+- Pi 没有返回 Skill的 candidate 为 invalid，不参与 effective 集合，无论 enabled 值为何。
+- Valid 但 disabled 的 candidate 为 disabled，在同名选择前排除。
+- 对剩余 enabled + valid candidates 按完整顺序执行 Pi-compatible name first-wins：第一个为
+  effective，后续同名项为 shadowed，并生成与 Pi collision 字段一致的 diagnostic。
+
+该阶段直接使用第一阶段的 Pi-parsed Skill objects，不再次读盘。这样既保留 Pi 对每个 Skill 的
+frontmatter/warning 语义，又避免 `skillsOverride` 在 Pi 已丢弃 loser 后删除 winner。禁用高优先级
+胜者时，下一个 enabled + valid 同名候选会自动接替。
 
 Settings 仍展示所有候选：被更高优先级覆盖但自身 enabled 的候选标记为 `shadowed`；关闭胜者
 后刷新即可看到接替结果。Composer 已选择的旧 canonical path 不会静默改绑到接替者。
@@ -195,9 +217,10 @@ Settings 仍展示所有候选：被更高优先级覆盖但自身 enabled 的�
 - 每次发送前的服务端 preflight。
 
 同一 workspace 的 refresh 串行执行并原子发布。较早 generation 晚完成时不得覆盖较新的
-snapshot。Settings 和 picker 响应只有在 `workspaceId + requestId` 仍匹配当前 UI 状态时才
-落地；菜单项保留生成它们的 catalog revision 供诊断，但服务端最新 preflight 永远是最终
-判定。
+snapshot。Revision 输入包含确定顺序、canonical identity、Pi metadata/diagnostics、preference、
+body hash 和运行限制，序列化后产生稳定 hash；相同磁盘状态不能因 readdir 顺序改变 revision。
+Settings 和 picker 响应只有在 `workspaceId + requestId` 仍匹配当前 UI 状态时才落地；菜单项
+保留生成它们的 catalog revision 供诊断，但服务端最新 preflight 永远是最终判定。
 
 ## Marginalia 私有启停状态
 
@@ -229,6 +252,17 @@ Settings 只允许修改当前 snapshot 已发现的 candidate。任何启停操
 4. pi-server 对上述请求校验 token；缺失或不匹配返回 `401`，并对浏览器 Origin 使用明确的
    Electron packaged/dev allowlist，而不是反射任意 Origin。
 5. 测试和显式开发入口通过注入 token 建立客户端；没有 token 时不能调用敏感 Skills 能力。
+
+Origin/preflight 契约固定如下：
+
+- Packaged renderer 从 `file:` 加载；实际请求允许 absent 或 `null` Origin，但仍必须通过 bearer
+  token。`null` 本身不构成授权。
+- Development 只允许 `VITE_DEV_SERVER_URL` 解析出的 exact origin，且 hostname 必须为
+  `127.0.0.1`、`localhost` 或 `::1`；该值由 Electron main 通过 child environment 传给
+  pi-server。
+- CORS `OPTIONS` preflight 按 exact Origin allowlist 放行，并声明 `Authorization` 和
+  `Content-Type`；preflight 不要求 bearer，实际请求必须校验。
+- Server/test construction 显式注入 `allowedOrigins` 和 token，不从请求动态学习 Origin。
 
 Capability token 不把客户端 canonical path 变成文件读取权限。服务端只用它在当前 snapshot
 中做精确 membership lookup，后续读取和 prompt 构建使用 snapshot 自己的数据。
@@ -297,10 +331,33 @@ session 在 server 端最多持有一个 run lease：
 
 1. 请求首先原子取得 session lease；已被占用时返回 `409 session_busy`，不创建 run。
 2. 在 lease 内刷新 Catalog、校验选择、准备 Skill bytes、构建完整 prompt。
-3. 若 `effectiveRevision` 与缓存 AgentSession 不同，确认 session 空闲后用原 pi session 文件
-   和新的独立 loader 重建 handle。
-4. 所有准备成功后才调用 `createRun`、开启 SSE 并发出 `run_started`。
-5. Run 完成、失败、abort 或连接断开时释放 lease；所有异常路径必须释放。
+3. 调用新的 `AgentClient.prepare(...)`，只解析 model/config、取得或重建 revision-pinned
+   AgentSession handle，不开始 `prompt()`。若 `effectiveRevision` 改变，它在此阶段用原 pi
+   session 文件和新的独立 loader 重建 handle。
+4. Catalog、prompt 和 AgentSession preparation 全部成功后才调用 `createRun` 并进入 SSE。
+5. SSE 先发 `run_started`，再调用 `PreparedAgentRun.start(message, promptOptions)` 开始 Pi prompt。
+6. Run 完成、失败或 abort 后等待 execution 的 `settled` Promise；只有 Pi prompt 的 finally、
+   pending approval 清理和事件流关闭全部结束后才释放 lease。
+
+AgentClient 边界从当前“一次调用同时 acquire + prompt”拆为：
+
+```text
+AgentClient.prepare(configWithoutMessage) -> PreparedAgentRun
+
+PreparedAgentRun
+  sessionFile
+  start(message, promptOptions) -> AgentRunExecution
+
+AgentRunExecution
+  events: AsyncIterable<AgentRunEvent>
+  abort(): void
+  settled: Promise<void>
+```
+
+SSE disconnect 只触发 `abort()`，不能直接释放 lease。Route 的 `finally` 必须等待 `settled` 后再
+释放；这保证断开的旧 prompt 不会与随后取得 lease 的新 run 同时写同一 Pi session。若
+`prepare` 或 `createRun` 前步骤失败，直接释放 lease且没有 run；`start` 后的错误属于真实 run，
+按现有 run failure contract 记录。
 
 显式选择的 preflight 规则：
 
@@ -310,6 +367,7 @@ session 在 server 端最多持有一个 run lease：
 - 本轮展开后的全部 Skill blocks 最多 2 MiB。
 - 每个 path 必须仍然存在于最新 snapshot，且 valid、enabled、effective、explicitEligible。
 - Name 必须匹配；同路径重复项安静去重。
+- Name、canonical path 或 baseDir 含 XML 1.0 不允许的控制字符时不可显式调用。
 
 任一选择失败返回 `409 skill_precondition_failed`：
 
@@ -323,9 +381,10 @@ session 在 server 端最多持有一个 run lease：
 }
 ```
 
-`reason` 为 `missing | disabled | invalid | shadowed | name_mismatch | too_large`。数量或总展开大小
-超限返回 `413 skill_payload_too_large`。这些错误全部发生在 `createRun` 前，因此数据库不留下
-虚假的 run，`agentClient.run` 也不会被调用。
+`reason` 为
+`missing | disabled | invalid | shadowed | name_mismatch | too_large | unsupported_identifier`。
+数量或总展开大小超限返回 `413 skill_payload_too_large`。这些错误全部发生在 `createRun` 前，
+因此数据库不留下虚假的 run，`AgentClient.prepare` 之后也不会调用 `start`。
 
 ## Pi runtime 集成
 
@@ -349,7 +408,11 @@ Pi 构造 system prompt 时读取 effective Skills。`explicitOnly` Skills 继�
 ### 多个显式 Skill blocks
 
 不把多个选择转换成 Pi 的单个 `/skill:name` 命令。服务端从同一 snapshot bytes strip
-frontmatter，按用户选择顺序生成 Pi 原生格式：
+frontmatter，按用户选择顺序生成 Pi 原生格式。Block builder 对 `name` 和 `location` 使用标准
+XML attribute escaping（`&amp;`、`&quot;`、`&lt;`、`&gt;`、`&apos;`），对 References 行中的
+baseDir 使用 XML text escaping。History parser 使用完全匹配的 decoder 后再展示 `$name`；
+客户端 name 始终与 decoded logical name 比较。XML 1.0 不允许的控制字符不做有损替换，直接使
+candidate `explicitEligible: false` 并产生 `unsupported_identifier` diagnostic。
 
 ```xml
 <skill name="brainstorming" location="/canonical/path/brainstorming/SKILL.md">
@@ -437,8 +500,9 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 
 归一化仅处理 user message 的文本展示副本：
 
-1. 严格识别消息开头连续、完整的 Pi `<skill name="..." location="...">` blocks。
-2. 按顺序提取 name，展示为 `$brainstorming $pdf` 等用户标记。
+1. 严格识别消息开头连续、完整的 Pi `<skill name="..." location="...">` blocks，并解码 block
+   builder 生成的五种 XML attribute entities。
+2. 按顺序提取 decoded name，展示为 `$brainstorming $pdf` 等用户标记。
 3. 严格识别消息末尾由 Marginalia 生成的完整 `<attached_files>` envelope，并从展示正文中移除
    内联文件内容；本期不在已发送 user bubble 重建附件卡。
 4. 保留中间用户正文。
@@ -490,9 +554,10 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 - Security：缺失/错误 token、Origin、任意 path、非 Catalog path、workspace 交叉 path。
 - Run：同 session 重叠请求 409、active run 不替换 handle、revision 变化后空闲重建、0/1/N
   Skills、顺序、canonical 去重、name mismatch、disabled/invalid/shadowed/missing/too-large。
-- Transaction：所有 precondition 和内容准备错误后 `runs` 数量不变，`agentClient.run` 未调用。
+- Transaction：所有 precondition、稳定读取和 `AgentClient.prepare` 错误后 `runs` 数量不变；
+  `createRun` 后才允许 `start`。SSE disconnect 必须 abort 并等待 settled 后释放 lease。
 - Pi integration：effective Skills 出现在隐式 system prompt；explicit-only 只允许显式；多个原生
-  blocks 的完整正文和顺序正确。
+  blocks 的完整正文、顺序、attribute escaping 和 history decoding 正确。
 - History：0/1/N blocks、Skill 后删除、正常/异常附件 suffix、malformed fail-closed、原 session
   文件未被修改。
 
