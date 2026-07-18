@@ -10,7 +10,7 @@ import type { ApprovalDecision } from "./ToolCard.js";
 
 interface Props {
   messages: readonly ChatEntry[];
-  error: string | null;
+  error: { message: string; accepted: boolean; retryable: boolean } | null;
   onRetry: () => void;
   model?: string;
   streaming?: boolean;
@@ -105,17 +105,19 @@ export function MessageStream({
         <div className="flex items-center gap-2.5 rounded-lg border border-danger bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="flex-1">
-            <strong>run_failed</strong> · {error}
+            <strong>run_failed</strong> · {error.message}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRetry}
-            className="border-danger bg-surface text-danger hover:bg-danger-soft"
-          >
-            <RotateCw className="mr-1 h-3 w-3" />
-            {t("common.retry")}
-          </Button>
+          {error.retryable && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRetry}
+              className="border-danger bg-surface text-danger hover:bg-danger-soft"
+            >
+              <RotateCw className="mr-1 h-3 w-3" />
+              {t("common.retry")}
+            </Button>
+          )}
         </div>
       )}
       <div ref={bottomRef} />

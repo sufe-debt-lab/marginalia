@@ -15,6 +15,12 @@ const textDelta = (delta: string): RunEvent => ({
     event: { type: "message_update", assistantMessageEvent: { type: "text_delta", delta } }
   }
 });
+const agentEvent = (event: unknown): RunEvent => ({ type: "agent_event", payload: { event } });
+const messageStart = (): RunEvent =>
+  agentEvent({ type: "message_start", message: { role: "assistant" } });
+const messageEnd = (stopReason = "stop"): RunEvent =>
+  agentEvent({ type: "message_end", message: { stopReason } });
+const runCompleted = (): RunEvent => ({ type: "run_completed", payload: {} });
 
 function makeApi(): ApiClient {
   return {
@@ -26,7 +32,9 @@ function makeApi(): ApiClient {
       role: input.role,
       content: input.content
     })),
-    runChat: vi.fn(async () => events([{ type: "run_started", payload: {} }, textDelta("hi")])),
+    runChat: vi.fn(async () =>
+      events([{ type: "run_started", payload: {} }, textDelta("hi"), runCompleted()])
+    ),
     searchFiles: vi.fn(async () => [])
   } as unknown as ApiClient;
 }
@@ -95,7 +103,7 @@ describe("ChatView", () => {
         ])
       )
       .mockImplementationOnce(async () =>
-        events([{ type: "run_started", payload: {} }, textDelta("ok")])
+        events([{ type: "run_started", payload: {} }, textDelta("ok"), runCompleted()])
       );
     useAppStore.getState().setTurnText("session:s1", "hello there");
     useAppStore.getState().addTurnContextFile("session:s1", "/docs/a.md");
@@ -140,7 +148,8 @@ describe("ChatView", () => {
       events([
         await new Promise<RunEvent>((resolve) => {
           accept = () => resolve({ type: "run_started", payload: {} });
-        })
+        }),
+        runCompleted()
       ])
     );
     useAppStore.getState().setTurnText("session:s1", "first");
@@ -174,5 +183,133 @@ describe("ChatView", () => {
     );
     expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("keep me");
     expect(screen.queryByText("keep me", { selector: "p" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [401, "Authentication expired"],
+    [409, "Selections changed"],
+    [413, "Selection too large"]
+  ])(
+    "does not offer stale retry after an accepted failure followed by pre-start HTTP %i",
+    async (status, message) => {
+      const api = makeApi();
+      (api.runChat as ReturnType<typeof vi.fn>)
+        .mockImplementationOnce(async () =>
+          events([
+            { type: "run_started", payload: {} },
+            { type: "run_failed", payload: { error: "first failed" } }
+          ])
+        )
+        .mockRejectedValueOnce(new ApiError(message, status, "precondition_failed", {}));
+      useAppStore.getState().setTurnText("session:s1", "accepted A");
+      render(<ChatView api={api} sessionId="s1" />);
+      await screen.findByRole("button", { name: /Minimax · M2.7/i });
+      await userEvent.click(screen.getByRole("button", { name: /send/i }));
+      await screen.findByText(/first failed/);
+
+      await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "draft B");
+      await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      await screen.findByText(new RegExp(message));
+      expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+      expect(api.runChat).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("draft B");
+    }
+  );
+
+  it("does not offer stale retry after an accepted failure followed by pre-start EOF", async () => {
+    const api = makeApi();
+    (api.runChat as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(async () =>
+        events([
+          { type: "run_started", payload: {} },
+          { type: "run_failed", payload: { error: "first failed" } }
+        ])
+      )
+      .mockImplementationOnce(async () => events([]));
+    useAppStore.getState().setTurnText("session:s1", "accepted A");
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByText(/first failed/);
+
+    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "draft B");
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await screen.findByText(/run ended before starting/);
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(api.runChat).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("draft B");
+  });
+
+  it("retains the accepted attempt when its retry fails before run_started", async () => {
+    const api = makeApi();
+    (api.runChat as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(async () =>
+        events([
+          { type: "run_started", payload: {} },
+          { type: "run_failed", payload: { error: "first failed" } }
+        ])
+      )
+      .mockRejectedValueOnce(new ApiError("Retry rejected", 409, "session_busy", {}));
+    useAppStore.getState().setTurnText("session:s1", "accepted A");
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByText(/first failed/);
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    await screen.findByText(/Retry rejected/);
+    expect(
+      screen.getByText((_text, node) => node?.textContent === "accepted A", {
+        selector: ".whitespace-pre-wrap"
+      })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(api.runChat).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes every failed-attempt entry only after a multi-bubble retry is accepted", async () => {
+    const api = makeApi();
+    (api.runChat as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(async () =>
+        events([
+          { type: "run_started", payload: {} },
+          messageStart(),
+          textDelta("first partial"),
+          messageEnd("toolUse"),
+          agentEvent({
+            type: "tool_execution_end",
+            toolCallId: "t1",
+            toolName: "read",
+            result: "done-result",
+            isError: false
+          }),
+          messageStart(),
+          textDelta("second partial"),
+          { type: "run_failed", payload: { error: "first failed" } }
+        ])
+      )
+      .mockImplementationOnce(async () =>
+        events([{ type: "run_started", payload: {} }, textDelta("retry answer"), runCompleted()])
+      );
+    useAppStore.getState().setTurnText("session:s1", "accepted A");
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByText(/first failed/);
+    expect(screen.getByText("first partial")).toBeInTheDocument();
+    expect(screen.getByText("second partial")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    await screen.findByText("retry answer");
+    expect(screen.queryByText("first partial")).not.toBeInTheDocument();
+    expect(screen.queryByText("second partial")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText((_text, node) => node?.textContent === "accepted A", {
+        selector: ".whitespace-pre-wrap"
+      })
+    ).toHaveLength(1);
   });
 });

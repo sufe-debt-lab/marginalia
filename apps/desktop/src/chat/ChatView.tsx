@@ -34,6 +34,12 @@ function sameTurnDraft(left: TurnDraft, right: TurnDraft): boolean {
   );
 }
 
+type ChatErrorState = {
+  message: string;
+  accepted: boolean;
+  retryable: boolean;
+};
+
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
   const { t } = useTranslation();
   const messages = useMessages(api, sessionId);
@@ -63,19 +69,21 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     composerProviderId,
     composerModel
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatErrorState | null>(null);
   const [lastSent, setLastSent] = useState<TurnDraft | null>(null);
   // Message queued for the save-to-workspace dialog: its markdown (write content)
   // plus the proposed file name. Null when the dialog is closed.
   const [saveTarget, setSaveTarget] = useState<{ markdown: string; defaultName: string } | null>(
     null
   );
-  // Ids of the most recent optimistic pair, so a retry can drop them before resending.
-  const lastUserIdRef = useRef<string | null>(null);
-  const lastAssistantIdRef = useRef<string | null>(null);
+  // All local entries created by the current attempt. A retry snapshots this
+  // list so it can replace the complete failed attempt only after acceptance.
+  const currentAttemptEntryIdsRef = useRef<string[]>([]);
   const pendingTurnRef = useRef<TurnDraft | null>(null);
   const claimedSessionRef = useRef<string | null>(null);
   const clearSnapshotRef = useRef<TurnDraft | null>(null);
+  const lastSentRef = useRef<TurnDraft | null>(null);
+  const retryCleanupRef = useRef<string[] | null>(null);
 
   // Approvals keyed by toolCallId so a ToolCard can look up its own decision state.
   const [approvals, setApprovals] = useState<Map<string, Approval>>(new Map());
@@ -112,14 +120,12 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     permission,
     reasoning,
     onUserAppend: (m) => {
-      // New send: reset the assistant id (bubbles are now created lazily as content arrives).
-      lastUserIdRef.current = m.id;
-      lastAssistantIdRef.current = null;
+      currentAttemptEntryIdsRef.current = [m.id];
       setToolProgress(new Map());
       messages.append(m);
     },
     onAssistantStart: (m) => {
-      lastAssistantIdRef.current = m.id;
+      currentAttemptEntryIdsRef.current.push(m.id);
       messages.append(m);
     },
     onAssistantReplace: messages.replaceAssistant,
@@ -128,6 +134,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     onToolProgress: (toolCallId, output) =>
       setToolProgress((prev) => new Map(prev).set(toolCallId, output)),
     onToolResultUpsert: (entry) => {
+      if (!currentAttemptEntryIdsRef.current.includes(entry.id)) {
+        currentAttemptEntryIdsRef.current.push(entry.id);
+      }
       // Result arrived: the live progress area retires in favor of the final result.
       setToolProgress((prev) => {
         if (!prev.has(entry.message.toolCallId)) return prev;
@@ -154,17 +163,29 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
         return new Map(prev).set(u.toolCallId, { ...existing, status, reason: u.reason ?? null });
       }),
     onAccepted: (turn) => {
+      const retryCleanup = retryCleanupRef.current;
+      retryCleanupRef.current = null;
+      retryCleanup?.forEach(messages.removeMessage);
       const clearSnapshot = clearSnapshotRef.current;
       clearSnapshotRef.current = null;
       if (clearSnapshot && sameTurnDraft(getTurnDraft(owner), clearSnapshot)) {
         clearTurnDraft(owner);
       }
-      setLastSent(cloneTurnDraft(turn));
+      const acceptedTurn = cloneTurnDraft(turn);
+      lastSentRef.current = acceptedTurn;
+      setLastSent(acceptedTurn);
     },
     onComplete: () => setError(null),
     onError: (streamError, accepted) => {
-      if (!accepted) clearSnapshotRef.current = null;
-      setError(streamError.message);
+      if (!accepted) {
+        clearSnapshotRef.current = null;
+        retryCleanupRef.current = null;
+      }
+      setError({
+        message: streamError.message,
+        accepted,
+        retryable: accepted && lastSentRef.current !== null
+      });
     }
   });
 
@@ -174,7 +195,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       try {
         await api.resolveApproval(sessionId, approvalId, decision);
       } catch (err) {
-        setError((err as Error).message);
+        setError({ message: (err as Error).message, accepted: false, retryable: false });
       }
     },
     [api, sessionId]
@@ -206,7 +227,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       return "saved";
     } catch (err) {
       if ((err as Error).message === "file exists") return "exists";
-      setError((err as Error).message);
+      setError({ message: (err as Error).message, accepted: false, retryable: false });
       setSaveTarget(null);
       return "saved";
     }
@@ -223,10 +244,11 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
 
   function submit(turn: TurnDraft) {
     if (!actualProviderId) {
-      setError(t("chat.noProvider"));
+      setError({ message: t("chat.noProvider"), accepted: false, retryable: false });
       return;
     }
     setError(null);
+    retryCleanupRef.current = null;
     clearSnapshotRef.current = cloneTurnDraft(turn);
     void stream.send(withMentionedFiles(turn));
   }
@@ -251,11 +273,11 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   }, [actualProviderId, sessionId]);
 
   function retry() {
-    if (!lastSent) return;
+    if (!error?.retryable || !lastSent) return;
     setError(null);
-    // Drop the failed attempt's bubbles so the resend doesn't duplicate them.
-    if (lastUserIdRef.current) messages.removeMessage(lastUserIdRef.current);
-    if (lastAssistantIdRef.current) messages.removeMessage(lastAssistantIdRef.current);
+    // Keep the failed attempt visible until the retry is accepted. A pre-start
+    // rejection must not erase an accepted turn from the conversation.
+    retryCleanupRef.current = [...currentAttemptEntryIdsRef.current];
     clearSnapshotRef.current = null;
     void stream.send(lastSent);
   }

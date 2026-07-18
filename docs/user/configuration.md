@@ -48,6 +48,8 @@ Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/mode
 
 正文、附件路径、Skills selection 和 New chat 的一次性 handoff 只保存在当前 renderer 进程内。切换视图或
 workspace/session 时仍可恢复对应 owner 的草稿，但应用退出、renderer reload 或崩溃会丢失这些未接受内容。
+只有明确的 `run_completed` 才结束已接受 run；pre-start 401/409/413/EOF 保留草稿且不显示 Retry，避免
+复用更早一轮的 retry snapshot。started 后的失败保留该轮完整 snapshot，并允许显式 Retry。
 
 数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
 capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。

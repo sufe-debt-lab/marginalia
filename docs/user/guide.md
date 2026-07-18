@@ -14,7 +14,8 @@ Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工
 workspace、session 或 Settings 不会串用或立即清空正文与附件。New chat 只有创建 session 成功后才转移
 完整草稿。Desktop 收到 `run_started` 才把本轮视为已接受；若对应草稿仍等于刚提交的快照才清空，发送
 等待期间的后续编辑会保留。此前的 401/409/413 或流提前结束会保留输入，接受后的失败则可用 Retry
-重发同一轮正文、附件和 Skills selection，而不会覆盖当前新草稿。
+重发同一轮正文、附件和 Skills selection，而不会覆盖当前新草稿。只有服务端明确发送
+`run_completed` 才算成功；未接受的失败只显示错误，不会出现可能重发旧消息的 Retry。
 
 ## Workspace 与会话
 

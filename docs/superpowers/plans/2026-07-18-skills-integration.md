@@ -2229,6 +2229,12 @@ git commit -m "feat(desktop): preserve scoped Skill turn drafts"
 - Full repository and visual verification passed; four baseline changes intentionally capture New chat draft survival
   across Settings and subsequent Composer states. Detailed evidence is in
   `.superpowers/sdd/skills-task-12-report.md`.
+- Independent review follow-up made terminal status explicit: only `run_completed` succeeds, started/pre-start EOF
+  report the correct accepted identity, and Retry appears only for the current accepted failure with its matching
+  snapshot. The client drains to EOF after terminal, and retry replaces old bubbles only after the retry is accepted.
+  RED regressions cover duplicate `run_started`, started EOF, stale retry after pre-start 401/409/413/EOF, iterator
+  draining and post-terminal transport failure, retry-preflight rejection, and accepted replacement of a complete
+  multi-bubble/tool-result failed attempt.
 
 ---
 

@@ -12,6 +12,7 @@ async function* makeEvents(events: RunEvent[]) {
 
 /** Wrap a raw pi event in the SSE `agent_event` envelope the server now emits. */
 const agentEvent = (event: unknown): RunEvent => ({ type: "agent_event", payload: { event } });
+const runCompleted = (): RunEvent => ({ type: "run_completed", payload: {} });
 
 function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
   return renderHook(() =>
@@ -57,7 +58,8 @@ describe("useStreamingChat tool progress", () => {
             toolName: "bash",
             args: { command: "x" },
             partialResult: { content: [{ type: "text", text: "line1\nline2\n" }] }
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
@@ -93,7 +95,8 @@ describe("useStreamingChat tool progress", () => {
             args: { command: "x" },
             result: "done",
             isError: false
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
@@ -119,7 +122,8 @@ describe("useStreamingChat tool progress", () => {
             toolCallId: "t1",
             toolName: "bash",
             args: {}
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;

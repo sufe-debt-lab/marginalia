@@ -98,7 +98,10 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
 5. 正常结束时发 `run_completed`，出错发 `run_failed`，并完成 `runs` 表记录（`apps/pi-server/src/app.ts#completeRun`）。SSE disconnect 或事件异常会请求 `execution.abort()` 并立即拒绝挂起审批；request abort listener 保持安装直到 `execution.settled` 完成，随后 route 才执行幂等的审批清理、释放 lease。正常事件结束不会额外 abort。
 6. renderer 端 `streamSse`（`apps/desktop/src/api/sse-stream.ts`）解析流。`useStreamingChat` 只在首个
    `run_started` 追加 optimistic user entry，并把完整 turn snapshot 标记为 accepted；在此之前的 HTTP/流
-   失败不清草稿。之后再从原始事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
+   失败不清草稿。只有显式 `run_completed` 才完成本轮；started 前后的意外 EOF 分别以未接受/已接受失败
+   上报。收到 terminal 后仍 drain SSE 到 EOF，但忽略 terminal 后事件，避免遗留未消费 response 或在服务端
+   lease 清理前过早允许下一轮；drain 阶段的 transport 异常不反转已经收到的成功 terminal。之后再从原始
+   事件派生气泡、增量文本、工具卡片、思考指示等所有 UI。
 
 Composer turn state 由 `useAppStore` 按 `new:<workspaceId>` 或 `session:<sessionId>` owner 隔离，正文、附件和
 Skills selection 都不进入 persist partial。New chat 创建 session 成功后原子移动草稿并写入一次性
@@ -106,6 +109,12 @@ Skills selection 都不进入 persist partial。New chat 创建 session 成功�
 `run_started` 后才记录 retry snapshot，并仅在 owner 当前值仍等于 submitted snapshot 时清理；创建
 session 或等待接受期间的后续编辑会保留，Retry 也不会覆盖当前新草稿。因此 pre-start 401/409/413、
 stream EOF 或切换视图不会把未接受输入误记为已发送。
+
+ChatView 的错误状态同时记录 `accepted` 与派生的 `retryable`。Retry 只在失败属于当前已接受轮且
+`lastSent` 已由该轮 acceptance 更新时出现；后续 pre-start 401/409/413/EOF 会保留新草稿并隐藏 Retry，
+不会重发更早的 accepted snapshot。Retry 也只在新请求收到 `run_started` 后替换旧失败气泡；若 retry
+preflight 失败，原 accepted attempt 仍保留在消息流中。接受 retry 后按该 attempt 收集的全部本地 user、
+assistant 和 tool-result entry ID 清理旧输出，不只删除最后一个 assistant bubble。
 
 服务端 single-flight 防止同一进程内两个请求并发驱动相同 session；不同 session 不共享 lease。该
 lease 不跨 pi-server 重启持久化，renderer 的 `sendingRef` 也仍只保护当前 hook 实例；ChatView

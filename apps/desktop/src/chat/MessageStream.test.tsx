@@ -118,7 +118,13 @@ describe("MessageStream", () => {
 
   it("renders error row + retry button", async () => {
     const onRetry = vi.fn();
-    render(<MessageStream messages={[user("1", "hi")]} error="boom" onRetry={onRetry} />);
+    render(
+      <MessageStream
+        messages={[user("1", "hi")]}
+        error={{ message: "boom", accepted: true, retryable: true }}
+        onRetry={onRetry}
+      />
+    );
     expect(screen.getByText(/boom/)).toBeInTheDocument();
     expect(screen.getByText("run_failed")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));

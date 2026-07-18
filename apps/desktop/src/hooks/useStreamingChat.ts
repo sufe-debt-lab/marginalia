@@ -203,6 +203,14 @@ export function useStreamingChat(opts: Options) {
       let currentAssistantId: string | null = null;
       let needNewAssistant = true;
       let accepted = false;
+      let completed = false;
+      let completionNotified = false;
+
+      function notifyComplete() {
+        if (completionNotified) return;
+        completionNotified = true;
+        opts.onComplete();
+      }
 
       function startAssistant(message?: ChatAssistantMessage): string {
         turn += 1;
@@ -310,6 +318,7 @@ export function useStreamingChat(opts: Options) {
         );
         for await (const event of events) {
           if (controller.signal.aborted) break;
+          if (completed) continue;
           if (event.type === "run_started") {
             if (accepted) continue;
             accepted = true;
@@ -334,6 +343,10 @@ export function useStreamingChat(opts: Options) {
             );
           }
           if (!accepted) continue;
+          if (event.type === "run_completed") {
+            completed = true;
+            continue;
+          }
           if (event.type === "approval_requested") {
             const approval = (
               event.payload as
@@ -374,11 +387,13 @@ export function useStreamingChat(opts: Options) {
         flush();
         if (!controller.signal.aborted) {
           if (!accepted) throw new Error("run ended before starting");
-          opts.onComplete();
+          if (!completed) throw new Error("run ended before completion");
+          notifyComplete();
         }
       } catch (err) {
         flush();
-        if (!isAbortError(err))
+        if (completed) notifyComplete();
+        else if (!isAbortError(err))
           opts.onError(err instanceof Error ? err : new Error(String(err)), accepted);
       } finally {
         if (abortRef.current === controller) abortRef.current = null;

@@ -22,6 +22,7 @@ const textDelta = (delta: string) =>
 const messageStart = () => agentEvent({ type: "message_start", message: { role: "assistant" } });
 const messageEnd = (stopReason = "stop") =>
   agentEvent({ type: "message_end", message: { stopReason } });
+const runCompleted = (): RunEvent => ({ type: "run_completed", payload: {} });
 
 const usage = {
   input: 0,
@@ -89,7 +90,7 @@ describe("useStreamingChat", () => {
     const onAssistantStart = vi.fn();
     const onComplete = vi.fn();
     const api = {
-      runChat: vi.fn(async () => makeEvents([textDelta("hel"), textDelta("lo")]))
+      runChat: vi.fn(async () => makeEvents([textDelta("hel"), textDelta("lo"), runCompleted()]))
     } as unknown as ApiClient;
     const { result } = makeHook(api, {
       onAssistantDelta,
@@ -120,7 +121,8 @@ describe("useStreamingChat", () => {
           messageEnd("toolUse"),
           messageStart(),
           textDelta("b"),
-          messageEnd("stop")
+          messageEnd("stop"),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
@@ -154,7 +156,8 @@ describe("useStreamingChat", () => {
           toolStart("bash1", "bash"),
           messageStart(),
           textDelta("answer"),
-          messageEnd("stop")
+          messageEnd("stop"),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
@@ -173,7 +176,7 @@ describe("useStreamingChat", () => {
   });
 
   it("sends when text is empty but context files are attached", async () => {
-    const runChat = vi.fn(async () => makeEvents([textDelta("ok")]));
+    const runChat = vi.fn(async () => makeEvents([textDelta("ok"), runCompleted()]));
     const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
       await result.current.send({ text: "", contextFiles: ["a.ts"], skills: [] });
@@ -277,6 +280,89 @@ describe("useStreamingChat", () => {
     );
   });
 
+  it("reports an accepted error when the stream ends after run_started without run_completed", async () => {
+    const onAccepted = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onComplete, onError });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), true);
+  });
+
+  it("accepts and appends once when duplicate run_started precedes completion", async () => {
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onComplete = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([{ type: "run_started", payload: {} }, runCompleted()]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onUserAppend, onComplete });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onUserAppend).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains the event iterator after run_completed without processing late events", async () => {
+    let drained = false;
+    const onAssistantDelta = vi.fn();
+    const onComplete = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield runCompleted();
+          drained = true;
+          yield textDelta("late");
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAssistantDelta, onComplete });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(drained).toBe(true);
+    expect(onAssistantDelta).not.toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps run_completed authoritative when the iterator throws while draining", async () => {
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield runCompleted();
+          throw new Error("transport reset while draining");
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onComplete, onError });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("rejects a stream that ends before run_started without accepting or appending", async () => {
     const onAccepted = vi.fn();
     const onUserAppend = vi.fn();
@@ -314,7 +400,8 @@ describe("useStreamingChat", () => {
             toolName: "read",
             result: "done-result",
             isError: false
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
@@ -341,7 +428,8 @@ describe("useStreamingChat", () => {
     const api = {
       runChat: vi.fn(async () =>
         makeEvents([
-          agentEvent({ type: "tool_execution_update", toolName: "read", partialResult: "x" })
+          agentEvent({ type: "tool_execution_update", toolName: "read", partialResult: "x" }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
@@ -375,7 +463,8 @@ describe("useStreamingChat", () => {
           agentEvent({
             type: "message_end",
             message: finalResult
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
