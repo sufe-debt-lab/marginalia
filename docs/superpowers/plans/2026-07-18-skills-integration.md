@@ -255,8 +255,9 @@ export class ApiClient {
 ```
 
 本任务只把 `runChat` 切到 `sensitiveHeaders()`；Skills methods 在 Task 11 增加。普通 workspace、
-provider、document API 不带 token。开发浏览器 fallback 同时要求 query 中有 `serverUrl` 和
-`capabilityToken`，缺任一项都不构造 ready bridge。
+provider、document API 不带 token。开发浏览器 fallback 从 query 读取 `serverUrl`，从 URL fragment
+读取 `capabilityToken`，缺任一项都不构造 ready bridge。应用读取 fragment 后立即清除 hash；legacy
+query 中的 `capabilityToken` 只会被清除，不参与授权。
 
 - [x] **Step 6: 更新权限与开发契约**
 

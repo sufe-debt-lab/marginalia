@@ -4,7 +4,7 @@
 Stage: Alpha
 Release decision: NO-GO
 Snapshot date: 2026-07-18
-Verified commit: 061ab73
+Verified commit: 0c8add3
 Next milestone: M0 - Trustworthy Local Alpha
 ```
 
@@ -64,7 +64,18 @@ Next milestone: M0 - Trustworthy Local Alpha
 
 ## 验证基线
 
-在 Task 9 candidate tree 上完成的根级验证：
+在 `0c8add3` 上完成的当前根级验证：
+
+| Check                | Result                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `pnpm verify`        | 通过；docs 28、chat-core 37、pi-server 272、desktop 422，1 个真实 MiniMax live test 默认跳过 |
+| `pnpm verify:visual` | 通过；39 张截图全部 unchanged，`changed=0 new=0 orphan=0 errors=0`，报告已逐行检查           |
+
+本次快照没有验证签名安装包、客户机启动、自动更新或真实 provider 的完整对话链路。
+
+### 历史 Task 9 candidate tree 验证
+
+以下表格只记录 Task 9 candidate tree 当时的验证结果，不代表当前测试数量或视觉基线：
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
@@ -74,8 +85,6 @@ Next milestone: M0 - Trustworthy Local Alpha
 | `pnpm format:check`  | 通过                                                                                         |
 | `pnpm build`         | 通过；renderer 和 PDF worker 仍有大 bundle 警告                                              |
 | `pnpm verify:visual` | Task 9 未运行；只增加 backend/runtime/API 和正式文档，没有 UI-visible change                 |
-
-本次快照没有验证签名安装包、客户机启动、自动更新或真实 provider 的完整对话链路。
 
 ### 早期治理变更的候选树验证
 
@@ -89,6 +98,6 @@ Next milestone: M0 - Trustworthy Local Alpha
 - 同一 session 只有一个受控 run，切换视图、停止、断连和 server 崩溃都有确定终态。
 - Provider secret 不再以明文放在 SQLite，Electron renderer 启用 sandbox 并通过 packaged smoke test。
 - 正式文档、API inventory、Superpowers closeout 和 PR 文档影响检查成为必过门禁。
-- 当前 8 张视觉差异完成逐张裁决。
+- UI 变更的视觉差异已逐张裁决，并保留可复查的 Electron baseline 与报告。
 
 公开发布还需要签名、公证、自动更新、LICENSE、跨平台安装测试和发布回滚方案；这些条件不并入 M0 的本地 Alpha 定义。

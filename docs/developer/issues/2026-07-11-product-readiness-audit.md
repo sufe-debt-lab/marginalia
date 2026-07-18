@@ -2,8 +2,8 @@
 record_id: AUDIT-PRODUCT-READINESS-2026-07-11
 status: open
 created: 2026-07-11
-updated: 2026-07-11
-verified_commit: 1199645
+updated: 2026-07-18
+verified_commit: 0c8add3
 owner: repository-maintainers
 ---
 
@@ -11,7 +11,10 @@ owner: repository-maintainers
 
 本次审计覆盖 Electron runtime、renderer、pi-server、SQLite、agent tools、打包流程和正式文档。P0/P1 表示全产品范围的处理优先级，不等同于 CVSS 或公开漏洞评级；每项的 `Target` 单独决定是否属于 M0。
 
-## 审计基线
+## 历史初始审计基线
+
+以下数据是本审计在 2026-07-11 创建时的初始 baseline。当前验证 commit 记录在 frontmatter，最新测试
+数量和视觉结果见[产品状态](../../product/status.md#验证基线)。
 
 - Commit：`1199645`
 - 自动检查：`pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm build` 通过。
