@@ -91,6 +91,51 @@ describe("PiCodingAgentClient", () => {
     await expect(collect(execution.events)).rejects.toThrow("sync boom");
   });
 
+  it("rejects a pending event read after an asynchronous prompt failure", async () => {
+    let rejectPrompt!: (failure: Error) => void;
+    const unsubscribe = vi.fn();
+    const session = {
+      subscribe: vi.fn(() => unsubscribe),
+      prompt: vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectPrompt = reject;
+          })
+      ),
+      abort: vi.fn(),
+      setThinkingLevel: vi.fn()
+    };
+    const registry = {
+      acquire: vi.fn(async () => ({
+        sessionId: "s1",
+        session,
+        sessionFile: "/tmp/fake.jsonl",
+        dispose() {}
+      }))
+    } as unknown as AgentSessionRegistry;
+    const gateway = new ApprovalGateway();
+    const offApproval = vi.fn();
+    const onApproval = vi.spyOn(gateway, "onEvent").mockReturnValue(offApproval);
+    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), gateway);
+    const execution = (
+      await client.prepare({
+        sessionId: "s1",
+        workspaceRoot: "/tmp",
+        piProviderId: "openai",
+        modelId: "m"
+      })
+    ).start("hello");
+    const pendingEvent = execution.events[Symbol.asyncIterator]().next();
+
+    rejectPrompt(new Error("async boom"));
+
+    await expect(pendingEvent).rejects.toThrow("async boom");
+    await expect(execution.settled).resolves.toBeUndefined();
+    expect(onApproval).toHaveBeenCalledTimes(1);
+    expect(offApproval).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it("abort delegates to the prepared session", async () => {
     const session = fakeSession([]);
     const registry = {

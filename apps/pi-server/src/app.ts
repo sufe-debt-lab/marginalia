@@ -377,7 +377,8 @@ export function createApp(options: AppOptions = {}) {
           execution.abort();
           agentClient.cancelPending(sessionId);
         };
-        c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
+        if (c.req.raw.signal.aborted) onAbort();
+        else c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
 
         try {
           // Single source of truth: forward raw pi events; the client derives all

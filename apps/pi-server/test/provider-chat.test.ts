@@ -226,6 +226,60 @@ describe("chat runs", () => {
     expect(text).not.toContain('"type":"tool_started"');
   });
 
+  it("aborts an execution when the request aborts during start", async () => {
+    let abortCalls = 0;
+    const controller = new AbortController();
+    const db = memoryDb();
+    migrate(db);
+    const workspace = createWorkspace(db, { name: "Docs", rootDir: "/tmp/docs-abort" });
+    const session = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Chat",
+      origin: "desktop"
+    });
+    const stubClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/abort.jsonl",
+          start() {
+            controller.abort();
+            return {
+              events: (async function* () {})(),
+              abort() {
+                abortCalls += 1;
+              },
+              settled: Promise.resolve()
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient: stubClient, capability });
+    const provider = await (
+      await app.request("/providers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
+      })
+    ).json();
+
+    const response = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: runHeaders,
+      body: JSON.stringify({ providerId: provider.id, message: "stop" }),
+      signal: controller.signal
+    });
+    await response.text();
+
+    expect(abortCalls).toBe(1);
+  });
+
   it("passes run configuration to prepare and the message to start", async () => {
     let seen: any = null;
     let startedMessage: string | null = null;
