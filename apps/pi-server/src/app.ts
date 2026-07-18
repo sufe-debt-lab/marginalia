@@ -52,6 +52,7 @@ import {
   updateProvider,
   updateSession
 } from "./db/repositories.js";
+import { createSkillPreferenceStore } from "./db/skill-preferences.js";
 import {
   DocumentPreviewError,
   mimeFromPath,
@@ -69,6 +70,12 @@ import {
   isAllowedOrigin,
   type CapabilityPolicy
 } from "./security/capability.js";
+import {
+  SkillCandidateNotFoundError,
+  createSkillCatalogService,
+  toPublicSkillCatalogSnapshot
+} from "./skills/catalog.js";
+import type { SkillCatalogService } from "./skills/types.js";
 
 export type AppOptions = {
   startedAt?: Date;
@@ -79,6 +86,7 @@ export type AppOptions = {
   availabilityChecker?: ModelAvailabilityChecker;
   documentReader?: (rootDir: string, relativePath: string) => Promise<DocumentContent>;
   capability?: CapabilityPolicy;
+  skillCatalog?: SkillCatalogService;
 };
 
 const DEFAULT_AUTH_PATH = path.join(homedir(), ".marginalia", "auth.json");
@@ -119,6 +127,12 @@ export function createApp(options: AppOptions = {}) {
 
   migrate(db);
   syncProviderKeys(db, authStorage);
+  const skillCatalog =
+    options.skillCatalog ??
+    createSkillCatalogService({
+      homeDir: homedir(),
+      preferences: createSkillPreferenceStore(db)
+    });
 
   const app = new Hono();
   app.use(
@@ -129,6 +143,96 @@ export function createApp(options: AppOptions = {}) {
     })
   );
   app.get("/health", (c) => c.json(createHealthInfo(startedAt)));
+  app.get("/skills", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
+    const workspaceId = c.req.query("workspaceId");
+    const workspace = workspaceId === undefined ? null : getWorkspace(db, workspaceId);
+    if (workspaceId !== undefined && !workspace) {
+      return c.json({ error: "workspace not found" }, 404);
+    }
+    try {
+      const snapshot = await skillCatalog.refresh({
+        workspaceId: workspace?.id ?? null,
+        workspaceRoot: workspace?.rootDir ?? null
+      });
+      return c.json(toPublicSkillCatalogSnapshot(snapshot));
+    } catch {
+      return c.json({ error: "skills unavailable" }, 500);
+    }
+  });
+  app.patch("/skills/state", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid request" }, 400);
+    }
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      typeof (body as { path?: unknown }).path !== "string" ||
+      typeof (body as { enabled?: unknown }).enabled !== "boolean" ||
+      ((body as { workspaceId?: unknown }).workspaceId !== undefined &&
+        typeof (body as { workspaceId?: unknown }).workspaceId !== "string")
+    ) {
+      return c.json({ error: "invalid request" }, 400);
+    }
+    const input = body as { path: string; enabled: boolean; workspaceId?: string };
+    const workspace = input.workspaceId === undefined ? null : getWorkspace(db, input.workspaceId);
+    if (input.workspaceId !== undefined && !workspace) {
+      return c.json({ error: "workspace not found" }, 404);
+    }
+    try {
+      const snapshot = await skillCatalog.setEnabled({
+        workspaceId: workspace?.id ?? null,
+        workspaceRoot: workspace?.rootDir ?? null,
+        path: input.path,
+        enabled: input.enabled
+      });
+      return c.json(toPublicSkillCatalogSnapshot(snapshot));
+    } catch (error) {
+      if (error instanceof SkillCandidateNotFoundError) {
+        return c.json({ error: "skill not found" }, 404);
+      }
+      return c.json({ error: "skills unavailable" }, 500);
+    }
+  });
+  app.get("/skills/content", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
+    const workspaceId = c.req.query("workspaceId");
+    const workspace = workspaceId === undefined ? null : getWorkspace(db, workspaceId);
+    if (workspaceId !== undefined && !workspace) {
+      return c.json({ error: "workspace not found" }, 404);
+    }
+    try {
+      const snapshot = await skillCatalog.refresh({
+        workspaceId: workspace?.id ?? null,
+        workspaceRoot: workspace?.rootDir ?? null
+      });
+      const requestedPath = c.req.query("path");
+      const candidate = snapshot.candidates.find((item) => item.canonicalPath === requestedPath);
+      if (!candidate) return c.json({ error: "skill not found" }, 404);
+      return c.json({
+        path: candidate.canonicalPath,
+        content: candidate.previewContent,
+        truncated: candidate.previewTruncated,
+        bytesTotal: candidate.bytesTotal
+      });
+    } catch {
+      return c.json({ error: "skills unavailable" }, 500);
+    }
+  });
   app.get("/workspaces", (c) => c.json(listWorkspaces(db)));
   app.post("/workspaces", async (c) => {
     const body = await c.req.json<{ name: string; rootDir: string }>();

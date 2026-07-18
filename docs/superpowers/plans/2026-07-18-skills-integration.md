@@ -1377,7 +1377,7 @@ git commit -m "feat(pi-server): publish immutable Skill catalogs"
   - `PATCH /skills/state` body `{ path, enabled, workspaceId? }` → refreshed public snapshot。
   - `GET /skills/content?path=<canonical>&workspaceId=<optional>` → `{ path, content, truncated, bytesTotal }`。
 
-- [ ] **Step 1: 写 Skills API 失败测试**
+- [x] **Step 1: 写 Skills API 失败测试**
 
 用 injected fake Catalog 固定响应，覆盖：缺/错 token 401、evil Origin 403、无 workspace global-only、
 unknown workspace 404、GET 强制 refresh、响应不含 `rawContent`/`skill`、invalid candidate 可 preview、
@@ -1393,7 +1393,7 @@ expect(await response.json()).toMatchObject({
 expect(JSON.stringify(await clone.json())).not.toContain("rawContent");
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -1403,14 +1403,14 @@ pnpm --filter @marginalia/pi-server test -- skills-api
 
 Expected: FAIL，routes 不存在。
 
-- [ ] **Step 3: 增加 AppOptions 依赖与公开 DTO mapper**
+- [x] **Step 3: 增加 AppOptions 依赖与公开 DTO mapper**
 
 `AppOptions` 增加可注入 `skillCatalog?: SkillCatalogService`；默认用 db preference store 构造真实
 Catalog。公开 mapper 明确逐字段复制：name/description 缺失时为 null，包含 discovered/canonical
 path、source/scope/status/enabled/effective/explicitOnly/explicitEligible/diagnostics/shadowedBy/
 bytesTotal，不复制 bytes、hash、Pi `Skill` object。
 
-- [ ] **Step 4: 以字符串字面量注册三个 route**
+- [x] **Step 4: 以字符串字面量注册三个 route**
 
 必须继续在 `app.ts` 写：
 
@@ -1425,13 +1425,13 @@ app.get("/skills/content", ...);
 绝不 `readFile(requestPath)`。PATCH 委托 `skillCatalog.setEnabled()`，其内部顺序是 refresh →
 membership → preference upsert → refresh；unknown member 以 typed not-found failure 返回 404。
 
-- [ ] **Step 5: 更新 API inventory 与 docs-impact**
+- [x] **Step 5: 更新 API inventory 与 docs-impact**
 
 `docs/developer/api.md` 的 route inventory 增加三个 route，并逐字段记录 request/response/401/403/
 404；`docs/contracts/docs-impact.json` 增加覆盖 `apps/pi-server/src/skills/**`、desktop Skills UI 和
 store 的规则，要求 user guide/configuration、developer API/architecture、product status 同步。
 
-- [ ] **Step 6: focused 验证**
+- [x] **Step 6: focused 验证**
 
 Run:
 
@@ -1443,7 +1443,30 @@ pnpm docs:check
 
 Expected: PASS；token 持有者也不能读取 snapshot 外 path。
 
-- [ ] **Step 7: 提交**
+**Implementation Outcome (2026-07-18):**
+
+- 实际完成：三个字符串字面量 Skills route、可注入/默认 SQLite Catalog、server-owned workspace
+  resolution、explicit public DTO mapper、snapshot-only preview 与 typed membership toggle 已落地；GET
+  每次 refresh，PATCH 保持 refresh → membership → preference → refresh。
+- 授权与泄漏边界：三个 handler 都在 query/body/workspace/refresh 前执行 capability；public snapshot
+  不发布 workspace root、preview/body、content hash、Pi Skill 或 effectiveSkills；content 只返回刚刷新
+  snapshot member 的 canonical identity 和 preview fields，不按 request path 读盘。
+- RED/GREEN：初始 `skills-api` 为 16 failed/1 passed，失败均来自 route 缺失；首轮 GREEN 为 17/17。
+  Deep review 另发现非 boolean `enabled` 会被 truthy 值误解释，新增 focused RED 为 1 failed/20 passed，
+  加入 JSON/schema validation 后最终为 21/21。
+- 验证：Skills API/catalog/capability focused suite 52/52，pi-server typecheck、`pnpm docs:check` 与完整
+  `pnpm verify` 通过；完整门禁包含 docs 28、chat-core 14、pi-server 243（另 1 个 opt-in smoke skip）、
+  desktop 330 tests 和全部 build。
+- 正式文档：API inventory/请求响应/400/401/403/404/500 与 snapshot membership 已记录；docs-impact
+  新规则覆盖 server Skills、desktop Skills UI/store，并要求 user guide/configuration、developer
+  API/architecture 和 product status 同步。
+- Review：deep security/architecture/adversarial pass 无未处理 finding。Out-of-root Skill symlink 是已批准
+  discovery 契约的高敏感 residual：需要有效 capability 加已存在且可发现的 symlink；单独提交任意 path
+  仍为 404。Task 8 不新增 source-root containment，content route 也不重读 symlink target。
+- 偏差与遗留：新增 `400 invalid request` runtime schema guard 以落实 documented request shape；其余无实现
+  偏差、无新增依赖、无 UI-visible change，因此不运行 visual verification。
+
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/pi-server docs/developer/api.md docs/contracts/docs-impact.json

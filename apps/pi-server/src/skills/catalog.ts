@@ -8,6 +8,7 @@ import { discoverSkillFiles } from "./discovery.js";
 import type {
   DiscoveredSkillFile,
   ParsedSkillCandidate,
+  PublicSkillCatalogSnapshot,
   SkillCandidate,
   SkillCatalogService,
   SkillCatalogSnapshot,
@@ -17,6 +18,7 @@ import type {
 } from "./types.js";
 
 export type {
+  PublicSkillCatalogSnapshot,
   SkillCandidate,
   SkillCatalogService,
   SkillCatalogSnapshot,
@@ -85,6 +87,34 @@ function cloneDiagnostic(diagnostic: SkillDiagnostic): SkillDiagnostic {
           }
         }
       : {})
+  };
+}
+
+export function toPublicSkillCatalogSnapshot(
+  snapshot: SkillCatalogSnapshot
+): PublicSkillCatalogSnapshot {
+  return {
+    workspaceId: snapshot.workspaceId,
+    catalogRevision: snapshot.catalogRevision,
+    effectiveRevision: snapshot.effectiveRevision,
+    refreshedAt: snapshot.refreshedAt,
+    candidates: snapshot.candidates.map((candidate) => ({
+      name: candidate.skill?.name ?? null,
+      description: candidate.skill?.description ?? null,
+      discoveredPath: candidate.discoveredPath,
+      canonicalPath: candidate.canonicalPath,
+      source: candidate.source,
+      scope: candidate.scope,
+      status: candidate.status,
+      enabled: candidate.enabled,
+      effective: candidate.effective,
+      explicitOnly: candidate.explicitOnly,
+      explicitEligible: candidate.explicitEligible,
+      diagnostics: candidate.diagnostics.map(cloneDiagnostic),
+      shadowedBy: candidate.shadowedBy,
+      bytesTotal: candidate.bytesTotal
+    })),
+    diagnostics: snapshot.diagnostics.map(cloneDiagnostic)
   };
 }
 

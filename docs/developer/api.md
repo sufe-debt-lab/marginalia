@@ -19,6 +19,9 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 | Method | Path                                         | Description                   |
 | ------ | -------------------------------------------- | ----------------------------- |
 | GET    | `/health`                                    | 健康检查                      |
+| GET    | `/skills`                                    | 刷新并读取 Skill catalog      |
+| PATCH  | `/skills/state`                              | 更新 Skill 启停 preference    |
+| GET    | `/skills/content`                            | 读取 snapshot member 预览     |
 | GET    | `/workspaces`                                | 列出 workspace                |
 | POST   | `/workspaces`                                | 创建 workspace                |
 | PATCH  | `/workspaces/:id/open`                       | 标记最近打开                  |
@@ -47,14 +50,15 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 ## Run capability 与 CORS
 
-每个 `POST /sessions/:sessionId/runs` 请求必须包含 Electron main 进程提供给 renderer 的 bearer：
+`POST /sessions/:sessionId/runs` 和三个 `/skills` 请求必须包含 Electron main 进程提供给 renderer
+的 bearer：
 
 ```http
 Authorization: Bearer <capabilityToken>
 Content-Type: application/json
 ```
 
-pi-server 在读取 session 或 body 前验证请求：token 缺失、不匹配或 server 没有配置 token 时返回
+pi-server 在读取 session、workspace、query 或 body 前验证请求：token 缺失、不匹配或 server 没有配置 token 时返回
 `401 { "error": "unauthorized" }`；`Origin` 既不是缺省/`null`，也不在本次启动的 exact allowlist
 时返回 `403 { "error": "origin_forbidden" }`。`GET /health`、workspace、provider、document 和
 approval 等既有 API 不带 bearer，保持原有认证边界。
@@ -78,6 +82,78 @@ approval 等既有 API 不带 bearer，保持原有认证边界。
   "startedAt": "2026-06-01T00:00:00.000Z"
 }
 ```
+
+## Skills
+
+Skills API 只使用服务端 Catalog snapshot。可选 `workspaceId` 通过 SQLite workspace 记录解析为
+server-owned root；省略时传入 `{ workspaceId: null, workspaceRoot: null }`，只扫描 global roots。
+客户端提交的 canonical path 只用于当前 snapshot 的 exact membership lookup，服务端不会把它交给
+文件读取 API。因此即使持有 capability，未知 path、其他 workspace 的 path 和任意宿主 path 都不能
+读取或修改。
+
+### `GET /skills?workspaceId=<optional>`
+
+每次请求都强制 `refresh()`，并返回公开 snapshot：
+
+```jsonc
+{
+  "workspaceId": null,
+  "catalogRevision": "<sha256>",
+  "effectiveRevision": "<sha256>",
+  "refreshedAt": 1784371200000,
+  "candidates": [
+    {
+      "name": "pdf",
+      "description": "Read and create PDF files",
+      "discoveredPath": "/home/user/.marginalia/skills/pdf/SKILL.md",
+      "canonicalPath": "/home/user/.marginalia/skills/pdf/SKILL.md",
+      "source": "user_marginalia",
+      "scope": "user",
+      "status": "effective",
+      "enabled": true,
+      "effective": true,
+      "explicitOnly": false,
+      "explicitEligible": true,
+      "diagnostics": [],
+      "shadowedBy": null,
+      "bytesTotal": 8192
+    }
+  ],
+  "diagnostics": []
+}
+```
+
+Invalid candidate 的 `name` / `description` 为 `null`。Candidate 与 aggregate diagnostic 只包含公开
+diagnostic 字段；响应不会返回 `workspaceRoot`、`rawContent`、`previewContent`、`contentHash`、Pi
+`Skill` object 或 `effectiveSkills`。
+
+### `GET /skills/content?path=<canonical>&workspaceId=<optional>`
+
+同样先刷新 Catalog，只在该 snapshot 的 `candidates` 中按 `canonicalPath` 精确匹配。响应中的
+`path` 和 `content` 都来自匹配 candidate，而不是请求 path 或新的磁盘读取：
+
+```json
+{
+  "path": "/home/user/.marginalia/skills/pdf/SKILL.md",
+  "content": "---\nname: pdf\n---\n...",
+  "truncated": false,
+  "bytesTotal": 8192
+}
+```
+
+Invalid candidate 仍可预览；preview 最多 256 KiB，超出时 `truncated: true`。
+
+### `PATCH /skills/state`
+
+请求 Body 为 `{ "path": "<canonical>", "enabled": false, "workspaceId": "<optional>" }`。
+Catalog 按 refresh → current membership → preference upsert → refresh 的顺序执行，成功返回与
+`GET /skills` 相同的公开 snapshot，因此 revision 是 preference 更新后的 revision。
+
+三个 Skills route 共用错误契约：缺失/错误 bearer 返回 `401`，不可信 Origin 返回 `403`，未知
+workspace 返回 `404 { "error": "workspace not found" }`，snapshot 不含该 path 返回
+`404 { "error": "skill not found" }`。`PATCH` JSON 或字段类型不符合上述 schema 时返回
+`400 { "error": "invalid request" }`。Catalog refresh 或内部错误统一返回
+`500 { "error": "skills unavailable" }`，不返回内部 path、bytes 或异常消息。
 
 ## Workspaces
 

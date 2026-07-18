@@ -17,6 +17,23 @@
       "requireAll": ["docs/developer/api.md"]
     },
     {
+      "id": "skills-management",
+      "paths": [
+        "apps/pi-server/src/skills/**",
+        "apps/desktop/src/hooks/useSkillCatalog*",
+        "apps/desktop/src/chat/Composer/**",
+        "apps/desktop/src/settings/**",
+        "apps/desktop/src/store/**"
+      ],
+      "requireAll": [
+        "docs/user/guide.md",
+        "docs/user/configuration.md",
+        "docs/developer/api.md",
+        "docs/developer/architecture.md",
+        "docs/product/status.md"
+      ]
+    },
+    {
       "id": "database-contract",
       "paths": ["apps/pi-server/src/db/**"],
       "requireAll": ["docs/developer/api.md", "docs/user/configuration.md"]

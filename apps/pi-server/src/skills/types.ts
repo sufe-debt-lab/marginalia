@@ -76,6 +76,32 @@ export type SkillCatalogSnapshot = Readonly<{
   diagnostics: readonly SkillDiagnostic[];
 }>;
 
+export type PublicSkillCandidate = {
+  name: string | null;
+  description: string | null;
+  discoveredPath: string;
+  canonicalPath: string;
+  source: SkillSource;
+  scope: SkillScope;
+  status: SkillStatus;
+  enabled: boolean;
+  effective: boolean;
+  explicitOnly: boolean;
+  explicitEligible: boolean;
+  diagnostics: SkillDiagnostic[];
+  shadowedBy: string | null;
+  bytesTotal: number;
+};
+
+export type PublicSkillCatalogSnapshot = {
+  workspaceId: string | null;
+  catalogRevision: string;
+  effectiveRevision: string;
+  refreshedAt: number;
+  candidates: PublicSkillCandidate[];
+  diagnostics: SkillDiagnostic[];
+};
+
 export interface SkillCatalogService {
   refresh(input: {
     workspaceId: string | null;
