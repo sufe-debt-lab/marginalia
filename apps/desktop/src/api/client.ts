@@ -75,7 +75,17 @@ export type Approval = {
 };
 
 export class ApiClient {
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly capabilityToken: string
+  ) {}
+
+  private sensitiveHeaders(): HeadersInit {
+    return {
+      "content-type": "application/json",
+      authorization: `Bearer ${this.capabilityToken}`
+    };
+  }
 
   listWorkspaces() {
     return this.request<Workspace[]>("/workspaces");
@@ -213,7 +223,7 @@ export class ApiClient {
   ): Promise<AsyncIterable<RunEvent>> {
     const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/runs`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: this.sensitiveHeaders(),
       body: JSON.stringify(input),
       signal: options.signal
     });

@@ -1,7 +1,7 @@
 ---
 type: plan
 record_id: PLAN-P2-SKILLS-001
-status: draft
+status: active
 source_spec_id: SPEC-P2-SKILLS-001
 created: 2026-07-18
 updated: 2026-07-18
@@ -139,7 +139,7 @@ picker identity 必须能被同一 snapshot 在发送前复验，并由同一 re
   - `new ApiClient(baseUrl: string, capabilityToken: string)`；只给 Skills API 与 run 加 bearer。
 - Preserves: `/health` 和其他既有 route 的当前认证边界；整体 loopback 问题仍保持 open。
 
-- [ ] **Step 1: 激活设计记录并写 capability 失败测试**
+- [x] **Step 1: 激活设计记录并写 capability 失败测试**
 
 把 spec/plan frontmatter 状态改为 `active`，README index 同步；新增测试固定以下矩阵：
 
@@ -164,7 +164,7 @@ function sensitiveHeaders(token?: string, origin?: string): HeadersInit {
 测试还要断言允许的 `OPTIONS` 返回 `204`，包含 `Authorization, Content-Type`，且不要求 bearer；
 evil origin 的 preflight 不返回 allow-origin。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -175,7 +175,7 @@ pnpm --filter @marginalia/desktop test -- pi-server-spawner client App
 
 Expected: FAIL，因为 server 仍反射 Origin、run 无认证、ready status 没有 token。
 
-- [ ] **Step 3: 实现纯 capability 判定**
+- [x] **Step 3: 实现纯 capability 判定**
 
 **apps/pi-server/src/security/capability.ts** 完整公共边界：
 
@@ -208,7 +208,7 @@ export function authorizeCapability(
 `{ token: null, allowedOrigins: new Set() }`；失败响应固定为
 `401 { error: "unauthorized" }` 或 `403 { error: "origin_forbidden" }`。
 
-- [ ] **Step 4: 生成 token 并贯通 main → preload → renderer**
+- [x] **Step 4: 生成 token 并贯通 main → preload → renderer**
 
 `startPiServer` 每次启动用 `randomBytes(32).toString("base64url")` 生成 token；测试通过
 `capabilityToken` option 注入固定值。launcher 的精确签名改为：
@@ -234,7 +234,7 @@ child env 只新增 `MARGINALIA_CAPABILITY_TOKEN` 和可选 `MARGINALIA_ALLOWED_
 stdout、stderr 或 SQLite。`main.ts` 只把经过既有 loopback 校验的 Vite URL 的 `.origin` 传入。
 `serializeStatus` 和 preload status 返回 token；`AppShell` 调用 `useApi(serverUrl, token)`。
 
-- [ ] **Step 5: 给 ApiClient 敏感请求统一加 bearer**
+- [x] **Step 5: 给 ApiClient 敏感请求统一加 bearer**
 
 ```ts
 export class ApiClient {
@@ -256,13 +256,13 @@ export class ApiClient {
 provider、document API 不带 token。开发浏览器 fallback 同时要求 query 中有 `serverUrl` 和
 `capabilityToken`，缺任一项都不构造 ready bridge。
 
-- [ ] **Step 6: 更新权限与开发契约**
+- [x] **Step 6: 更新权限与开发契约**
 
 `docs/developer/api.md` 记录所有 run 需要 bearer、401/403 和 preflight；
 `docs/developer/architecture.md` 记录局部 capability 数据流且明确不关闭 `P0-SEC-001`；
 `docs/developer/development.md` 记录 Electron 自动注入以及显式浏览器调试参数。
 
-- [ ] **Step 7: 运行 focused 验证**
+- [x] **Step 7: 运行 focused 验证**
 
 Run:
 
@@ -276,7 +276,19 @@ pnpm docs:check
 
 Expected: PASS；缺 token 的 run 是 401，其他既有 API 不变。
 
-- [ ] **Step 8: 提交**
+**Task 1 results (2026-07-18):**
+
+- 实际完成：run capability、exact-Origin CORS、Electron 每进程 token、preload/renderer 贯通，且
+  `ApiClient` 只给 run 加 bearer；Skills API 留给 Task 11。
+- RED：pi-server capability 测试 4 项按预期失败；desktop spawner/client/App 测试 3 项按预期失败；
+  安全 review 的 debug query history 回归测试 1 项按预期失败。
+- GREEN：focused pi-server 20 tests 与 desktop 61 tests 全通过；两个 package typecheck 和
+  `pnpm docs:check` 通过；最终 `pnpm verify` 全通过。
+- 正式文档：更新 `docs/developer/api.md`、`docs/developer/architecture.md` 和
+  `docs/developer/development.md`。
+- 偏差与遗留：无实现偏差；局部 capability 不关闭 `P0-SEC-001`。
+
+- [x] **Step 8: 提交**
 
 ```bash
 git add apps/pi-server apps/desktop docs/developer docs/superpowers

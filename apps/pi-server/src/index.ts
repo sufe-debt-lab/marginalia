@@ -7,7 +7,14 @@ import { ScriptedFakeAgentClient } from "./agent/scripted-fake-agent.js";
 const agentClient =
   process.env.MARGINALIA_FAKE_AGENT === "1" ? new ScriptedFakeAgentClient() : undefined;
 
-const app = createApp({ agentClient });
+const allowedOrigin = process.env.MARGINALIA_ALLOWED_ORIGIN;
+const app = createApp({
+  agentClient,
+  capability: {
+    token: process.env.MARGINALIA_CAPABILITY_TOKEN ?? null,
+    allowedOrigins: new Set(allowedOrigin ? [allowedOrigin] : [])
+  }
+});
 
 const server = serve(
   {

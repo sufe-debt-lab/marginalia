@@ -36,7 +36,7 @@ describe("AppShell", () => {
   });
 
   it("renders sidebar and main while right panel is hidden outside chat", () => {
-    render(<AppShell serverUrl="http://x" />);
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     expect(screen.getByRole("complementary", { name: /sidebar/i })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: /document panel/i })).toBeNull();
@@ -44,13 +44,13 @@ describe("AppShell", () => {
 
   it("shows right panel when view is chat", () => {
     useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1" });
-    render(<AppShell serverUrl="http://x" />);
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     expect(screen.getByRole("complementary", { name: /document panel/i })).toBeInTheDocument();
   });
 
   it("collapses sidebar to zero width but keeps it mounted for the slide animation", () => {
     useAppStore.setState({ leftSidebarCollapsed: true });
-    const { container } = render(<AppShell serverUrl="http://x" />);
+    const { container } = render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     expect(screen.queryByRole("complementary", { name: /sidebar/i })).toBeNull();
     const aside = container.querySelector('aside[aria-label="Sidebar"]');
     expect(aside).not.toBeNull();
@@ -60,12 +60,12 @@ describe("AppShell", () => {
 
   it("does not mount sidebar content while collapsed at startup (no eager fetching)", () => {
     useAppStore.setState({ leftSidebarCollapsed: true });
-    render(<AppShell serverUrl="http://x" />);
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     expect(screen.queryByRole("button", { name: /new chat/i, hidden: true })).toBeNull();
   });
 
   it("toggle persists to localStorage", async () => {
-    render(<AppShell serverUrl="http://x" />);
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     await userEvent.click(screen.getByRole("button", { name: /toggle left sidebar/i }));
     const stored = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
     expect(stored.state?.leftSidebarCollapsed).toBe(true);
@@ -73,14 +73,14 @@ describe("AppShell", () => {
 
   it("uses leftSidebarWidth from store", () => {
     useAppStore.setState({ leftSidebarWidth: 320 });
-    render(<AppShell serverUrl="http://x" />);
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     const aside = screen.getByRole("complementary", { name: /sidebar/i });
     expect(aside).toHaveStyle({ width: "320px" });
   });
 
   it("uses rightPanelWidth from store in chat view", () => {
     useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", rightPanelWidth: 420 });
-    render(<AppShell serverUrl="http://x" />);
+    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
     const aside = screen.getByRole("complementary", { name: /document panel/i });
     expect(aside).toHaveStyle({ width: "420px" });
   });

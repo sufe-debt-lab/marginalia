@@ -56,6 +56,19 @@ pnpm dev
 
 > `pnpm --filter @marginalia/desktop dev` 启动的是 **Electron 应用**（Vite + Electron 一起），不是浏览器页面。直接用浏览器打开 Vite 页面拿不到 `window.marginalia` 桥接，server 状态会显示不可用。
 
+Electron 启动 pi-server 时会自动生成 `capabilityToken`，通过 child environment 注入 server，再经
+preload bridge 交给 renderer；开发者正常运行 `pnpm dev` 不需要手动管理凭据。若必须在浏览器中
+调试 Vite 页面，需要显式同时提供 URL 编码后的 query 参数：
+
+```text
+http://127.0.0.1:5173/?serverUrl=http%3A%2F%2F127.0.0.1%3A4312&capabilityToken=<token>
+```
+
+缺少 `serverUrl` 或 `capabilityToken` 任一项时，开发 fallback 不会构造 ready bridge。token 必须与
+该 pi-server 进程的 `MARGINALIA_CAPABILITY_TOKEN` 完全一致；该方式只用于显式浏览器调试，不替代
+Electron runtime 或 Electron 视觉验证。应用读取有效的两个参数后会立即从地址栏和当前 history
+entry 删除它们；初始页面请求仍会携带 query，因此只在可信本机开发环境使用并避免记录或分享该 URL。
+
 ## 常用命令
 
 全部包（根目录，`-r` 递归）：
@@ -96,12 +109,14 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 
 ## 相关环境变量
 
-| 变量                    | 说明                                                                                                                                                                                                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARGINALIA_NODE_PATH`  | dev 下指定启动 pi-server 用的 `node` 二进制。                                                                                                                                                                                                                        |
-| `MARGINALIA_DB_PATH`    | 覆盖 SQLite 路径（默认 `~/.marginalia/db.sqlite`）。                                                                                                                                                                                                                 |
-| `VITE_DEV_SERVER_URL`   | Electron 从该 URL 加载 renderer；`pnpm dev` 自动设置。                                                                                                                                                                                                               |
-| `MARGINALIA_FAKE_AGENT` | 设为 `1` 时 pi-server 用 `ScriptedFakeAgentClient`（`apps/pi-server/src/agent/scripted-fake-agent.ts`）替换真实 agent，按消息关键字回放确定性脚本（含审批事件）。**仅用于截图验证（`approval-flow` 场景）和本地调试**，不接入任何真实模型；不要在打包/生产环境设置。 |
+| 变量                          | 说明                                                                                                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARGINALIA_NODE_PATH`        | dev 下指定启动 pi-server 用的 `node` 二进制。                                                                                                                                                                                                                        |
+| `MARGINALIA_DB_PATH`          | 覆盖 SQLite 路径（默认 `~/.marginalia/db.sqlite`）。                                                                                                                                                                                                                 |
+| `MARGINALIA_CAPABILITY_TOKEN` | Electron 启动 pi-server 时自动注入的进程 bearer；正常开发不要手工设置，也不要写入日志或 SQLite。                                                                                                                                                                     |
+| `MARGINALIA_ALLOWED_ORIGIN`   | Electron 开发模式从已校验的 loopback Vite URL 自动注入的 exact CORS origin；打包 renderer 不设置。                                                                                                                                                                   |
+| `VITE_DEV_SERVER_URL`         | Electron 从该 URL 加载 renderer；`pnpm dev` 自动设置。                                                                                                                                                                                                               |
+| `MARGINALIA_FAKE_AGENT`       | 设为 `1` 时 pi-server 用 `ScriptedFakeAgentClient`（`apps/pi-server/src/agent/scripted-fake-agent.ts`）替换真实 agent，按消息关键字回放确定性脚本（含审批事件）。**仅用于截图验证（`approval-flow` 场景）和本地调试**，不接入任何真实模型；不要在打包/生产环境设置。 |
 
 完整清单见[配置 · 环境变量](../user/configuration.md#环境变量)。
 

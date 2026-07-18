@@ -12,11 +12,29 @@ type UiStatus = PiServerStatus & { health?: Health };
 
 function getBridge() {
   if (window.marginalia) return window.marginalia;
-  const serverUrl = new URLSearchParams(window.location.search).get("serverUrl");
-  if (import.meta.env.DEV && serverUrl) {
+  const params = new URLSearchParams(window.location.search);
+  const serverUrl = params.get("serverUrl");
+  const capabilityToken = params.get("capabilityToken");
+  if (import.meta.env.DEV && serverUrl && capabilityToken) {
+    params.delete("serverUrl");
+    params.delete("capabilityToken");
+    const remainingQuery = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${window.location.hash}`
+    );
     return {
-      getPiServerStatus: async () => ({ status: "ready" as const, url: serverUrl }),
-      restartPiServer: async () => ({ status: "ready" as const, url: serverUrl })
+      getPiServerStatus: async () => ({
+        status: "ready" as const,
+        url: serverUrl,
+        capabilityToken
+      }),
+      restartPiServer: async () => ({
+        status: "ready" as const,
+        url: serverUrl,
+        capabilityToken
+      })
     };
   }
   return null;
@@ -92,5 +110,5 @@ export function App() {
     );
   }
 
-  return <AppShell serverUrl={server.url} />;
+  return <AppShell serverUrl={server.url} capabilityToken={server.capabilityToken} />;
 }

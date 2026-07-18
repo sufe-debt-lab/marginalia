@@ -1,7 +1,7 @@
 ---
 type: spec
 record_id: SPEC-P2-SKILLS-001
-status: approved
+status: active
 created: 2026-07-18
 updated: 2026-07-18
 target_milestone: post-M0

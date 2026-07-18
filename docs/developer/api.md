@@ -6,7 +6,9 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 除 raw 文件和 SSE 外，业务路由主要使用 JSON。多数显式错误返回 `{ "error": "<message>" }`，但当前没有全局 error schema。
 
-当前服务没有认证 middleware，并通过 CORS 反射请求 origin。随机 loopback 端口不是授权边界；在认证修复前，这套 API 只适合 Alpha 开发和评估。
+当前仅 run 与后续 Skills API 使用 Electron 每次启动生成的进程 capability；其他既有 loopback
+路由仍未认证。CORS 不再反射任意 Origin，但随机 loopback 端口和局部 capability 都不是整套 API
+的授权边界；`P0-SEC-001` 仍未关闭，这套 API 仍只适合 Alpha 开发和评估。
 
 ## Route inventory
 
@@ -42,6 +44,25 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 | POST   | `/sessions/:sessionId/runs`                  | 启动 SSE agent run            |
 
 <!-- route-inventory:end -->
+
+## Run capability 与 CORS
+
+每个 `POST /sessions/:sessionId/runs` 请求必须包含 Electron main 进程提供给 renderer 的 bearer：
+
+```http
+Authorization: Bearer <capabilityToken>
+Content-Type: application/json
+```
+
+pi-server 在读取 session 或 body 前验证请求：token 缺失、不匹配或 server 没有配置 token 时返回
+`401 { "error": "unauthorized" }`；`Origin` 既不是缺省/`null`，也不在本次启动的 exact allowlist
+时返回 `403 { "error": "origin_forbidden" }`。`GET /health`、workspace、provider、document 和
+approval 等既有 API 不带 bearer，保持原有认证边界。
+
+浏览器预检不要求 bearer。允许来源的 `OPTIONS` 返回 `204`，并声明
+`Access-Control-Allow-Headers: Authorization,Content-Type`；不可信来源不会收到
+`Access-Control-Allow-Origin`。Electron 开发模式只允许经过 loopback URL 校验的 Vite origin；
+打包后的 `file:` renderer 使用 `Origin: null`。
 
 ## 健康检查
 

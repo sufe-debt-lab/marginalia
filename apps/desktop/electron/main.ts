@@ -27,7 +27,10 @@ let serverStatus: PiServerStatus = { status: "starting" };
 
 async function bootServer() {
   serverStatus = { status: "starting" };
-  serverStatus = await startPiServer({ isPackaged: app.isPackaged });
+  serverStatus = await startPiServer({
+    isPackaged: app.isPackaged,
+    allowedOrigin: devServerUrl()?.origin
+  });
   return serializeStatus(serverStatus);
 }
 
@@ -42,7 +45,13 @@ function bootServerInBackground() {
 }
 
 function serializeStatus(status: PiServerStatus) {
-  if (status.status === "ready") return { status: "ready", url: status.url };
+  if (status.status === "ready") {
+    return {
+      status: "ready",
+      url: status.url,
+      capabilityToken: status.capabilityToken
+    };
+  }
   return status;
 }
 
@@ -51,7 +60,7 @@ function devServerUrl() {
   try {
     const url = new URL(process.env.VITE_DEV_SERVER_URL);
     const isLoopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
-    return isLoopback && ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+    return isLoopback && ["http:", "https:"].includes(url.protocol) ? url : null;
   } catch {
     return null;
   }
@@ -105,7 +114,7 @@ async function createWindow() {
 
   const rendererUrl = devServerUrl();
   if (rendererUrl) {
-    await windowRef.loadURL(rendererUrl);
+    await windowRef.loadURL(rendererUrl.toString());
   } else {
     await windowRef.loadFile(path.resolve(import.meta.dirname, "../dist/index.html"));
   }

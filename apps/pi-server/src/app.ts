@@ -61,6 +61,11 @@ import { listWorkspaceFiles, searchWorkspaceFiles } from "./files/file-tree.js";
 import { resolveWorkspacePath } from "./files/path-sandbox.js";
 import { createHealthInfo } from "./health.js";
 import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
+import {
+  authorizeCapability,
+  isAllowedOrigin,
+  type CapabilityPolicy
+} from "./security/capability.js";
 
 export type AppOptions = {
   startedAt?: Date;
@@ -70,6 +75,7 @@ export type AppOptions = {
   modelRegistry?: ModelRegistry;
   availabilityChecker?: ModelAvailabilityChecker;
   documentReader?: (rootDir: string, relativePath: string) => Promise<DocumentContent>;
+  capability?: CapabilityPolicy;
 };
 
 const DEFAULT_AUTH_PATH = path.join(homedir(), ".marginalia", "auth.json");
@@ -105,12 +111,19 @@ export function createApp(options: AppOptions = {}) {
     );
   const availabilityChecker =
     options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
+  const capability = options.capability ?? { token: null, allowedOrigins: new Set<string>() };
 
   migrate(db);
   syncProviderKeys(db, authStorage);
 
   const app = new Hono();
-  app.use("*", cors({ origin: (origin) => origin }));
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => (isAllowedOrigin(origin || null, capability) ? origin : null),
+      allowHeaders: ["Authorization", "Content-Type"]
+    })
+  );
   app.get("/health", (c) => c.json(createHealthInfo(startedAt)));
   app.get("/workspaces", (c) => c.json(listWorkspaces(db)));
   app.post("/workspaces", async (c) => {
@@ -301,6 +314,10 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post("/sessions/:sessionId/runs", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
     const sessionId = c.req.param("sessionId");
     const session = getSession(db, sessionId);
     if (!session) return c.json({ error: "session not found" }, 404);

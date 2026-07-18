@@ -36,7 +36,7 @@ Marginalia 是一个本地优先的桌面应用，由三个 pnpm workspace 包�
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Renderer 不直接加载 Node API。Workspace 文件和 LLM 请求主要经过 pi-server；系统目录选择、外部链接和导出 `.md` 走 preload 到 Electron main 的 IPC。pi-server 只监听 `127.0.0.1`，当前仍没有 API 认证。
+Renderer 不直接加载 Node API。Workspace 文件和 LLM 请求主要经过 pi-server；系统目录选择、外部链接和导出 `.md` 走 preload 到 Electron main 的 IPC。pi-server 只监听 `127.0.0.1`。每次启动生成的进程 capability 只保护 run 和后续 Skills API；其余既有 API 仍未认证。
 
 ## 进程模型
 
@@ -64,7 +64,7 @@ Electron 截图验证不再通过 renderer IPC；统一由
 
 pi-server 是一个独立的 Node 进程，入口 `apps/pi-server/src/index.ts`：用 `@hono/node-server` 在 `127.0.0.1:0`（端口 0 = 由系统分配空闲端口）起服务，就绪后向 stdout 打印一行 JSON `{"type":"ready","port":<n>}`。
 
-main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）解析这行 ready 消息（`createReadyLineParser`，`apps/desktop/electron/pi-server-spawner.ts#createReadyLineParser`），拿到端口后把状态置为 `{ status: "ready", url: "http://127.0.0.1:<port>" }`。10 秒内未就绪则判定 `failed`。
+main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）每次启动用 32 字节随机数生成 base64url capability token，通过 child environment 的 `MARGINALIA_CAPABILITY_TOKEN` 注入；开发模式还只把经过 loopback 校验的 Vite URL `.origin` 作为 `MARGINALIA_ALLOWED_ORIGIN` 注入。token 不进入 ready stdout、日志或 SQLite。解析 ready 行后，main 内部状态变为 `{ status: "ready", url: "http://127.0.0.1:<port>", capabilityToken, process }`，经 preload 序列化给 renderer 时移除 `process`、保留 token。10 秒内未就绪则判定 `failed`。
 
 当前 exit listener 只解决“启动前退出”。进程在 ready 后崩溃时，main 中的 `serverStatus` 可能继续显示 ready，直到普通 API 调用失败；完整恢复见 readiness issue `P1-RECOVERY-001`。
 
@@ -83,16 +83,16 @@ React 应用入口 `apps/desktop/src/main.tsx` → `App.tsx`。`App` 负责启�
 2. server `ready` 后请求 `GET /health` 做一次健康校验（`apps/desktop/src/App.tsx#loadHealth`）。
 3. 通过则渲染 `AppShell`，否则显示错误 + 重试按钮（重试走 `pi-server:restart`）。
 
-`AppShell`（`apps/desktop/src/app/AppShell.tsx#AppShell`）是三栏布局：左 `Sidebar`（workspace/session 树）、中主区（`ChatView` / `SettingsView` / `FirstRunView` / `NewThreadView` 按 `view` 状态切换）、右 `DocumentPanel`（仅在 chat 视图且有活跃 workspace 时显示）。视图状态由 zustand store `apps/desktop/src/store/app-store.ts` 管理。
+`AppShell`（`apps/desktop/src/app/AppShell.tsx#AppShell`）接收可信的 server URL 与 capability token，并据此构造 `ApiClient`。它是三栏布局：左 `Sidebar`（workspace/session 树）、中主区（`ChatView` / `SettingsView` / `FirstRunView` / `NewThreadView` 按 `view` 状态切换）、右 `DocumentPanel`（仅在 chat 视图且有活跃 workspace 时显示）。视图状态由 zustand store `apps/desktop/src/store/app-store.ts` 管理。
 
 ## 请求数据流
 
-renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调用 pi-server。`useApi(serverUrl)`（`apps/desktop/src/hooks/useApi.ts`）用 main 进程拿到的 server URL 实例化它，各 `use*` hook（`useWorkspaces`、`useSessions`、`useMessages`、`useProviders`、`useStreamingChat` 等）在其上封装数据获取与状态。
+renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调用 pi-server。`useApi(serverUrl, capabilityToken)`（`apps/desktop/src/hooks/useApi.ts`）用 main 进程拿到的 server URL 与 token 实例化它；普通 workspace/provider/document API 不发送 token，run 和后续 Skills API 才使用 bearer。各 `use*` hook（`useWorkspaces`、`useSessions`、`useMessages`、`useProviders`、`useStreamingChat` 等）在其上封装数据获取与状态。
 
 一次对话的完整链路：
 
-1. renderer 调 `ApiClient.runChat(sessionId, …)`（`apps/desktop/src/api/client.ts#runChat`）→ `POST /sessions/:sessionId/runs`。
-2. pi-server 路由（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）建一条 `run` 记录，开 SSE 流，先发 `run_started`。
+1. renderer 调 `ApiClient.runChat(sessionId, …)`（`apps/desktop/src/api/client.ts#runChat`），携带进程 bearer → `POST /sessions/:sessionId/runs`。
+2. pi-server 路由（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）先验证 exact Origin 与 bearer；通过后才建 `run` 记录，开 SSE 流，先发 `run_started`。
 3. 调 `agentClient.run(...)`（`PiCodingAgentClient`，`apps/pi-server/src/agent/pi-coding-agent-client.ts`），后者驱动 `@earendil-works/pi-coding-agent` 与选定 provider 对话。若带 `@文件` 上下文，`buildAgentMessage`（`apps/pi-server/src/app.ts#buildAgentMessage`）会把文件内容内联进消息。
 4. agent 产出的**原始 pi 事件**被原样包进 `agent_event` 逐条 SSE 推回（`apps/pi-server/src/app.ts#agent_event`）。
 5. 结束时发 `run_completed`，出错发 `run_failed`，并落 `runs` 表（`apps/pi-server/src/app.ts#completeRun`）。
@@ -124,7 +124,7 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 
 下面几项是已确认的 Alpha 限制，不应在其他文档中描述成已解决：
 
-- pi-server 没有认证，并反射任意 CORS origin。随机 loopback 端口不是授权边界。
+- run 和后续 Skills API 有每进程 capability 与 exact-Origin 检查，CORS 不再反射任意来源；但其他既有 loopback 路由仍未认证。这个局部边界不关闭 `P0-SEC-001`，随机 loopback 端口也不是授权边界。
 - BrowserWindow 使用 context isolation 和 `nodeIntegration: false`，但 `sandbox: false`。
 - Full 和 Ask 使用 pi 默认 coding tools。Workspace 只作为 cwd，工具可接收绝对路径，bash 使用宿主用户权限。
 - HTTP 文件接口检查 lexical path 和已存在目标 realpath，但新目标的 symlink parent 仍可逃逸。

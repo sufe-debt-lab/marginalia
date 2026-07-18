@@ -12,6 +12,10 @@ import { FakeAgentClient } from "../src/agent/fake-agent-client.js";
 import type { AgentRunEvent, ApprovalRequestedEvent } from "../src/agent/agent-client.js";
 
 const dbs: Database.Database[] = [];
+const runHeaders = {
+  authorization: "Bearer test-token",
+  "content-type": "application/json"
+};
 afterEach(() => {
   for (const db of dbs.splice(0)) db.close();
 });
@@ -24,7 +28,11 @@ function setup() {
   const session = createSession(db, { workspaceId: ws.id, title: "S", origin: "desktop" });
   const provider = createProvider(db, { name: "openai", apiKey: "k", defaultModel: "gpt" });
   const fake = new FakeAgentClient();
-  const app = createApp({ db, agentClient: fake });
+  const app = createApp({
+    db,
+    agentClient: fake,
+    capability: { token: "test-token", allowedOrigins: new Set<string>() }
+  });
   return { db, session, provider, fake, app };
 }
 
@@ -69,7 +77,7 @@ describe("approval flow over SSE", () => {
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
       body: JSON.stringify({ providerId: provider.id, message: "hi", permission: "ask" }),
-      headers: { "content-type": "application/json" }
+      headers: runHeaders
     });
     expect(response.status).toBe(200);
     const events = readSse(response.body!);
@@ -114,7 +122,7 @@ describe("approval flow over SSE", () => {
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
       body: JSON.stringify({ providerId: provider.id, message: "hi", permission: "ask" }),
-      headers: { "content-type": "application/json" },
+      headers: runHeaders,
       signal: controller.signal
     });
     const events = readSse(response.body!);

@@ -15,6 +15,11 @@ import { FakeAgentClient } from "../src/agent/fake-agent-client.js";
 import type { AgentSessionEvent } from "../src/agent/agent-client.js";
 
 const dbs: Database.Database[] = [];
+const capability = { token: "test-token", allowedOrigins: new Set<string>() };
+const runHeaders = {
+  authorization: "Bearer test-token",
+  "content-type": "application/json"
+};
 function memoryDb() {
   const db = new Database(":memory:");
   dbs.push(db);
@@ -125,7 +130,7 @@ describe("chat runs", () => {
       } as unknown as AgentSessionEvent
     ]);
 
-    const app = createApp({ db, agentClient: fake });
+    const app = createApp({ db, agentClient: fake, capability });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
@@ -136,7 +141,7 @@ describe("chat runs", () => {
 
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: runHeaders,
       body: JSON.stringify({ providerId: provider.id, message: "hi" })
     });
 
@@ -183,7 +188,7 @@ describe("chat runs", () => {
       } as unknown as AgentSessionEvent
     ]);
 
-    const app = createApp({ db, agentClient: fake });
+    const app = createApp({ db, agentClient: fake, capability });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
@@ -194,7 +199,7 @@ describe("chat runs", () => {
 
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: runHeaders,
       body: JSON.stringify({ providerId: provider.id, message: "read it" })
     });
     const text = await response.text();
@@ -227,7 +232,7 @@ describe("chat runs", () => {
       }
     };
 
-    const app = createApp({ db, agentClient: stubClient as any });
+    const app = createApp({ db, agentClient: stubClient as any, capability });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
@@ -238,7 +243,7 @@ describe("chat runs", () => {
 
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: runHeaders,
       body: JSON.stringify({ providerId: provider.id, message: "ping" })
     });
     await response.text(); // drain stream so the streamSSE callback runs to completion
@@ -275,7 +280,7 @@ describe("chat runs", () => {
       }
     };
 
-    const app = createApp({ db, agentClient: stubClient as any });
+    const app = createApp({ db, agentClient: stubClient as any, capability });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
@@ -286,7 +291,7 @@ describe("chat runs", () => {
 
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: runHeaders,
       body: JSON.stringify({
         providerId: provider.id,
         message: "summarize",
