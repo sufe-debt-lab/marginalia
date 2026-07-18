@@ -14,11 +14,21 @@ export type SkillSource =
 export type SkillScope = "workspace" | "user";
 export type SkillDiscoveryMode = "pi" | "agents";
 
+export type SkillDiagnosticCollision = {
+  resourceType: "extension" | "skill" | "prompt" | "theme";
+  name: string;
+  winnerPath: string;
+  loserPath: string;
+  winnerSource?: string;
+  loserSource?: string;
+};
+
 export type SkillDiagnostic = {
   code: string;
   level: "warning" | "error";
   message: string;
   path?: string;
+  collision?: SkillDiagnosticCollision;
 };
 
 export type DiscoveredSkillFile = {

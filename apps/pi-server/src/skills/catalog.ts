@@ -68,7 +68,23 @@ function cloneDiagnostic(diagnostic: SkillDiagnostic): SkillDiagnostic {
     code: diagnostic.code,
     level: diagnostic.level,
     message: diagnostic.message,
-    ...(diagnostic.path === undefined ? {} : { path: diagnostic.path })
+    ...(diagnostic.path === undefined ? {} : { path: diagnostic.path }),
+    ...(diagnostic.collision
+      ? {
+          collision: {
+            resourceType: diagnostic.collision.resourceType,
+            name: diagnostic.collision.name,
+            winnerPath: diagnostic.collision.winnerPath,
+            loserPath: diagnostic.collision.loserPath,
+            ...(diagnostic.collision.winnerSource === undefined
+              ? {}
+              : { winnerSource: diagnostic.collision.winnerSource }),
+            ...(diagnostic.collision.loserSource === undefined
+              ? {}
+              : { loserSource: diagnostic.collision.loserSource })
+          }
+        }
+      : {})
   };
 }
 
@@ -128,6 +144,21 @@ function publishCandidate(
   };
 }
 
+function collisionDiagnostic(name: string, winnerPath: string, loserPath: string): SkillDiagnostic {
+  return {
+    code: "pi_collision",
+    level: "warning",
+    message: `name "${name}" collision`,
+    path: loserPath,
+    collision: {
+      resourceType: "skill",
+      name,
+      winnerPath,
+      loserPath
+    }
+  };
+}
+
 function reduceCandidates(
   parsedCandidates: readonly ParsedSkillCandidate[],
   preferenceRows: readonly SkillPreference[]
@@ -158,7 +189,24 @@ function reduceCandidates(
     }
     const winner = winnerByName.get(candidate.skill.name);
     if (winner) {
-      candidates.push(publishCandidate(candidate, enabled, "shadowed", winner.canonicalPath));
+      candidates.push(
+        publishCandidate(
+          {
+            ...candidate,
+            diagnostics: [
+              ...candidate.diagnostics,
+              collisionDiagnostic(
+                candidate.skill.name,
+                winner.canonicalPath,
+                candidate.canonicalPath
+              )
+            ]
+          },
+          enabled,
+          "shadowed",
+          winner.canonicalPath
+        )
+      );
       continue;
     }
     const published = publishCandidate(candidate, enabled, "effective");
@@ -174,7 +222,17 @@ function diagnosticProjection(diagnostic: SkillDiagnostic) {
     code: diagnostic.code,
     level: diagnostic.level,
     message: diagnostic.message,
-    path: diagnostic.path ?? null
+    path: diagnostic.path ?? null,
+    collision: diagnostic.collision
+      ? {
+          resourceType: diagnostic.collision.resourceType,
+          name: diagnostic.collision.name,
+          winnerPath: diagnostic.collision.winnerPath,
+          loserPath: diagnostic.collision.loserPath,
+          winnerSource: diagnostic.collision.winnerSource ?? null,
+          loserSource: diagnostic.collision.loserSource ?? null
+        }
+      : null
   };
 }
 

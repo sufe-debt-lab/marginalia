@@ -1338,6 +1338,17 @@ Expected: PASS；相同磁盘状态在乱序 readdir 下产生相同 revisions�
 - 偏差与遗留：无实现偏差或新增依赖。Task 7 无 UI-visible change，不运行 visual verification。Task 5/6
   已记录的 Pi discovery 同步无界读取、symlink cycle 和单文件完整读取 residual risks 保持不变。
 
+**Formal review fixes (Task 7 collision diagnostics):**
+
+- 扩展 serializable `SkillDiagnostic`，保留 Pi-compatible structured collision identity；Task 6 mapper、
+  Task 7 clone/deep-freeze 和 `catalogRevision` projection 都保留该结构。
+- 每个 enabled valid shadowed loser 的 cloned diagnostics 追加 deterministic `pi_collision` warning，
+  loser/winner 均使用 canonical path；aggregate diagnostics 同步包含。Parsed candidate inputs 不变，
+  invalid、disabled 和 canonical alias 不生成 collision diagnostic。
+- RED：candidate-loader 与 catalog focused command 为 2 failed/46 passed，分别证明 Pi collision identity
+  被 mapper 丢弃和 shadowed loser 缺 diagnostic。GREEN：两 suite 49/49；Task 4–7 focused suite 66/66，
+  typecheck、docs check 和全 `pnpm verify` 通过。无 Task 8 实现或新增 residual risk。
+
 - [x] **Step 7: 提交**
 
 ```bash

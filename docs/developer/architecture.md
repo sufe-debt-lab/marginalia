@@ -177,6 +177,13 @@ candidate 为 `shadowed`，`shadowedBy` 指向 winner canonical path。Invalid �
 name，允许后续 candidate 接替。Snapshot 中的 candidate、diagnostic、Pi Skill 和 `sourceInfo` 都是
 loader-owned 值的深拷贝并递归冻结，发布后不可变，同时不会冻结上游共享对象。
 
+每个 shadowed loser 会在其 cloned diagnostics 末尾追加 Pi-compatible `pi_collision` warning：message
+为 `name "<name>" collision`，diagnostic path 与 structured `loserPath` 使用 loser canonical path，
+structured `winnerPath` 使用 winner canonical path，`resourceType` 固定为 `skill`。同一 diagnostic 同时
+进入 snapshot aggregate diagnostics 和 `catalogRevision` projection；invalid、disabled 以及 canonical
+first-wins 已移除的 alias 不生成 collision diagnostic。Task 6 对 Pi 原生 diagnostic 的映射也保留可选
+`collision` identity（含 Pi 提供时的 source 字段）。
+
 每个 snapshot 有两个稳定 SHA-256 revision。`catalogRevision` 的手工固定-key projection 覆盖 workspace
 identity 以及全部管理可见 candidate 状态，包括 metadata、diagnostics、preference 结果、preview、
 collision 和 content identity；`effectiveRevision` 只投影 discovery 顺序中的 effective Skill metadata、

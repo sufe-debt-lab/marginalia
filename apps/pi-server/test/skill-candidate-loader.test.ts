@@ -196,6 +196,35 @@ describe("loadSkillCandidate", () => {
     });
   });
 
+  it("preserves Pi collision identity in a mapped diagnostic", async () => {
+    const collision: ResourceDiagnostic = {
+      type: "collision",
+      message: 'name "demo" collision',
+      path: canonicalPath,
+      collision: {
+        resourceType: "skill",
+        name: "demo",
+        winnerPath: "/canonical/winner/SKILL.md",
+        loserPath: canonicalPath,
+        winnerSource: "workspace",
+        loserSource: "user"
+      }
+    };
+
+    const candidate = await loadSkillCandidate(
+      descriptor,
+      fakeDeps({ parseResults: [result(skill(), [collision])] })
+    );
+
+    expect(candidate.diagnostics).toContainEqual({
+      code: "pi_collision",
+      level: "warning",
+      message: collision.message,
+      path: canonicalPath,
+      collision: collision.collision
+    });
+  });
+
   it("marks a stable candidate invalid when Pi returns no Skill", async () => {
     const warning: ResourceDiagnostic = {
       type: "warning",

@@ -214,6 +214,9 @@ describe("Skill catalog reduction", () => {
       "disabled",
       "effective"
     ]);
+    expect(snapshot.candidates.flatMap(({ diagnostics }) => diagnostics)).not.toContainEqual(
+      expect.objectContaining({ code: "pi_collision" })
+    );
   });
 
   it("deduplicates canonical aliases before preference and collision reduction, keeping the first", async () => {
@@ -234,6 +237,9 @@ describe("Skill catalog reduction", () => {
     expect(snapshot.candidates).toHaveLength(1);
     expect(snapshot.candidates[0]?.relativePath).toBe("alias-a/SKILL.md");
     expect(snapshot.candidates[0]?.previewContent).toBe("first");
+    expect(snapshot.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "pi_collision" })
+    );
     expect(store.list).toHaveBeenCalledTimes(1);
   });
 
@@ -257,6 +263,48 @@ describe("Skill catalog reduction", () => {
     expect(snapshot.candidates.slice(1).map(({ shadowedBy }) => shadowedBy)).toEqual(
       Array(3).fill("/canonical/Z.md")
     );
+  });
+
+  it("appends a Pi-shaped collision diagnostic to each cloned shadowed loser", async () => {
+    const winner = parsed("winner/SKILL.md", {
+      skill: skill("/canonical/winner/SKILL.md", { name: "shared" })
+    });
+    const loserWarning: SkillDiagnostic = {
+      code: "pi_warning",
+      level: "warning",
+      message: "existing warning",
+      path: "/canonical/loser/SKILL.md"
+    };
+    const loser = parsed("loser/SKILL.md", {
+      skill: skill("/canonical/loser/SKILL.md", { name: "shared" }),
+      diagnostics: [loserWarning]
+    });
+
+    const snapshot = await service([winner, loser]).catalog.refresh(workspace);
+    const collision = {
+      code: "pi_collision",
+      level: "warning",
+      message: 'name "shared" collision',
+      path: loser.canonicalPath,
+      collision: {
+        resourceType: "skill",
+        name: "shared",
+        winnerPath: winner.canonicalPath,
+        loserPath: loser.canonicalPath
+      }
+    } as const;
+
+    expect(snapshot.candidates[0]?.diagnostics).toEqual([]);
+    expect(snapshot.candidates[1]).toMatchObject({
+      status: "shadowed",
+      shadowedBy: winner.canonicalPath,
+      diagnostics: [loserWarning, collision]
+    });
+    expect(snapshot.diagnostics).toEqual([loserWarning, collision]);
+    expect(loser.diagnostics).toEqual([loserWarning]);
+    expect(Object.isFrozen(loser.diagnostics)).toBe(false);
+    expect(Object.isFrozen(loserWarning)).toBe(false);
+    expect(Object.isFrozen(snapshot.candidates[1]?.diagnostics[1]?.collision)).toBe(true);
   });
 
   it("aggregates original parse diagnostics without reparsing candidates", async () => {
@@ -349,6 +397,73 @@ describe("Skill catalog revisions and immutability", () => {
     fixtures = [fixtures[1]!, fixtures[0]!];
     const reordered = await catalog.refresh(workspace);
     expect(reordered.effectiveRevision).not.toBe(changed.effectiveRevision);
+  });
+
+  it("keeps collision revisions stable and separates loser from winner path changes", async () => {
+    let fixtures = [
+      parsed("winner/SKILL.md", {
+        skill: skill("/canonical/winner/SKILL.md", { name: "shared" })
+      }),
+      parsed("loser/SKILL.md", {
+        skill: skill("/canonical/loser/SKILL.md", { name: "shared" })
+      })
+    ];
+    const discover = vi.fn(async () => fixtures.map((item) => descriptor(item.relativePath, item)));
+    const loadCandidate = vi.fn(async (item: DiscoveredSkillFile) => {
+      return fixtures.find((fixture) => fixture.discoveredPath === item.discoveredPath)!;
+    });
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover,
+      loadCandidate,
+      now: () => 1,
+      canonicalizeWorkspaceRoot: (root) => path.resolve(root)
+    });
+
+    const base = await catalog.refresh(workspace);
+    const repeated = await catalog.refresh(workspace);
+    expect(repeated.catalogRevision).toBe(base.catalogRevision);
+    expect(repeated.effectiveRevision).toBe(base.effectiveRevision);
+    expect(repeated.candidates[1]?.diagnostics[0]?.collision).toEqual({
+      resourceType: "skill",
+      name: "shared",
+      winnerPath: "/canonical/winner/SKILL.md",
+      loserPath: "/canonical/loser/SKILL.md"
+    });
+
+    const loserPath = "/canonical/loser-retargeted/SKILL.md";
+    fixtures = [
+      fixtures[0]!,
+      {
+        ...fixtures[1]!,
+        canonicalPath: loserPath,
+        canonicalBaseDir: path.dirname(loserPath),
+        skill: skill(loserPath, { name: "shared" })
+      }
+    ];
+    const changedLoser = await catalog.refresh(workspace);
+    expect(changedLoser.catalogRevision).not.toBe(base.catalogRevision);
+    expect(changedLoser.effectiveRevision).toBe(base.effectiveRevision);
+    expect(changedLoser.candidates[1]?.diagnostics[0]).toMatchObject({
+      path: loserPath,
+      collision: { loserPath }
+    });
+
+    const winnerPath = "/canonical/winner-retargeted/SKILL.md";
+    fixtures = [
+      {
+        ...fixtures[0]!,
+        canonicalPath: winnerPath,
+        canonicalBaseDir: path.dirname(winnerPath),
+        skill: skill(winnerPath, { name: "shared" })
+      },
+      fixtures[1]!
+    ];
+    const changedWinner = await catalog.refresh(workspace);
+    expect(changedWinner.catalogRevision).not.toBe(changedLoser.catalogRevision);
+    expect(changedWinner.effectiveRevision).not.toBe(changedLoser.effectiveRevision);
+    expect(changedWinner.candidates[1]?.diagnostics[0]?.collision?.winnerPath).toBe(winnerPath);
   });
 
   it("deep-freezes published clones without freezing loader-owned Pi objects", async () => {

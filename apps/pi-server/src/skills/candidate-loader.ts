@@ -50,7 +50,23 @@ function piDiagnostic(diagnostic: ResourceDiagnostic): SkillDiagnostic {
     code: `pi_${diagnostic.type}`,
     level: diagnostic.type === "error" ? "error" : "warning",
     message: diagnostic.message,
-    ...(diagnostic.path ? { path: diagnostic.path } : {})
+    ...(diagnostic.path ? { path: diagnostic.path } : {}),
+    ...(diagnostic.collision
+      ? {
+          collision: {
+            resourceType: diagnostic.collision.resourceType,
+            name: diagnostic.collision.name,
+            winnerPath: diagnostic.collision.winnerPath,
+            loserPath: diagnostic.collision.loserPath,
+            ...(diagnostic.collision.winnerSource === undefined
+              ? {}
+              : { winnerSource: diagnostic.collision.winnerSource }),
+            ...(diagnostic.collision.loserSource === undefined
+              ? {}
+              : { loserSource: diagnostic.collision.loserSource })
+          }
+        }
+      : {})
   };
 }
 
