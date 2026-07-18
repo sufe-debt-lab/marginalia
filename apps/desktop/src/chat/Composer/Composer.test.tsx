@@ -240,6 +240,45 @@ describe("Composer", () => {
     }
   );
 
+  it.each([
+    {
+      label: "typing whitespace after a Skill query",
+      before: "$pdf",
+      edit: " ",
+      expected: "$pdf "
+    },
+    { label: "deleting the Skill trigger", before: "$", edit: "{Backspace}", expected: "" }
+  ])("closes the Skill menu after $label", async ({ before, edit, expected }) => {
+    const onAddSkill = vi.fn();
+    render(
+      <Composer
+        api={api([candidate("pdf")])}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        onAddSkill={onAddSkill}
+        onRemoveSkill={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.type(input, before);
+    expect(await screen.findByRole("listbox", { name: "Skills" })).toBeInTheDocument();
+
+    await userEvent.type(input, edit);
+
+    expect(screen.queryByRole("listbox", { name: "Skills" })).not.toBeInTheDocument();
+    expect(input).toHaveValue(expected);
+    expect(onAddSkill).not.toHaveBeenCalled();
+  });
+
   it("shows only effective enabled explicit-eligible named Skills", async () => {
     const eligible = candidate("eligible");
     const client = api([
@@ -310,6 +349,38 @@ describe("Composer", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("$pdf")).toBeInTheDocument();
     expect(client.listSkills).toHaveBeenCalledTimes(3);
+  });
+
+  it("blocks stale Skill rows when an open refresh returns another workspace", async () => {
+    const pdf = candidate("pdf");
+    const client = api([pdf]);
+    (client.listSkills as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(skillSnapshot([pdf]))
+      .mockResolvedValueOnce({ ...skillSnapshot([pdf]), workspaceId: "other" });
+    render(
+      <Composer
+        api={client}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        onAddSkill={vi.fn()}
+        onRemoveSkill={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    await waitFor(() => expect(client.listSkills).toHaveBeenCalledTimes(1));
+
+    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "$");
+
+    expect(await screen.findByText("Skills could not be refreshed")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /\$pdf/i })).not.toBeInTheDocument();
   });
 
   it("renders Skill chips in selection order and delegates canonical removal", async () => {

@@ -74,8 +74,9 @@ document、approval 等普通 method 仍只发送 JSON header。Skills list/cont
 selection 按调用方顺序序列化。
 
 renderer 的 `useSkillCatalog` 在 Composer 挂载、workspace 切换和每次新打开 `$` 或 `/` 菜单时调用
-`listSkills()`。它用 request generation 与 requested workspace 同时拒绝迟到或 workspace 不匹配的响应；
-刷新失败保留最后成功 snapshot，但 picker 进入 error/retry 状态，不能从旧 snapshot 新增 selection。
+`listSkills()`。它用 request generation 与 requested workspace 拒绝迟到响应；当前请求返回 workspace
+不匹配的 snapshot 时则记录为 refresh failure。失败都保留最后成功 snapshot，但 picker 进入 error/retry
+状态，不能从旧 snapshot 新增 selection。
 当前 Composer 不调用 `setSkillEnabled()` 或 `readSkillContent()`；这两个 method 留给尚未实现的 Settings
 管理界面。
 

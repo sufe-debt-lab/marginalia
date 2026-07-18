@@ -115,8 +115,10 @@ session 或等待接受期间的后续编辑会保留，Retry 也不会覆盖当
 stream EOF 或切换视图不会把未接受输入误记为已发送。
 
 `useSkillCatalog` 是 Composer 的 catalog controller：挂载、workspace 切换和每次菜单从关闭变为 `$` 或
-`/` 时刷新，并以 request generation 和 workspace identity 丢弃迟到响应。刷新失败保留最后成功 snapshot
-供已选 chip 展示，但 picker 只显示 error/retry，不暴露 stale row。可选 candidate 必须同时满足非空
+`/` 时刷新，并以 request generation 和 workspace identity 丢弃迟到响应；当前响应的 workspace identity
+不匹配则进入 refresh error。失败保留最后成功 snapshot 供已选 chip 展示，但 picker 只显示 error/retry，
+不暴露 stale row。trigger 因空格、删除或其他编辑失效时，Composer 同步清空 Slash、Skill 与 mention 菜单
+状态，不修改受控正文或添加 selection。可选 candidate 必须同时满足非空
 `name`、`enabled`、`status === "effective"` 和 `explicitEligible`。`$` 菜单只显示 Skills；`/` 菜单把
 Commands 与 Skills 作为视觉分区，但使用同一个 flat selectable row 序列，所以标题不会进入键盘导航。
 两个入口都提交 exact `{ name, canonicalPath }`，删除触发 token，并由 scoped turn draft store 按 canonical

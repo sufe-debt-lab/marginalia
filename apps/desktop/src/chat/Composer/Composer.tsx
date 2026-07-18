@@ -164,6 +164,7 @@ export function Composer(props: Props) {
     setTrigger(next);
     if (!next) {
       setSlashQuery(null);
+      setSkillQuery(null);
       setMentionSuggestions([]);
       return;
     }

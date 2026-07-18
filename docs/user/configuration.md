@@ -97,7 +97,8 @@ Composer 会在挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜
 每轮执行前刷新。磁盘编辑、创建、删除和 symlink retarget 会在下一次显式 refresh 时体现。重复刷新同一
 磁盘与 preference 状态不会改变 revision：管理可见 candidate、diagnostic、preview 或 enabled/status
 变化会更新 `catalogRevision`；只有 effective Skill 的 metadata、canonical path、顺序或正文 hash 变化
-才更新 `effectiveRevision`。
+才更新 `effectiveRevision`。如果响应中的 workspace identity 与当前请求不一致，Composer 把本次刷新视为
+失败并提供重试，不会重新开放最后成功 snapshot 中的旧候选行。
 
 Run request body 最多 4 MiB；最多提交 16 个 raw Skill selections，且每个 name/path 分别最多 16 KiB
 UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB；

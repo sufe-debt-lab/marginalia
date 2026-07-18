@@ -102,4 +102,25 @@ describe("useSkillCatalog", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.snapshot).toBeNull();
   });
+
+  it("keeps the last snapshot but exposes an error when refresh returns another workspace", async () => {
+    const api = {
+      listSkills: vi
+        .fn<ApiClient["listSkills"]>()
+        .mockResolvedValueOnce(snapshot("w1", "good"))
+        .mockResolvedValueOnce(snapshot("w2", "mismatched"))
+    } as unknown as ApiClient;
+    const { result } = renderHook(() => useSkillCatalog(api, "w1"));
+    await waitFor(() => expect(result.current.snapshot?.catalogRevision).toBe("good"));
+
+    let refreshed!: SkillCatalogSnapshot | null;
+    await act(async () => {
+      refreshed = await result.current.refresh();
+    });
+
+    expect(refreshed).toBeNull();
+    expect(result.current.snapshot?.catalogRevision).toBe("good");
+    expect(result.current.error).toEqual(expect.any(Error));
+    expect(result.current.loading).toBe(false);
+  });
 });

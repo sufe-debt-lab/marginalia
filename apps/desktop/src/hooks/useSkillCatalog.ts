@@ -38,7 +38,10 @@ export function useSkillCatalog(
     try {
       const next = await api.listSkills(requestedWorkspace);
       if (id !== requestId.current || workspaceRef.current !== requestedWorkspace) return null;
-      if (next.workspaceId !== requestedWorkspace) return null;
+      if (next.workspaceId !== requestedWorkspace) {
+        setError(new Error("Skill catalog response workspace mismatch"));
+        return null;
+      }
       setSnapshot(next);
       setError(null);
       return next;
