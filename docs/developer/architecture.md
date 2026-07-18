@@ -122,8 +122,28 @@ SQLite schema 由 `migrate()`（`apps/pi-server/src/db/migrations.ts#migrate`）
 `skill_preferences`。`createSkillPreferenceStore()`
 （`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）以调用方已解析的 canonical
 path 原字符串保存启停状态，缺省为启用，并通过单次 `list()` 为后续 Catalog 构造偏好 map。Store 不
-检查文件是否仍存在，也不自动清理记录，因此被删除 Skill 的偏好会作为 tombstone 保留。Catalog、
-discovery 和 HTTP 接入仍由后续任务实现。
+检查文件是否仍存在，也不自动清理记录，因此被删除 Skill 的偏好会作为 tombstone 保留。Catalog
+和 HTTP 接入仍由后续任务实现。
+
+### Skill discovery descriptor
+
+`discoverSkillFiles()`（`apps/pi-server/src/skills/discovery.ts#discoverSkillFiles`）实现六级磁盘 root
+枚举：workspace `.marginalia`、workspace `.pi`、由近到远的 ancestor `.agents`、user
+`.marginalia`、user `.pi`、user `.agents`。Ancestor 在 Git root（`.git` 可为目录或 worktree
+文件）停止并包含该 root；没有 Git marker 时到 filesystem root。每个已存在 root 通过 realpath 与
+global `~/.agents/skills` 比较，避免同一 global root 以 workspace ancestor 和 user source 重复出现；
+缺失 root 不会让 discovery 失败。
+
+每个 root 委托 Pi 导出的 `loadSkillsFromDir()` 扫描，以复用 Pi 的 root Markdown、递归
+`SKILL.md`、ignore 和 symlink 语义。Discovery 合并 `skills[].filePath` 与
+`diagnostics[].path`，因此缺 description 等未被 Pi 解析成 Skill 的文件仍有 descriptor，后续阶段可
+产生完整 invalid 状态。Agents mode 在合并后只保留 basename 为 `SKILL.md` 的 path。
+
+该层只产出 `DiscoveredSkillFile` descriptor：discovered path、source root、POSIX relative path、
+source/scope/mode、source priority 和 ancestor depth。它不读取或解析 candidate metadata，不做
+canonical file identity 去重、preference、name collision 或 effective winner 判定；这些属于后续
+Catalog pipeline。输出固定按 source priority、ancestor depth、relative path 的 Unicode code-point
+顺序排列，不依赖 `readdir` 顺序。
 
 ## Agent session 与资源
 

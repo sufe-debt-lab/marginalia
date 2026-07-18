@@ -48,6 +48,29 @@ Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/mode
 数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
 capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。
 
+## Skills 磁盘发现
+
+Skills catalog 的磁盘发现层按固定的 first-wins 优先级枚举候选文件：
+
+| Priority | Directory                        | Scope     | Mode        |
+| -------- | -------------------------------- | --------- | ----------- |
+| 1        | `<workspace>/.marginalia/skills` | workspace | Pi mode     |
+| 2        | `<workspace>/.pi/skills`         | workspace | Pi mode     |
+| 3        | ancestor `.agents/skills`        | workspace | Agents mode |
+| 4        | `~/.marginalia/skills`           | user      | Pi mode     |
+| 5        | `~/.pi/agent/skills`             | user      | Pi mode     |
+| 6        | `~/.agents/skills`               | user      | Agents mode |
+
+Pi mode 兼容 Pi 的目录语义：发现 root 下的 Markdown 文件，也递归发现目录中的 `SKILL.md`。Agents
+mode 只保留 `SKILL.md`，不会把 `.agents/skills` root 下的其他 Markdown 文件当作 Skill。各 source
+内部按 POSIX relative path 的 Unicode code-point 顺序稳定排列，文件系统返回目录项的顺序不会改变
+结果。
+
+Workspace 的 ancestor `.agents/skills` 从 workspace root 向上按由近到远枚举；发现 `.git` 目录或
+worktree `.git` 文件时包含该 Git root 后停止，没有 Git marker 时继续到 filesystem root。
+`.marginalia` 与 `.pi` 不向 workspace 祖先查找。若某个 ancestor root 经 realpath 解析后等于
+`~/.agents/skills`，它会从 workspace 来源排除，只在 priority 6 出现一次。缺失的目录会被安静忽略。
+
 ## 环境变量
 
 | Variable                       | Scope                  | Behavior                                                                |

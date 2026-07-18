@@ -872,7 +872,7 @@ export type SkillDiscoveryOptions = {
 export function discoverSkillFiles(options: SkillDiscoveryOptions): Promise<DiscoveredSkillFile[]>;
 ```
 
-- [ ] **Step 1: 写 discovery table-driven 失败测试**
+- [x] **Step 1: 写 discovery table-driven 失败测试**
 
 在临时 home/workspace/repo 中创建同名和不同名 fixtures，固定完整顺序：
 
@@ -893,7 +893,7 @@ expect(result.map((item) => item.source)).toEqual([
 root；ancestor canonical root 等于 `~/.agents/skills` 时排除；symlink root；同 source 内用 POSIX
 relative path 的 Unicode code-point 顺序，不依赖 readdir 顺序。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -903,7 +903,7 @@ pnpm --filter @marginalia/pi-server test -- skill-discovery
 
 Expected: FAIL，模块不存在。
 
-- [ ] **Step 3: 实现 root 枚举**
+- [x] **Step 3: 实现 root 枚举**
 
 ```ts
 function sourceRoots(workspaceRoot: string | null, homeDir: string): SkillSourceRoot[] {
@@ -932,7 +932,7 @@ function sourceRoots(workspaceRoot: string | null, homeDir: string): SkillSource
 `.marginalia`/`.pi` 只看 workspace root；ancestor `.agents` 从 workspace 向上到 Git root（含）或
 filesystem root。用 `realpath` 比较 global agents root；不存在的 root 不报 fatal。
 
-- [ ] **Step 4: 复用 Pi 目录扫描语义并稳定排序**
+- [x] **Step 4: 复用 Pi 目录扫描语义并稳定排序**
 
 对每个 root 调用 `loadSkillsFromDir({ dir, source })`，把 `skills[].filePath` 和
 `diagnostics[].path` 的文件 path 合并；Agents mode 再过滤 `basename(path) === "SKILL.md"`。
@@ -953,13 +953,13 @@ export function unicodeCodePointCompare(left: string, right: string): number {
 
 排序 key 为 `sourcePriority` → `ancestorDepth` → normalized POSIX `relativePath`。
 
-- [ ] **Step 5: 更新磁盘目录正式文档**
+- [x] **Step 5: 更新磁盘目录正式文档**
 
 `docs/user/configuration.md` 写六级顺序、两种 discovery mode、nearest ancestor/Git stop 与
 global duplicate 排除；`docs/developer/architecture.md` 记录 discovery 只产 descriptor，不决定
 valid/effective。
 
-- [ ] **Step 6: focused 验证**
+- [x] **Step 6: focused 验证**
 
 Run:
 
@@ -971,7 +971,33 @@ pnpm docs:check
 
 Expected: PASS，重复执行得到相同顺序。
 
-- [ ] **Step 7: 提交**
+**Task 5 results (2026-07-18):**
+
+- 实际完成：新增 descriptor-only discovery 类型和实现，按六级 source priority、ancestor depth、
+  Unicode code-point POSIX relative path 输出稳定顺序；ancestor nearest-first，包含 `.git` 目录或
+  worktree `.git` 文件标记的 Git root，无 Git 时继续到 filesystem root。Global Agents root 通过
+  realpath 排除 canonical ancestor duplicate；缺失 root 非 fatal。
+- Pi 兼容：每个 root 直接调用导出的 `loadSkillsFromDir()`，合并 `skills[].filePath` 与
+  `diagnostics[].path` 后按 mode 过滤，因此 Pi mode 同时保留 root Markdown 与 nested `SKILL.md`，
+  Agents mode 只保留 `SKILL.md`，缺 description 的文件仍进入后续阶段。本任务不解析 metadata、
+  canonicalize candidate identity、读取 preference 或决定 collision/effective。
+- RED：prescribed focused command exit 1；Vitest 无法加载尚不存在的
+  `apps/pi-server/src/skills/discovery.ts`，1 个 suite 按预期失败且未收集测试。
+- GREEN：focused suite 13/13 通过，并连续执行两次得到相同结果；pi-server typecheck 和
+  `pnpm docs:check` 通过。最终 `pnpm verify` 通过，包含 docs 28、chat-core 14、pi-server 173（另
+  1 个 opt-in smoke skip）、desktop 330 tests 及全部 builds。
+- 正式文档：更新 `docs/user/configuration.md` 的六级目录、两种 mode、ancestor/Git stop、global
+  duplicate 与稳定顺序契约；更新 `docs/developer/architecture.md` 的 Pi scanner 复用和
+  descriptor-only 阶段边界。
+- Review：base、architecture 和 adversarial pass 无 Task 5 契约 finding。Security pass 记录两项
+  Pi loader inherited/upstream residual risk：候选由 Pi 以同步、无大小上限方式读取，超大文件可能
+  阻塞或耗尽内存；Pi 的递归 directory symlink traversal 缺 active-realpath cycle guard，循环 symlink
+  可能造成 CPU hang。最终 broad review 应继续跟踪这两项；本任务按已确认的 Pi-compatible scan
+  契约不自建 prewalker/limit，也不改变 Pi symlink semantics。
+- 偏差与遗留：无实现偏差；除上述 inherited/upstream Pi loader 风险外无新增遗留。Task 5 没有 UI
+  变化，不需要 visual verification。
+
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/pi-server/src/skills apps/pi-server/test/skill-discovery.test.ts docs/user/configuration.md docs/developer/architecture.md
