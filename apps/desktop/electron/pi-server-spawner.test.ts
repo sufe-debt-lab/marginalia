@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createReadyLineParser,
   resolvePiServerCwd,
@@ -18,6 +18,49 @@ class FakeChild extends EventEmitter {
     return true;
   }
 }
+
+afterEach(() => vi.unstubAllEnvs());
+
+describe("createLaunchEnvironment", () => {
+  it("removes inherited capability settings when no renderer origin is allowed", async () => {
+    vi.stubEnv("MARGINALIA_CAPABILITY_TOKEN", "stale-token");
+    vi.stubEnv("MARGINALIA_ALLOWED_ORIGIN", "https://evil.example");
+    const mod = await import("./pi-server-spawner.js");
+    const createLaunchEnvironment = Reflect.get(mod, "createLaunchEnvironment") as
+      | ((additions: Readonly<Record<string, string>>) => NodeJS.ProcessEnv)
+      | undefined;
+
+    const environment = createLaunchEnvironment?.({
+      MARGINALIA_CAPABILITY_TOKEN: "fresh-token"
+    });
+
+    expect(environment).toEqual(
+      expect.objectContaining({ MARGINALIA_CAPABILITY_TOKEN: "fresh-token" })
+    );
+    expect(environment).not.toHaveProperty("MARGINALIA_ALLOWED_ORIGIN");
+  });
+
+  it("replaces inherited capability settings with validated launch additions", async () => {
+    vi.stubEnv("MARGINALIA_CAPABILITY_TOKEN", "stale-token");
+    vi.stubEnv("MARGINALIA_ALLOWED_ORIGIN", "https://evil.example");
+    const mod = await import("./pi-server-spawner.js");
+    const createLaunchEnvironment = Reflect.get(mod, "createLaunchEnvironment") as
+      | ((additions: Readonly<Record<string, string>>) => NodeJS.ProcessEnv)
+      | undefined;
+
+    const environment = createLaunchEnvironment?.({
+      MARGINALIA_CAPABILITY_TOKEN: "fresh-token",
+      MARGINALIA_ALLOWED_ORIGIN: "http://127.0.0.1:5173"
+    });
+
+    expect(environment).toEqual(
+      expect.objectContaining({
+        MARGINALIA_ALLOWED_ORIGIN: "http://127.0.0.1:5173",
+        MARGINALIA_CAPABILITY_TOKEN: "fresh-token"
+      })
+    );
+  });
+});
 
 describe("createReadyLineParser", () => {
   it("parses ready messages split across stdout chunks", () => {

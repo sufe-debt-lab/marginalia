@@ -19,7 +19,7 @@ docs_impact:
 
 # Codex 风格 Skills 集成设计
 
-日期：2026-07-18 · 状态：书面规格已由用户确认，可进入实施计划
+日期：2026-07-18 · 状态：实施中
 
 ## 背景
 
@@ -242,8 +242,9 @@ Settings 只允许修改当前 snapshot 已发现的 candidate。任何启停操
 
 ## Skills capability token
 
-现有 pi-server 只监听 loopback，但没有认证且反射 Origin；新增 global Skill 枚举、预览和启停
-会把可读范围扩展到 workspace 外。Skills 正常产品路径上线前必须加入局部 capability：
+pi-server 只监听 loopback。Task 1 已为所有 run 加入进程 capability 并停止反射任意 Origin，
+但其他既有 route 仍未认证；新增 global Skill 枚举、预览和启停会把可读范围扩展到 workspace
+外，因此 Skills 正常产品路径同样必须使用这项局部 capability：
 
 1. Electron main 为每次 pi-server 进程生成高熵随机 token，并通过环境变量传入 child process。
 2. `pi-server:status` 经 preload 把 URL 和 token 交给可信 renderer；token 不写入数据库或日志。

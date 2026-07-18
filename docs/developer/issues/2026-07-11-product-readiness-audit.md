@@ -25,7 +25,7 @@ owner: repository-maintainers
 
 | ID                | Priority | Status      | Last verified | Target                     | Evidence                                                                                                                              |
 | ----------------- | -------- | ----------- | ------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| P0-SEC-001        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`                                                                                                           |
+| P0-SEC-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/security/capability.ts`、`apps/pi-server/src/app.ts`、`apps/desktop/electron/pi-server-spawner.ts`                |
 | P0-SEC-002        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
 | P0-SEC-003        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
 | P0-SEC-004        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`                                                                                  |
@@ -46,9 +46,16 @@ owner: repository-maintainers
 
 <!-- readiness-issue-inventory:end -->
 
-## P0-SEC-001: Loopback API 没有认证
+## P0-SEC-001: Loopback API 只有局部认证
 
-pi-server 通过 `cors({ origin: (origin) => origin })` 反射请求 origin，没有认证 middleware。随机 loopback 端口减少了直接暴露面，但不是授权机制。能发现端口的网页或本地进程可以调用 provider、workspace、文件和 run 接口。
+Task 1 已加入局部缓解：Electron 为每个 pi-server 进程生成高熵 token，所有 run 在读取业务数据
+前验证 bearer 和 Origin；CORS 只返回 packaged `null`/缺省 Origin 或已校验的开发 exact origin，
+不再反射任意网页来源。启动器在继承父进程环境前移除 capability token 和 allowed-origin，再注入
+本次启动生成/校验的值，缺失或无效 Vite 配置不会沿用旧 origin。
+
+P0 继续 open：workspace、provider、文件、审批等既有 route 仍不验证 bearer，raw 文件 URL 也
+没有凭据边界；缺少 Origin 的本地进程不受浏览器 CORS 限制。随机 loopback 端口和仅保护 run 的
+capability 都不是整套 API 的授权机制。
 
 修复目标：Electron 启动时生成进程级 secret，经 preload 提供给 renderer；除健康检查外的路由验证凭据；CORS 只允许明确的 renderer/dev origin；raw 文件不再依赖无认证 URL。
 

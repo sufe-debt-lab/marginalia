@@ -74,6 +74,15 @@ export function createReadyLineParser() {
   };
 }
 
+export function createLaunchEnvironment(
+  additions: Readonly<Record<string, string>>
+): NodeJS.ProcessEnv {
+  const inherited = { ...process.env };
+  delete inherited.MARGINALIA_CAPABILITY_TOKEN;
+  delete inherited.MARGINALIA_ALLOWED_ORIGIN;
+  return { ...inherited, ...additions };
+}
+
 async function defaultLaunch(isPackaged: boolean): Promise<LaunchFn> {
   if (isPackaged) {
     // Packaged: run on Electron's bundled Node so the client needs no Node install, and
@@ -82,7 +91,7 @@ async function defaultLaunch(isPackaged: boolean): Promise<LaunchFn> {
     return (scriptPath, cwd, env) =>
       utilityProcess.fork(scriptPath, [], {
         cwd,
-        env: { ...process.env, ...env },
+        env: createLaunchEnvironment(env),
         stdio: ["ignore", "pipe", "pipe"]
       });
   }
@@ -94,7 +103,7 @@ async function defaultLaunch(isPackaged: boolean): Promise<LaunchFn> {
   return (scriptPath, cwd, env) =>
     spawn(nodePath, [scriptPath], {
       cwd,
-      env: { ...process.env, ...env },
+      env: createLaunchEnvironment(env),
       stdio: ["ignore", "pipe", "pipe"]
     });
 }

@@ -286,6 +286,8 @@ Expected: PASS；缺 token 的 run 是 401，其他既有 API 不变。
   `pnpm docs:check` 通过；最终 `pnpm verify` 全通过。
 - 正式文档：更新 `docs/developer/api.md`、`docs/developer/architecture.md` 和
   `docs/developer/development.md`。
+- Formal review fixes：启动器在 dev/packaged 两条路径继承环境前移除旧 capability token 和
+  allowed origin，再应用本次可信注入；同步 user、product status 与 readiness audit 的局部认证边界。
 - 偏差与遗留：无实现偏差；局部 capability 不关闭 `P0-SEC-001`。
 
 - [x] **Step 8: 提交**

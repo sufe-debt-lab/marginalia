@@ -85,7 +85,11 @@ Save to workspace 是用户直接触发的写入，不经过 agent 审批卡。�
 | pi AuthStorage   | `~/.marginalia/auth.json`              | 与独立 pi CLI 目录分开                                  |
 | UI preferences   | Electron localStorage `marginalia-app` | 保存语言、布局、权限、推理档位和模型选择                |
 
-本机 pi-server 监听随机 loopback 端口，但当前没有认证，并会反射请求 origin。`127.0.0.1` 不是授权边界；在这个问题修复前，不要把 Alpha 版本用于高敏感资料。
+本机 pi-server 监听随机 loopback 端口。每个 Electron server 进程会生成独立 capability token，
+所有 run 请求必须同时通过 bearer 和 Origin 检查；CORS 不再反射任意网页来源。但 workspace、
+provider、文件、审批等既有 route 仍未认证，缺少 Origin 的本地请求也不受 CORS 约束。
+`127.0.0.1` 和这项局部 run 防护都不是整套 API 的授权边界；在 `P0-SEC-001` 完整修复前，
+不要把 Alpha 版本用于高敏感资料。
 
 ## 当前不可用
 

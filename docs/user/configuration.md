@@ -45,22 +45,25 @@ Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/mode
 
 `defaultDbPath()` 通过 `os.homedir()` 解析用户目录。测试或临时运行可以用 `MARGINALIA_DB_PATH` 覆盖数据库路径。
 
-数据库、备份和崩溃采集都可能包含明文 key。应用当前也没有本机 API 认证，不适合保存高价值凭据。
+数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
+capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。
 
 ## 环境变量
 
-| Variable                       | Scope                  | Behavior                                                             |
-| ------------------------------ | ---------------------- | -------------------------------------------------------------------- |
-| `MARGINALIA_DB_PATH`           | pi-server              | 覆盖 SQLite 文件路径                                                 |
-| `MARGINALIA_NODE_PATH`         | desktop dev            | 指定开发模式启动 pi-server 的 Node binary                            |
-| `VITE_DEV_SERVER_URL`          | desktop dev            | 让 Electron 加载指定的 loopback Vite URL；`pnpm dev` 自动设置        |
-| `MARGINALIA_FAKE_AGENT`        | screenshot/local debug | 设为 `1` 时使用脚本化 fake agent，不连接真实模型；不要用于打包或生产 |
-| `MARGINALIA_SCREENSHOT_VERIFY` | screenshot             | 启用隔离和确定性截图模式                                             |
-| `MARGINALIA_USER_DATA_DIR`     | screenshot             | 覆盖 Electron `userData` 目录                                        |
-| `MINIMAX_CN_API_KEY`           | live screenshot        | 真实 MiniMax opt-in 场景使用                                         |
-| `MINIMAX_CN_BASE_URL`          | live screenshot        | 覆盖 live 场景 URL                                                   |
-| `MINIMAX_CN_MODEL`             | live screenshot        | 覆盖 live 场景 model                                                 |
-| `CSC_IDENTITY_AUTO_DISCOVERY`  | packaging/CI           | 设为 `false`，阻止当前未签名构建自动发现 macOS identity              |
+| Variable                       | Scope                  | Behavior                                                                |
+| ------------------------------ | ---------------------- | ----------------------------------------------------------------------- |
+| `MARGINALIA_DB_PATH`           | pi-server              | 覆盖 SQLite 文件路径                                                    |
+| `MARGINALIA_NODE_PATH`         | desktop dev            | 指定开发模式启动 pi-server 的 Node binary                               |
+| `MARGINALIA_CAPABILITY_TOKEN`  | Electron -> pi-server  | Electron 每次启动自动注入；父进程中的同名值会被移除并替换，不应手工设置 |
+| `MARGINALIA_ALLOWED_ORIGIN`    | Electron -> pi-server  | 只注入已校验的 loopback Vite exact origin；缺失或无效配置不会继承旧值   |
+| `VITE_DEV_SERVER_URL`          | desktop dev            | 让 Electron 加载指定的 loopback Vite URL；`pnpm dev` 自动设置           |
+| `MARGINALIA_FAKE_AGENT`        | screenshot/local debug | 设为 `1` 时使用脚本化 fake agent，不连接真实模型；不要用于打包或生产    |
+| `MARGINALIA_SCREENSHOT_VERIFY` | screenshot             | 启用隔离和确定性截图模式                                                |
+| `MARGINALIA_USER_DATA_DIR`     | screenshot             | 覆盖 Electron `userData` 目录                                           |
+| `MINIMAX_CN_API_KEY`           | live screenshot        | 真实 MiniMax opt-in 场景使用                                            |
+| `MINIMAX_CN_BASE_URL`          | live screenshot        | 覆盖 live 场景 URL                                                      |
+| `MINIMAX_CN_MODEL`             | live screenshot        | 覆盖 live 场景 model                                                    |
+| `CSC_IDENTITY_AUTO_DISCOVERY`  | packaging/CI           | 设为 `false`，阻止当前未签名构建自动发现 macOS identity                 |
 
 ## 文档读取限制
 
@@ -76,7 +79,11 @@ Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/mode
 
 ## 本机 API
 
-pi-server 监听 `127.0.0.1` 的随机端口。当前除随机端口外没有认证，并反射请求 origin。Loopback 只限制网络接口，不负责授权。完整路由和已知边界见[API 参考](../developer/api.md)。
+pi-server 监听 `127.0.0.1` 的随机端口。Electron 为每个 server 进程生成 capability token；run
+请求要求 bearer，浏览器请求还要匹配 packaged `null`/缺省 Origin 或已校验的开发 origin。
+CORS 不再反射任意来源，但 workspace、provider、文件、审批等既有 route 仍未认证，Origin
+缺失的本地客户端也可以调用它们。Loopback 只限制网络接口，不负责完整授权。完整路由和已知
+边界见[API 参考](../developer/api.md)。
 
 ## 相关文档
 
