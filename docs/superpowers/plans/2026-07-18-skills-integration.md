@@ -1969,7 +1969,7 @@ export class ApiError extends Error {
 }
 ```
 
-- [ ] **Step 1: 写 client 失败测试**
+- [x] **Step 1: 写 client 失败测试**
 
 断言三个 Skills methods 和 run 都有 bearer；普通 `listWorkspaces` 没 bearer；workspaceId/path query
 使用 `URLSearchParams`；PATCH body 精确；401/409/413 保留 status/code/details，尤其：
@@ -1985,7 +1985,7 @@ await expect(api.runChat("s1", runInput)).rejects.toMatchObject({
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -1995,7 +1995,7 @@ pnpm --filter @marginalia/desktop test -- client.skills client useStreamingChat
 
 Expected: FAIL，client 没 Skills DTO/methods，错误被压扁为普通 Error。
 
-- [ ] **Step 3: 实现统一 response error decoder**
+- [x] **Step 3: 实现统一 response error decoder**
 
 ```ts
 async function apiError(response: Response): Promise<ApiError> {
@@ -2008,7 +2008,7 @@ async function apiError(response: Response): Promise<ApiError> {
 
 `request`、`requestNoContent`、`runChat` 都使用此 decoder；不再通过 message 字符串判断 409。
 
-- [ ] **Step 4: 增加 Skills methods 与 run selection**
+- [x] **Step 4: 增加 Skills methods 与 run selection**
 
 ```ts
 listSkills(workspaceId?: string | null): Promise<SkillCatalogSnapshot>;
@@ -2026,7 +2026,7 @@ readSkillContent(input: {
 `runChat` input 增加 `skills?: SkillSelection[]`，body 原顺序传输。三个 Skills methods 与 run 使用
 `sensitiveHeaders()`，其余 API 继续用普通 JSON header。
 
-- [ ] **Step 5: focused 验证**
+- [x] **Step 5: focused 验证**
 
 Run:
 
@@ -2037,12 +2037,36 @@ pnpm --filter @marginalia/desktop typecheck
 
 Expected: PASS；typed errors 的 details 未丢失。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add apps/desktop/src/api apps/desktop/src/hooks/useStreamingChat.test.ts
 git commit -m "feat(desktop): add typed Skills API client"
 ```
+
+**Task 11 results (2026-07-18):**
+
+- 实际完成：Desktop 导出与 public server 对齐的 Skill selection/catalog/candidate/diagnostic 类型；
+  diagnostic 保留 optional structured collision identity，invalid selection 保留 optional `winnerPath`。
+  `SkillSource` 使用服务端当前六值 union，DTO 保持纯 JSON-serializable data。
+- API boundary：新增 list/state/content 三个 Skills method，workspace/path 统一由 `URLSearchParams` 编码，
+  PATCH 只发送 `{ path, enabled, workspaceId? }`，run 原序发送 optional selections。只有这三个 method 与
+  run 使用进程 bearer；普通 API 继续只发送 JSON header。
+- Error contract：`request()`、204 helper 与 run startup 复用 `ApiError` decoder，保留 HTTP status、body
+  error code 和完整 JSON object details；body message 优先作为展示 message，非 JSON/non-object 稳定降级为
+  `http_error` 与空 details。
+- RED：指定 focused suite 为 11 failed / 27 passed；失败精确来自三个 Skills method 与 `ApiError` 缺失，
+  以及旧 client 把 401/409/413 压成普通 Error。DTO source exactness 的 type-level RED 也按预期拒绝宽泛
+  `string`。
+- GREEN：focused suite 39/39、desktop typecheck、docs static/exact diff、`git diff --check` 与完整
+  `pnpm verify` 通过；完整 gate 为 docs 28、chat-core 37、pi-server 270 passed + 1 opt-in skip、desktop
+  342 tests，并通过 format/lint/typecheck/build。
+- 正式文档：developer API 记录 desktop bearer allowlist、query/body/order contract、typed error fields 与
+  non-JSON fallback。`useStreamingChat` 只新增 typed-error compatibility regression，没有改变 acceptance、draft
+  或 UI 行为；这些仍归 Task 12/15。
+- Review：`/check` deep review on target；security specialist 0 findings，architecture/adversarial pass 0
+  findings。首次 full gate 仅发现 `client.test.ts` Prettier drift，格式化后完整 gate 通过。无新增依赖、无 UI
+  可见变化，因此本任务不运行 visual verification；无实现偏差或遗留问题。
 
 ---
 

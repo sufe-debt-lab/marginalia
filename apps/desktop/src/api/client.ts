@@ -29,6 +29,94 @@ export type Provider = {
   enabled?: boolean;
 };
 
+export type SkillSelection = { name: string; path: string };
+export type SkillStatus = "effective" | "shadowed" | "disabled" | "invalid";
+export type SkillSource =
+  | "workspace_marginalia"
+  | "workspace_pi"
+  | "ancestor_agents"
+  | "user_marginalia"
+  | "user_pi"
+  | "user_agents";
+
+export type SkillDiagnostic = {
+  code: string;
+  level: "warning" | "error";
+  message: string;
+  path?: string;
+  collision?: {
+    resourceType: "extension" | "skill" | "prompt" | "theme";
+    name: string;
+    winnerPath: string;
+    loserPath: string;
+    winnerSource?: string;
+    loserSource?: string;
+  };
+};
+
+export type InvalidSkillSelection = {
+  name: string;
+  path: string;
+  reason:
+    | "missing"
+    | "disabled"
+    | "invalid"
+    | "shadowed"
+    | "name_mismatch"
+    | "too_large"
+    | "unsupported_identifier";
+  winnerPath?: string;
+};
+
+export type SkillCandidate = {
+  name: string | null;
+  description: string | null;
+  discoveredPath: string;
+  canonicalPath: string;
+  source: SkillSource;
+  scope: "workspace" | "user";
+  status: SkillStatus;
+  enabled: boolean;
+  effective: boolean;
+  explicitOnly: boolean;
+  explicitEligible: boolean;
+  shadowedBy: string | null;
+  bytesTotal: number;
+  diagnostics: SkillDiagnostic[];
+};
+
+export type SkillCatalogSnapshot = {
+  workspaceId: string | null;
+  catalogRevision: string;
+  effectiveRevision: string;
+  refreshedAt: number;
+  candidates: SkillCandidate[];
+  diagnostics: SkillDiagnostic[];
+};
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string,
+    readonly details: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function apiError(response: Response): Promise<ApiError> {
+  const parsed = (await response.json().catch(() => ({}))) as unknown;
+  const body =
+    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  const code = typeof body.error === "string" ? body.error : "http_error";
+  const message = typeof body.message === "string" ? body.message : code;
+  return new ApiError(message, response.status, code, body);
+}
+
 export type RunEvent = {
   type: string;
   run_id?: string;
@@ -120,6 +208,43 @@ export class ApiClient {
 
   listProviders() {
     return this.request<Provider[]>("/providers");
+  }
+
+  listSkills(workspaceId?: string | null): Promise<SkillCatalogSnapshot> {
+    const query = new URLSearchParams();
+    if (workspaceId != null) query.set("workspaceId", workspaceId);
+    const search = query.toString();
+    return this.request<SkillCatalogSnapshot>(`/skills${search ? `?${search}` : ""}`, {
+      headers: this.sensitiveHeaders()
+    });
+  }
+
+  setSkillEnabled(input: {
+    path: string;
+    enabled: boolean;
+    workspaceId?: string | null;
+  }): Promise<SkillCatalogSnapshot> {
+    const body = {
+      path: input.path,
+      enabled: input.enabled,
+      ...(input.workspaceId != null ? { workspaceId: input.workspaceId } : {})
+    };
+    return this.request<SkillCatalogSnapshot>("/skills/state", {
+      method: "PATCH",
+      headers: this.sensitiveHeaders(),
+      body: JSON.stringify(body)
+    });
+  }
+
+  readSkillContent(input: { path: string; workspaceId?: string | null }): Promise<{
+    path: string;
+    content: string;
+    truncated: boolean;
+    bytesTotal: number;
+  }> {
+    const query = new URLSearchParams({ path: input.path });
+    if (input.workspaceId != null) query.set("workspaceId", input.workspaceId);
+    return this.request(`/skills/content?${query}`, { headers: this.sensitiveHeaders() });
   }
 
   createProvider(input: {
@@ -216,6 +341,7 @@ export class ApiClient {
       model?: string;
       message: string;
       contextFiles?: string[];
+      skills?: SkillSelection[];
       permission?: "full" | "ask" | "readonly";
       reasoning?: "low" | "medium" | "high" | "xhigh";
     },
@@ -228,10 +354,7 @@ export class ApiClient {
       signal: options.signal
     });
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
-        error?: string;
-      };
-      throw new Error(error.error ?? response.statusText);
+      throw await apiError(response);
     }
     return streamSse<RunEvent>(response.body);
   }
@@ -244,10 +367,7 @@ export class ApiClient {
   async requestNoContent(path: string, method: string): Promise<void> {
     const response = await fetch(`${this.baseUrl}${path}`, { method });
     if (response.status === 204) return;
-    const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
-      error?: string;
-    };
-    throw new Error(error.error ?? response.statusText);
+    throw await apiError(response);
   }
 
   async getBranch(workspaceId: string): Promise<string | null> {
@@ -267,10 +387,7 @@ export class ApiClient {
       headers: { "content-type": "application/json", ...init.headers }
     });
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({ error: response.statusText }))) as {
-        error?: string;
-      };
-      throw new Error(error.error ?? response.statusText);
+      throw await apiError(response);
     }
     return (await response.json()) as T;
   }

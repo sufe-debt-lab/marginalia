@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatAssistantMessage, ChatToolResult } from "@marginalia/chat-core";
-import type { ApiClient, RunEvent } from "@/api/client.js";
+import { ApiError, type ApiClient, type RunEvent } from "@/api/client.js";
 import { useStreamingChat } from "./useStreamingChat.js";
 
 async function* makeEvents(events: RunEvent[]) {
@@ -193,6 +193,26 @@ describe("useStreamingChat", () => {
       await result.current.send("hi", []);
     });
     await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
+  });
+
+  it("surfaces a typed API error message without creating an assistant bubble", async () => {
+    const onError = vi.fn();
+    const onAssistantStart = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => {
+        throw new ApiError("Selections changed", 409, "skill_precondition_failed", {
+          invalidSelections: [{ name: "pdf", path: "/old", reason: "missing" }]
+        });
+      })
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError, onAssistantStart });
+
+    await act(async () => {
+      await result.current.send("hi", []);
+    });
+
+    expect(onError).toHaveBeenCalledWith("Selections changed");
+    expect(onAssistantStart).not.toHaveBeenCalled();
   });
 
   it("appends a toolResult entry matched by toolCallId", async () => {

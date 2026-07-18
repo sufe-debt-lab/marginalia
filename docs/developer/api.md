@@ -68,6 +68,16 @@ approval 等既有 API 不带 bearer，保持原有认证边界。
 `Access-Control-Allow-Origin`。Electron 开发模式只允许经过 loopback URL 校验的 Vite origin；
 打包后的 `file:` renderer 使用 `Origin: null`。
 
+Desktop 的 `ApiClient` 为三个 Skills method 和 `runChat()` 附加上述 bearer；workspace、provider、
+document、approval 等普通 method 仍只发送 JSON header。Skills list/content query 由
+`URLSearchParams` 编码，state update 只发送 `{ path, enabled, workspaceId? }`，run 的 `skills`
+selection 按调用方顺序序列化。
+
+`request()`、204 response helper 和 `runChat()` 的非成功 response 共用结构化错误解码。JSON object
+响应会完整保存在 `ApiError.details`，同时公开 HTTP `status`、body 的字符串 `error` 作为 `code`，以及
+body 的字符串 `message`（缺省为 `code`）。非 JSON 或非 object response 稳定降级为
+`code/message: "http_error"` 和空 `details`，不会把 response text 当成新的错误协议。
+
 ## 健康检查
 
 ### `GET /health`
