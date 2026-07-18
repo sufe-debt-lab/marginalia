@@ -1746,7 +1746,7 @@ export function formatUserDisplayText(text: string, skillNames: readonly string[
 export function normalizeAgentPromptForDisplay(raw: string): UserDisplay;
 ```
 
-- [ ] **Step 1: 写 pure parser 失败测试**
+- [x] **Step 1: 写 pure parser 失败测试**
 
 覆盖 0/1/N blocks、五种 entity decoding、Skill 已从磁盘删除、normal attachment suffix、没有 Skill
 但有 attachment、malformed leading block 完整 fail-closed、malformed attachment 只保留 suffix、body 中
@@ -1766,7 +1766,7 @@ expect(normalizeAgentPromptForDisplay("<skill broken\n\nhello")).toEqual({
 
 Session test 在调用 `readMessagesFromSessionFile` 前后读取原文件并断言 bytes 完全相同。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -1777,7 +1777,7 @@ pnpm --filter @marginalia/pi-server test -- session-messages
 
 Expected: FAIL，shared helper 不存在，历史仍返回完整 prompt。
 
-- [ ] **Step 3: 实现严格 leading block parser**
+- [x] **Step 3: 实现严格 leading block parser**
 
 不使用 Pi `parseSkillBlock()`，因为它只支持单 block。循环规则固定为：
 
@@ -1809,7 +1809,7 @@ function parseLeadingSkills(raw: string): { names: string[]; rest: string } | nu
 
 `decodeXmlAttribute` 只接受 `&amp; &quot; &lt; &gt; &apos;`；任何其他 entity 返回 null。
 
-- [ ] **Step 4: 实现严格 attachment suffix 与 formatter**
+- [x] **Step 4: 实现严格 attachment suffix 与 formatter**
 
 只从最后一个 `\n\n<attached_files>\n` 开始尝试，并要求 wrapper 到字符串末尾、内部完全由
 Marginalia 生成的 `<attached_file ...>\n...\n</attached_file>` blocks 组成；不完整则保持 suffix。
@@ -1823,7 +1823,7 @@ export function formatUserDisplayText(text: string, skillNames: readonly string[
 }
 ```
 
-- [ ] **Step 5: 只在 history API 的展示副本上应用**
+- [x] **Step 5: 只在 history API 的展示副本上应用**
 
 `session-messages.ts` 对 user message clone：
 
@@ -1840,7 +1840,7 @@ result.push({ id, message });
 
 不查询 Catalog、不改文件、不改变 assistant/toolResult。
 
-- [ ] **Step 6: focused 验证**
+- [x] **Step 6: focused 验证**
 
 Run:
 
@@ -1854,12 +1854,34 @@ pnpm docs:check
 
 Expected: PASS；重开只看到 markers + user text，session bytes 未改。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add packages/chat-core apps/pi-server/src/agent/session-messages.ts apps/pi-server/test/session-messages.test.ts docs/developer/architecture.md
 git commit -m "feat(chat-core): normalize Skill-enabled user prompts"
 ```
+
+**Task 10 results (2026-07-18):**
+
+- 实际完成：新增 chat-core pure parser、ordered marker formatter 与 public exports；严格处理 0/1/N leading
+  Skill blocks、五种 XML attribute entities、Task 9 的 trailing attachment envelope，以及 malformed Skill、
+  unknown entity、malformed attachment 和 Skill body closing-tag 歧义的 fail-closed 行为。Parser 不访问
+  Catalog 或磁盘，因此已删除 Skill 仍按 session 保存的 name 展示。
+- History integration：`readMessagesFromSessionFile()` 只克隆 user message；string content 使用 shared
+  normalizer，array content 保持原 content，assistant/tool result 不变。集成测试对读取前后 session file
+  Buffer 做全等断言，确认不回写历史。
+- RED：chat-core focused suite 因 shared module 缺失退出 1；session suite 1/5 失败，user content 仍是完整
+  prompt。歧义强化测试另捕获 double-newline false closing tag 被误认成 block boundary 的失败。
+- GREEN：chat-core parser suite 18/18；session/provider suite 31/31；chat-core 与 pi-server typecheck 均通过。
+  完整 repository gate、docs static/diff gate 与最终 commit 证据记录在 Task 10 implementation report。
+- 正式文档：更新 developer architecture，固定展示副本、strict parser、Catalog independence、session bytes
+  immutability 与共享 live formatter 的边界。无 API、存储格式、权限或 UI 实现变化。
+- 偏差：pi-server 测试运行前需要先 build chat-core，使 workspace package `dist` 暴露新增 runtime export；
+  这只是本地 focused command 的 package build 前置条件，不改变接口或行为设计。
+- Review：standard architecture review 无 finding；security review 记录一个 V1 medium limitation——完全匹配
+  内部 Skill/attachment grammar 的用户原文也会在重开时归一化。按 active design 不新增第二套 trusted
+  display metadata；正式 architecture 与 implementation report 已明确该边界，malformed/ambiguous 输入继续
+  fail closed。
 
 ---
 

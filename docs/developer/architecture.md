@@ -114,6 +114,26 @@ lease 不跨 pi-server 重启持久化，renderer 的 `sendingRef` 也仍只保�
 
 历史消息的读取也分两种来源（`apps/pi-server/src/app.ts#readMessagesFromSessionFile`）：若该 session 已有 `agentSessionPath`（pi 落盘的 session 文件），从该文件读；否则从 SQLite 的 `messages` 表读并转成 `ChatEntry`。
 
+Pi session 中的 user message 保留发给模型的完整 prompt，包括开头连续的原生 `<skill>` blocks 和末尾
+Marginalia `<attached_files>` envelope。`packages/chat-core/src/user-display.ts` 定义实时与重开共用的展示
+契约；其中 `normalizeAgentPromptForDisplay()`
+（`packages/chat-core/src/user-display.ts#normalizeAgentPromptForDisplay`）严格解析连续 Skill blocks、只解码
+builder 支持的五种 XML attribute entities、按原顺序生成 `$name` markers，并只移除完整匹配 Marginalia
+builder 语法且位于字符串末尾的附件 envelope。疑似 Skill 前缀、未知 entity 或 closing-tag 歧义会保留整个
+原 prompt；不完整附件 suffix 也保持可见。解析不查询当前 Catalog，因此磁盘上已删除的 Skill 仍按 session
+内保存的 name 展示。
+
+该 V1 边界只验证内部 serialization 的完整语法，不能证明 markup 的生成来源。用户若故意输入完全匹配
+Marginalia grammar 的 leading Skill blocks 或 trailing attachment envelope，重开时也会按内部 prompt
+归一化，可能隐藏该段原文；malformed、unknown entity 和 closing-tag ambiguity 仍 fail closed。绝对来源证明
+需要另行设计可信 turn display metadata，本期不增加第二套 session 历史事实源。
+
+`readMessagesFromSessionFile()`（`apps/pi-server/src/agent/session-messages.ts#readMessagesFromSessionFile`）
+只对 string-content user message 创建展示副本并应用该归一化；array-content user message 仅克隆外层，assistant
+与 tool result 保持原消息。读取过程不回写或改动 pi session 文件，模型历史继续使用落盘的完整 prompt。
+共享的 `formatUserDisplayText()`（`packages/chat-core/src/user-display.ts#formatUserDisplayText`）保留给实时 user
+bubble 使用，避免实时与重开各自维护 marker 排版规则。
+
 SQLite schema 由 `migrate()`（`apps/pi-server/src/db/migrations.ts#migrate`）按版本顺序升级，每个版本
 使用独立的 `BEGIN IMMEDIATE` transaction，并在取得写锁后重新检查版本，保证两个连接并发启动时只
 应用一次。v1 transaction 在记录版本前建立既有 workspace/session/provider/run/approval 数据模型，
