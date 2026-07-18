@@ -513,7 +513,7 @@ export async function buildAgentMessage(input: {
 }): Promise<string>;
 ```
 
-- [ ] **Step 1: 写 lease 与 transaction 失败测试**
+- [x] **Step 1: 写 lease 与 transaction 失败测试**
 
 ```ts
 it("allows one lease per session and makes release idempotent", () => {
@@ -532,7 +532,7 @@ Route integration 测试用 deferred `settled` 固定顺序：第一个 request 
 `prepare` 抛错、附件读取/消息构建抛错、`createRun` 抛错时 `runs` 表仍为 0 且 lease 已释放；
 `start` 后失败则已有一条 failed run。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -542,7 +542,7 @@ pnpm --filter @marginalia/pi-server test -- session-run-leases agent-message pro
 
 Expected: FAIL，当前 route 在 stream 内才 prepare 且没有服务端 single-flight。
 
-- [ ] **Step 3: 实现最小 lease 和独立消息构建器**
+- [x] **Step 3: 实现最小 lease 和独立消息构建器**
 
 ```ts
 export class SessionRunLeases {
@@ -571,7 +571,7 @@ export class SessionRunLeases {
 `blocks + "\n\n" + text` 放在最前，附件 envelope 始终最后；保留 context path 去重和现有
 `readDocument` 行为。
 
-- [ ] **Step 4: 重排 run handler**
+- [x] **Step 4: 重排 run handler**
 
 handler 顺序固定为：auth → session/workspace/provider → `tryAcquire` → parse/body/message build →
 `agentClient.prepare` → `createRun` → return SSE。SSE callback 中：
@@ -581,7 +581,10 @@ let execution: AgentRunExecution | null = null;
 try {
   await emit("run_started", { model: modelId });
   execution = prepared.start(agentMessage, promptOptions);
-  const onAbort = () => execution?.abort();
+  const onAbort = () => {
+    execution?.abort();
+    agentClient.cancelPending(sessionId);
+  };
   request.signal.addEventListener("abort", onAbort, { once: true });
   try {
     for await (const event of execution.events) await forward(event);
@@ -594,21 +597,25 @@ try {
     await execution.settled;
   }
 } finally {
-  agentClient.cancelPending(sessionId);
-  expirePendingApprovals(db, run.id);
-  lease.release();
+  try {
+    agentClient.cancelPending(sessionId);
+    expirePendingApprovals(db, run.id);
+  } finally {
+    lease.release();
+  }
 }
 ```
 
 正常事件流结束时不要无条件 abort；`execution.abort()` 只放在 `request.signal.aborted` 或异常路径。
-所有 start 后失败都完成 DB run；任何 createRun 前失败释放 lease 且不写 run。
+abort 路径在等待 `settled` 前取消挂起审批，final cleanup 保持幂等；所有 start 后失败都完成 DB
+run，任何 createRun 前失败释放 lease 且不写 run。
 
-- [ ] **Step 5: 记录 API 错误与生命周期**
+- [x] **Step 5: 记录 API 错误与生命周期**
 
 `docs/developer/api.md` 增加 `409 session_busy` 且说明不会创建 run；architecture 记录 lease 在
-`settled` 后释放、SSE disconnect 只发 abort。
+`settled` 后释放、SSE disconnect 发 abort 并立即取消挂起审批。
 
-- [ ] **Step 6: focused 验证**
+- [x] **Step 6: focused 验证**
 
 Run:
 
@@ -620,12 +627,28 @@ pnpm docs:check
 
 Expected: PASS；同 session 重叠请求 409，不同 session 可并行。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/pi-server docs/developer/api.md docs/developer/architecture.md
 git commit -m "feat(pi-server): serialize runs per session"
 ```
+
+**Implementation Outcome (Task 3):**
+
+- 实际完成：新增进程内 per-session lease 和独立消息构建器；run route 在创建数据库记录前完成
+  消息构建与 agent preparation，并在 execution `settled` 后释放 lease。
+- RED：修正测试 fixture 后，prescribed focused command 出现 3 个失败文件和 4 个目标失败测试；
+  缺失模块、同 session 重叠仍返回 200、prepare/message failure 仍发生在 SSE 内。
+- GREEN：focused lease/message/route/approval 共 27 tests 通过；pi-server typecheck、
+  `pnpm docs:check` 和最终 `pnpm verify` 全通过。
+- 正式文档：更新 `docs/developer/api.md` 和 `docs/developer/architecture.md`，记录
+  `409 session_busy`、pre-create 边界、disconnect abort 和 settled 后释放语义。
+- Security review：disconnect/异常 abort 路径会在等待 `settled` 前取消挂起审批，避免审批等待
+  阻止 settlement，final cleanup 保持幂等。
+- 偏差与遗留：provider 必须从 request body 取得 ID，因此 body JSON 解析仍先于 provider 校验；
+  provider 校验后才取得 lease，消息附件构建和 preparation 均在 lease 内。无其他设计偏差；
+  跨进程恢复与 ChatView 卸载后的主动停止仍由既有 readiness issues 跟踪。
 
 ---
 

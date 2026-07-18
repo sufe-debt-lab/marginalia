@@ -2,10 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { migrate } from "../src/db/migrations.js";
 import {
+  createProvider,
   createSession,
   createWorkspace,
   listSessions,
@@ -39,6 +40,55 @@ function preparedRun(events: AgentRunEvent[], sessionFile = "/tmp/test.jsonl") {
       };
     }
   };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function runCount(db: Database.Database) {
+  return (db.prepare("select count(*) as count from runs").get() as { count: number }).count;
+}
+
+function runStatuses(db: Database.Database) {
+  return db
+    .prepare("select status from runs order by created_at")
+    .all()
+    .map((row) => (row as { status: string }).status);
+}
+
+function setupRun(rootDir = "/tmp/docs-run-transaction") {
+  const db = memoryDb();
+  migrate(db);
+  const workspace = createWorkspace(db, { name: "Docs", rootDir });
+  const session = createSession(db, {
+    workspaceId: workspace.id,
+    title: "Chat",
+    origin: "desktop"
+  });
+  const provider = createProvider(db, {
+    name: "Minimax",
+    apiKey: "sk-test",
+    defaultModel: "MiniMax-M2.7"
+  });
+  return { db, workspace, session, providerId: provider.id };
+}
+
+function runRequest(
+  app: ReturnType<typeof createApp>,
+  sessionId: string,
+  providerId: string,
+  input: Record<string, unknown> = {}
+) {
+  return app.request(`/sessions/${sessionId}/runs`, {
+    method: "POST",
+    headers: runHeaders,
+    body: JSON.stringify({ providerId, message: "hello", ...input })
+  });
 }
 
 afterEach(() => {
@@ -117,6 +167,324 @@ describe("provider API", () => {
 });
 
 describe("chat runs", () => {
+  it("rejects an overlapping run for the same session until execution settles", async () => {
+    const { db, session, providerId } = setupRun();
+    const settled = deferred();
+    let starts = 0;
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/lease.jsonl",
+          start() {
+            starts += 1;
+            return {
+              events: (async function* () {})(),
+              abort() {},
+              settled: settled.promise
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const first = await runRequest(app, session.id, providerId);
+    const firstBody = first.text();
+    await vi.waitFor(() => expect(starts).toBe(1));
+
+    const overlap = await runRequest(app, session.id, providerId);
+    expect(overlap.status).toBe(409);
+    expect(await overlap.json()).toEqual({ error: "session_busy" });
+    expect(runCount(db)).toBe(1);
+
+    settled.resolve();
+    await firstBody;
+
+    const next = await runRequest(app, session.id, providerId);
+    settled.resolve();
+    await next.text();
+    expect(next.status).toBe(200);
+    expect(runCount(db)).toBe(2);
+  });
+
+  it("aborts on disconnect but keeps the session busy until execution settles", async () => {
+    const { db, session, providerId } = setupRun();
+    const settled = deferred();
+    const controller = new AbortController();
+    let abortCalls = 0;
+    let cancelPendingCalls = 0;
+    let starts = 0;
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/disconnect.jsonl",
+          start() {
+            starts += 1;
+            return {
+              events: (async function* () {
+                await settled.promise;
+              })(),
+              abort() {
+                abortCalls += 1;
+              },
+              settled: settled.promise
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        cancelPendingCalls += 1;
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+    const first = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      headers: runHeaders,
+      body: JSON.stringify({ providerId, message: "hello" }),
+      signal: controller.signal
+    });
+    const firstBody = first.text().catch(() => "");
+    await vi.waitFor(() => expect(starts).toBe(1));
+
+    controller.abort();
+    await vi.waitFor(() => expect(abortCalls).toBeGreaterThan(0));
+    expect(cancelPendingCalls).toBe(1);
+    const overlap = await runRequest(app, session.id, providerId);
+    expect(overlap.status).toBe(409);
+    expect(await overlap.json()).toEqual({ error: "session_busy" });
+
+    settled.resolve();
+    await firstBody;
+    const next = await runRequest(app, session.id, providerId);
+    await next.text();
+    expect(next.status).toBe(200);
+  });
+
+  it("allows different sessions to run concurrently", async () => {
+    const { db, workspace, session, providerId } = setupRun();
+    const other = createSession(db, {
+      workspaceId: workspace.id,
+      title: "Other",
+      origin: "desktop"
+    });
+    const settled = deferred();
+    let starts = 0;
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/concurrent.jsonl",
+          start() {
+            starts += 1;
+            return {
+              events: (async function* () {})(),
+              abort() {},
+              settled: settled.promise
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const first = await runRequest(app, session.id, providerId);
+    const firstBody = first.text();
+    const second = await runRequest(app, other.id, providerId);
+    const secondBody = second.text();
+    await vi.waitFor(() => expect(starts).toBe(2));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(runCount(db)).toBe(2);
+    settled.resolve();
+    await Promise.all([firstBody, secondBody]);
+  });
+
+  it("does not create a run and releases the lease when message building fails", async () => {
+    const { db, session, providerId } = setupRun();
+    const agentClient = {
+      async prepare() {
+        return preparedRun([]);
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const failed = await runRequest(app, session.id, providerId, { contextFiles: 42 });
+    expect(failed.status).toBe(500);
+    expect(runCount(db)).toBe(0);
+
+    const retry = await runRequest(app, session.id, providerId);
+    await retry.text();
+    expect(retry.status).toBe(200);
+    expect(runCount(db)).toBe(1);
+  });
+
+  it("does not create a run and releases the lease when prepare fails", async () => {
+    const { db, session, providerId } = setupRun();
+    let shouldFail = true;
+    const agentClient = {
+      async prepare() {
+        if (shouldFail) throw new Error("prepare failed");
+        return preparedRun([]);
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const failed = await runRequest(app, session.id, providerId);
+    expect(failed.status).toBe(500);
+    expect(runCount(db)).toBe(0);
+
+    shouldFail = false;
+    const retry = await runRequest(app, session.id, providerId);
+    await retry.text();
+    expect(retry.status).toBe(200);
+    expect(runCount(db)).toBe(1);
+  });
+
+  it("does not retain a run or lease when run creation fails", async () => {
+    const { db, session, providerId } = setupRun();
+    const agentClient = {
+      async prepare() {
+        return preparedRun([]);
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+    db.exec(
+      "create trigger reject_run before insert on runs begin select raise(abort, 'create run failed'); end"
+    );
+
+    const failed = await runRequest(app, session.id, providerId);
+    expect(failed.status).toBe(500);
+    expect(runCount(db)).toBe(0);
+
+    db.exec("drop trigger reject_run");
+    const retry = await runRequest(app, session.id, providerId);
+    await retry.text();
+    expect(retry.status).toBe(200);
+    expect(runCount(db)).toBe(1);
+  });
+
+  it("marks a created run failed when start throws", async () => {
+    const { db, session, providerId } = setupRun();
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/start-failure.jsonl",
+          start() {
+            throw new Error("start failed");
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient: agentClient as any, capability });
+
+    const response = await runRequest(app, session.id, providerId);
+    expect(await response.text()).toContain('"type":"run_failed"');
+    expect(runStatuses(db)).toEqual(["failed"]);
+  });
+
+  it("does not abort an execution after normal event completion", async () => {
+    const { db, session, providerId } = setupRun();
+    let abortCalls = 0;
+    const agentClient = {
+      async prepare() {
+        return {
+          sessionFile: "/tmp/normal.jsonl",
+          start() {
+            return {
+              events: (async function* () {})(),
+              abort() {
+                abortCalls += 1;
+              },
+              settled: Promise.resolve()
+            };
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+
+    const response = await runRequest(app, session.id, providerId);
+    await response.text();
+
+    expect(abortCalls).toBe(0);
+    expect(runStatuses(db)).toEqual(["completed"]);
+  });
+
+  it("releases the session lease when final approval cleanup throws", async () => {
+    const { db, session, providerId } = setupRun();
+    const agentClient = {
+      async prepare() {
+        return preparedRun([]);
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        throw new Error("cleanup failed");
+      }
+    };
+    const app = createApp({ db, agentClient, capability });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const first = await runRequest(app, session.id, providerId);
+      await first.text().catch(() => "");
+
+      const retry = await runRequest(app, session.id, providerId);
+      expect(retry.status).toBe(200);
+      await retry.text().catch(() => "");
+      expect(runCount(db)).toBe(2);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("streams run envelopes via real SSE and emits assistant text", async () => {
     const db = memoryDb();
     migrate(db);
@@ -305,6 +673,12 @@ describe("chat runs", () => {
             return prepared.start();
           }
         };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
       }
     };
 
@@ -358,6 +732,12 @@ describe("chat runs", () => {
             return prepared.start();
           }
         };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
       }
     };
 

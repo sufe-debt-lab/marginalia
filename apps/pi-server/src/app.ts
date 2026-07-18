@@ -13,9 +13,11 @@ import { emptyUsage } from "@marginalia/chat-core";
 import type { ChatEntry } from "@marginalia/chat-core";
 import type {
   AgentClient,
+  AgentRunExecution,
   ApprovalRequestedEvent,
   ApprovalResolvedEvent
 } from "./agent/agent-client.js";
+import { buildAgentMessage } from "./agent/agent-message.js";
 import { AgentSessionRegistry } from "./agent/agent-session-registry.js";
 import { ApprovalGateway } from "./agent/approval-gateway.js";
 import { PiCodingAgentClient } from "./agent/pi-coding-agent-client.js";
@@ -61,6 +63,7 @@ import { listWorkspaceFiles, searchWorkspaceFiles } from "./files/file-tree.js";
 import { resolveWorkspacePath } from "./files/path-sandbox.js";
 import { createHealthInfo } from "./health.js";
 import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
+import { SessionRunLeases } from "./run/session-run-leases.js";
 import {
   authorizeCapability,
   isAllowedOrigin,
@@ -112,6 +115,7 @@ export function createApp(options: AppOptions = {}) {
   const availabilityChecker =
     options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
   const capability = options.capability ?? { token: null, allowedOrigins: new Set<string>() };
+  const runLeases = new SessionRunLeases();
 
   migrate(db);
   syncProviderKeys(db, authStorage);
@@ -337,7 +341,33 @@ export function createApp(options: AppOptions = {}) {
     if (!provider.enabled) return c.json({ error: "provider disabled" }, 409);
 
     const modelId = body.model ?? provider.defaultModel;
-    const run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
+    const lease = runLeases.tryAcquire(sessionId);
+    if (!lease) return c.json({ error: "session_busy" }, 409);
+
+    let agentMessage: string;
+    let prepared: Awaited<ReturnType<AgentClient["prepare"]>>;
+    let run: ReturnType<typeof createRun>;
+    try {
+      agentMessage = await buildAgentMessage({
+        workspaceRoot: workspace.rootDir,
+        text: body.message,
+        contextFiles: body.contextFiles ?? []
+      });
+      prepared = await agentClient.prepare({
+        sessionId,
+        workspaceRoot: workspace.rootDir,
+        piProviderId: piProviderId(provider.name),
+        modelId,
+        agentSessionPath: session.agentSessionPath ?? null,
+        permission: body.permission,
+        reasoning: body.reasoning ?? null
+      });
+      if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
+      run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
+    } catch (error) {
+      lease.release();
+      return c.json({ error: (error as Error).message }, 500);
+    }
 
     return streamSSE(c, async (sse) => {
       const emit = async (type: string, payload: Record<string, unknown> = {}) => {
@@ -351,34 +381,21 @@ export function createApp(options: AppOptions = {}) {
           })
         });
       };
-      await emit("run_started", { model: modelId });
-
       let failed = false;
+      let execution: AgentRunExecution | null = null;
       try {
-        const message = await buildAgentMessage(
-          workspace.rootDir,
-          body.message,
-          body.contextFiles ?? []
-        );
-        const prepared = await agentClient.prepare({
-          sessionId,
-          workspaceRoot: workspace.rootDir,
-          piProviderId: piProviderId(provider.name),
-          modelId,
-          agentSessionPath: session.agentSessionPath ?? null,
-          permission: body.permission,
-          reasoning: body.reasoning ?? null
-        });
-        if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
-        const execution = prepared.start(message);
+        await emit("run_started", { model: modelId });
+        execution = prepared.start(agentMessage);
 
-        // 断开即拒绝：abort 时主动取消挂起审批，避免被阻塞的扩展死等。
+        let abortRequested = false;
         const onAbort = () => {
-          execution.abort();
+          if (abortRequested) return;
+          abortRequested = true;
+          execution?.abort();
           agentClient.cancelPending(sessionId);
         };
+        c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
         if (c.req.raw.signal.aborted) onAbort();
-        else c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
 
         try {
           // Single source of truth: forward raw pi events; the client derives all
@@ -416,13 +433,15 @@ export function createApp(options: AppOptions = {}) {
               await emit("run_failed", { error: msg });
               completeRun(db, run.id, "failed", msg);
               failed = true;
-              return;
+              break;
             }
           }
+        } catch (failure) {
+          onAbort();
+          throw failure;
         } finally {
           c.req.raw.signal.removeEventListener("abort", onAbort);
-          agentClient.cancelPending(sessionId);
-          expirePendingApprovals(db, run.id);
+          if (c.req.raw.signal.aborted) onAbort();
           await execution.settled;
         }
 
@@ -432,8 +451,19 @@ export function createApp(options: AppOptions = {}) {
         }
       } catch (error) {
         const msg = (error as Error).message;
-        await emit("run_failed", { error: msg });
+        try {
+          await emit("run_failed", { error: msg });
+        } catch {
+          // The client may already be disconnected; DB completion still matters.
+        }
         completeRun(db, run.id, "failed", msg);
+      } finally {
+        try {
+          agentClient.cancelPending(sessionId);
+          expirePendingApprovals(db, run.id);
+        } finally {
+          lease.release();
+        }
       }
     });
   });
@@ -473,41 +503,4 @@ function syncProviderKeys(db: Database.Database, authStorage: AuthStorage) {
     const piId = piProviderId(row.name);
     if (piId && row.api_key) authStorage.setRuntimeApiKey(piId, row.api_key);
   }
-}
-
-function escapeAttr(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-async function buildAgentMessage(
-  workspaceRoot: string,
-  message: string,
-  contextFiles: readonly string[]
-): Promise<string> {
-  const unique = [...new Set(contextFiles.map((p) => p.trim()).filter(Boolean))];
-  if (unique.length === 0) return message;
-
-  const attachments: string[] = [];
-  for (const filePath of unique) {
-    try {
-      const doc = await readDocument(workspaceRoot, filePath);
-      const text = doc.rawOnly
-        ? `[${doc.mime} attachment; content preview unavailable. Use file tools if you need to inspect it.]`
-        : doc.text;
-      attachments.push(
-        `<attached_file path="${escapeAttr(filePath)}" mime="${escapeAttr(doc.mime)}">\n${text}\n</attached_file>`
-      );
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unavailable";
-      attachments.push(
-        `<attached_file path="${escapeAttr(filePath)}" error="${escapeAttr(reason)}">\n</attached_file>`
-      );
-    }
-  }
-
-  return `${message}\n\n<attached_files>\n${attachments.join("\n")}\n</attached_files>`;
 }

@@ -151,6 +151,15 @@ approval 等既有 API 不带 bearer，保持原有认证边界。
 
 发起一次 agent run，以 **Server-Sent Events** 流式返回（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）。
 
+同一 session 同时只允许一个 active run。若前一个 execution 尚未完成清理，返回
+`409 { "error": "session_busy" }`，不会调用 agent、创建 `runs` 记录或打开 SSE；不同 session
+可以并发执行。服务端收到 SSE disconnect 时会请求中止 execution、立即拒绝挂起审批，但直到其
+`settled` Promise 完成后才释放 session lease，因此紧随断连到达的重试仍可能收到
+`session_busy`。
+
+消息附件构建、agent preparation 或 `runs` 记录创建在 SSE/start 之前完成。其中任一步骤失败都
+返回 JSON 错误且不保留 `runs` 记录；`start()` 之后的失败则已有一条 run，并以 `failed` 终态完成。
+
 请求 Body：
 
 ```jsonc

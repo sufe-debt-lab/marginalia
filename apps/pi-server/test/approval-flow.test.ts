@@ -115,7 +115,7 @@ describe("approval flow over SSE", () => {
     expect(res.status).toBe(404);
   });
 
-  it("denies pending approvals when the client disconnects", async () => {
+  it("expires pending approvals and releases the run lease when the client disconnects", async () => {
     const { db, session, provider, fake, app } = setup();
     fake.enqueueEvents([approvalEvent(session.id) as AgentRunEvent]);
     const controller = new AbortController();
@@ -135,6 +135,14 @@ describe("approval flow over SSE", () => {
     // Give the abort handler a tick to run.
     await new Promise((r) => setTimeout(r, 20));
     expect(listApprovals(db, session.id)[0]?.status).toBe("expired");
+
+    const retry = await app.request(`/sessions/${session.id}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ providerId: provider.id, message: "retry" }),
+      headers: runHeaders
+    });
+    expect(retry.status).toBe(200);
+    await retry.text();
   });
 
   it("lists persisted approvals for reopen", async () => {
