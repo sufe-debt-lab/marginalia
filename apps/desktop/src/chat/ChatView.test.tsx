@@ -1,7 +1,13 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, type ApiClient, type RunEvent } from "@/api/client.js";
+import {
+  ApiError,
+  type ApiClient,
+  type RunEvent,
+  type SkillCandidate,
+  type SkillCatalogSnapshot
+} from "@/api/client.js";
 import { useAppStore } from "@/store/app-store.js";
 import { ChatView } from "./ChatView.js";
 
@@ -21,6 +27,36 @@ const messageStart = (): RunEvent =>
 const messageEnd = (stopReason = "stop"): RunEvent =>
   agentEvent({ type: "message_end", message: { stopReason } });
 const runCompleted = (): RunEvent => ({ type: "run_completed", payload: {} });
+
+function skillCandidate(name: string, path: string): SkillCandidate {
+  return {
+    name,
+    description: `${name} description`,
+    discoveredPath: path,
+    canonicalPath: path,
+    source: "workspace_marginalia",
+    scope: "workspace",
+    status: "effective",
+    enabled: true,
+    effective: true,
+    explicitOnly: false,
+    explicitEligible: true,
+    shadowedBy: null,
+    bytesTotal: 10,
+    diagnostics: []
+  };
+}
+
+function skillSnapshot(candidates: SkillCandidate[]): SkillCatalogSnapshot {
+  return {
+    workspaceId: "w1",
+    catalogRevision: "catalog",
+    effectiveRevision: "effective",
+    refreshedAt: 1,
+    candidates,
+    diagnostics: []
+  };
+}
 
 function makeApi(): ApiClient {
   return {
@@ -186,11 +222,155 @@ describe("ChatView", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
 
-    await waitFor(() =>
-      expect(screen.getByText("run_failed").parentElement).toHaveTextContent("Selections changed")
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Selected Skills changed");
+    expect(screen.queryByText("run_failed")).not.toBeInTheDocument();
     expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("keep me");
     expect(screen.queryByText("keep me", { selector: "p" })).not.toBeInTheDocument();
+  });
+
+  it("repairs canonical Skill preconditions without clearing or rebinding the turn", async () => {
+    const pdfPath = "/old/pdf";
+    const reviewPath = "/old/review";
+    const validPath = "/skills/valid";
+    const initial = skillSnapshot([
+      skillCandidate("pdf", pdfPath),
+      skillCandidate("review", reviewPath),
+      skillCandidate("valid", validPath)
+    ]);
+    const recovered = { ...initial, catalogRevision: "recovered" };
+    const api = makeApi();
+    (api.listSkills as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(recovered);
+    (api.runChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError("Selections changed", 409, "skill_precondition_failed", {
+        invalidSelections: [
+          { name: "pdf", path: pdfPath, reason: "missing" },
+          { name: "review", path: reviewPath, reason: "disabled" }
+        ]
+      })
+    );
+    const store = useAppStore.getState();
+    store.setTurnText("session:s1", "keep the complete turn");
+    store.addTurnContextFile("session:s1", "/docs/a.md");
+    store.addTurnSkill("session:s1", { name: "pdf", path: pdfPath });
+    store.addTurnSkill("session:s1", { name: "review", path: reviewPath });
+    store.addTurnSkill("session:s1", { name: "valid", path: validPath });
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Selected Skills changed");
+    expect(screen.queryByText("run_failed")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Retry$/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId(`skill-chip-${pdfPath}`)).toHaveAttribute("data-invalid", "true");
+    expect(screen.getByTestId(`skill-chip-${reviewPath}`)).toHaveAttribute("data-invalid", "true");
+    expect(screen.getByTestId(`skill-chip-${validPath}`)).toHaveAttribute("data-invalid", "false");
+    expect(useAppStore.getState().getTurnDraft("session:s1")).toEqual({
+      text: "keep the complete turn",
+      contextFiles: ["/docs/a.md"],
+      skills: [
+        { name: "pdf", path: pdfPath },
+        { name: "review", path: reviewPath },
+        { name: "valid", path: validPath }
+      ]
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Skills settings" }));
+    expect(useAppStore.getState().view).toBe("settings");
+    expect(useAppStore.getState().getTurnDraft("session:s1").contextFiles).toEqual(["/docs/a.md"]);
+    useAppStore.getState().setView("chat");
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove unavailable Skill pdf" }));
+    expect(useAppStore.getState().getTurnDraft("session:s1").skills).toEqual([
+      { name: "review", path: reviewPath },
+      { name: "valid", path: validPath }
+    ]);
+    expect(screen.queryByTestId(`skill-chip-${pdfPath}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`skill-chip-${reviewPath}`)).toHaveAttribute("data-invalid", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh Skills" }));
+    await waitFor(() => expect(api.listSkills).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(useAppStore.getState().getTurnDraft("session:s1").skills).toEqual([
+      { name: "review", path: reviewPath },
+      { name: "valid", path: validPath }
+    ]);
+    expect(screen.getByTestId(`skill-chip-${reviewPath}`)).toHaveAttribute("data-invalid", "false");
+  });
+
+  it.each([
+    [new ApiError("Session busy", 409, "session_busy", {}), "This chat is already running"],
+    [new ApiError("Unauthorized", 401, "unauthorized", {}), "Reconnect to Marginalia"],
+    [
+      new ApiError("Payload too large", 413, "skill_payload_too_large", {}),
+      "Selected Skill content is too large"
+    ],
+    [null, "The run ended before it started"]
+  ])(
+    "keeps a pre-start blocked turn in the Composer without refreshing the catalog",
+    async (failure, expectedMessage) => {
+      const api = makeApi();
+      if (failure) {
+        (api.runChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(failure);
+      } else {
+        (api.runChat as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => events([]));
+      }
+      const store = useAppStore.getState();
+      store.setTurnText("session:s1", "blocked draft");
+      store.addTurnContextFile("session:s1", "/docs/a.md");
+      store.addTurnSkill("session:s1", { name: "pdf", path: "/skills/pdf" });
+      render(<ChatView api={api} sessionId="s1" />);
+      await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+      await userEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(expectedMessage);
+      expect(screen.queryByText("run_failed")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Retry$/i })).not.toBeInTheDocument();
+      expect(api.listSkills).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().getTurnDraft("session:s1")).toEqual({
+        text: "blocked draft",
+        contextFiles: ["/docs/a.md"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      });
+    }
+  );
+
+  it("claims a first turn only once and preserves the session draft after pre-start failure", async () => {
+    const api = makeApi();
+    (api.runChat as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError("Selections changed", 409, "skill_precondition_failed", {
+        invalidSelections: [{ name: "pdf", path: "/skills/pdf", reason: "missing" }]
+      })
+    );
+    useAppStore.getState().setTurnText("session:s1", "first blocked turn");
+    useAppStore.getState().addTurnSkill("session:s1", {
+      name: "pdf",
+      path: "/skills/pdf"
+    });
+    useAppStore.getState().setPendingTurn({
+      sessionId: "s1",
+      turn: {
+        text: "first blocked turn",
+        contextFiles: [],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }
+    });
+    const { rerender } = render(<ChatView api={api} sessionId="s1" />);
+
+    await screen.findByRole("alert");
+    rerender(<ChatView api={api} sessionId="s1" />);
+
+    expect(api.runChat).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().pendingTurn).toBeNull();
+    expect(useAppStore.getState().getTurnDraft("session:s1")).toEqual({
+      text: "first blocked turn",
+      contextFiles: [],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    });
   });
 
   it.each([
@@ -218,7 +398,7 @@ describe("ChatView", () => {
       await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "draft B");
       await userEvent.click(screen.getByRole("button", { name: /send/i }));
 
-      await screen.findByText(new RegExp(message));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
       expect(api.runChat).toHaveBeenCalledTimes(2);
       expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("draft B");
@@ -244,7 +424,7 @@ describe("ChatView", () => {
     await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "draft B");
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
 
-    await screen.findByText(/run ended before starting/);
+    await screen.findByText(/run ended before it started/i);
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
     expect(api.runChat).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().getTurnDraft("session:s1").text).toBe("draft B");
@@ -267,7 +447,7 @@ describe("ChatView", () => {
     await screen.findByText(/first failed/);
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
-    await screen.findByText(/Retry rejected/);
+    expect(await screen.findByRole("alert")).toHaveTextContent("This chat is already running");
     expect(
       screen.getByText((_text, node) => node?.textContent === "accepted A", {
         selector: ".whitespace-pre-wrap"
@@ -275,6 +455,45 @@ describe("ChatView", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
     expect(api.runChat).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes invalid state against the current matching chip after a stale retry fails", async () => {
+    const path = "/skills/renamed";
+    const latest = skillSnapshot([skillCandidate("new-name", path)]);
+    const api = makeApi();
+    (api.listSkills as ReturnType<typeof vi.fn>).mockResolvedValue(latest);
+    (api.runChat as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(async () =>
+        events([
+          { type: "run_started", payload: {} },
+          { type: "run_failed", payload: { error: "first failed" } }
+        ])
+      )
+      .mockRejectedValueOnce(
+        new ApiError("Skill renamed", 409, "skill_precondition_failed", {
+          invalidSelections: [{ name: "old-name", path, reason: "name_mismatch" }]
+        })
+      );
+    useAppStore.getState().setTurnText("session:s1", "accepted A");
+    useAppStore.getState().addTurnSkill("session:s1", { name: "old-name", path });
+    render(<ChatView api={api} sessionId="s1" />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByText(/first failed/);
+    useAppStore.getState().addTurnSkill("session:s1", { name: "new-name", path });
+
+    await userEvent.click(screen.getByRole("button", { name: /^Retry$/i }));
+    await screen.findByText("Selected Skills changed");
+    expect(screen.getByTestId(`skill-chip-${path}`)).toHaveAttribute("data-invalid", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh Skills" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`skill-chip-${path}`)).toHaveAttribute("data-invalid", "false")
+    );
+    expect(useAppStore.getState().getTurnDraft("session:s1").skills).toEqual([
+      { name: "new-name", path }
+    ]);
   });
 
   it("removes every failed-attempt entry only after a multi-bubble retry is accepted", async () => {

@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowUp, Plus, Square, X } from "lucide-react";
 import type { ApiClient, Provider, SkillCandidate, SkillSelection } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
-import { useSkillCatalog, type SkillPickerItem } from "@/hooks/useSkillCatalog.js";
+import type { SkillCatalogController, SkillPickerItem } from "@/hooks/useSkillCatalog.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
 import type { TurnDraft } from "@/store/app-store.js";
@@ -16,6 +16,7 @@ import { SlashMenu, type SlashRow } from "./SlashMenu.js";
 interface Props {
   api: ApiClient;
   workspaceId: string | null;
+  skillCatalog: SkillCatalogController;
   providers: readonly Provider[];
   providerId: string;
   model: string;
@@ -28,6 +29,8 @@ interface Props {
   skills: readonly SkillSelection[];
   onAddSkill: (skill: SkillSelection) => void;
   onRemoveSkill: (path: string) => void;
+  invalidSkillPaths?: ReadonlySet<string>;
+  status?: ReactNode;
   sending: boolean;
   /** Hard-disable the send button (e.g. no workspace / no provider), independent of streaming. */
   disabled?: boolean;
@@ -122,7 +125,7 @@ export function Composer(props: Props) {
   // Which UI opened the file menu: an inline `@` mention vs the `+` attachment picker.
   const [pickerMode, setPickerMode] = useState<"mention" | "attach">("mention");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const skillCatalog = useSkillCatalog(props.api, props.workspaceId);
+  const skillCatalog = props.skillCatalog;
   const pickerItems = useMemo(
     () => skillCatalog.snapshot?.candidates.filter(isEligibleSkill).map(toPickerItem) ?? [],
     [skillCatalog.snapshot]
@@ -288,6 +291,7 @@ export function Composer(props: Props) {
         />
       )}
       <div className="rounded-[14px] border border-border bg-surface px-3.5 pt-3 pb-2 shadow-composer transition-[border-color,box-shadow] motion-standard focus-within:border-border-strong focus-within:shadow-composer-focus">
+        {props.status}
         {props.skills.length > 0 && (
           <div className="mb-2.5 flex flex-wrap gap-2">
             {props.skills.map((skill) => (
@@ -295,6 +299,7 @@ export function Composer(props: Props) {
                 key={skill.path}
                 skill={skill}
                 candidate={candidateByPath.get(skill.path)}
+                invalid={props.invalidSkillPaths?.has(skill.path) === true}
                 onRemove={props.onRemoveSkill}
               />
             ))}

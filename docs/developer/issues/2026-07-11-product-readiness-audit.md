@@ -40,7 +40,7 @@ owner: repository-maintainers
 | P1-MESSAGE-001    | P1       | open        | 2026-07-11    | post-M0                    | `docs/internal/plans/2026-07-10-message-stream.md`                                                                                    |
 | P1-QUALITY-001    | P1       | open        | 2026-07-13    | M0-trustworthy-local-alpha | `apps/desktop/scripts/compare-screenshots.mjs`、2026-07-11 视觉审计                                                                   |
 | P1-RELEASE-001    | P1       | open        | 2026-07-11    | public-release             | `apps/desktop/electron-builder.yml`、`.github/workflows/build-desktop.yml`                                                            |
-| P1-EXTENSIONS-001 | P1       | open        | 2026-07-18    | post-M0                    | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/desktop/src/settings/SettingsView.tsx`                                    |
+| P1-EXTENSIONS-001 | P1       | open        | 2026-07-18    | post-M0                    | `apps/desktop/src/chat/SkillPreconditionBanner.tsx`、`apps/desktop/src/settings/SkillsPane.tsx`                                       |
 | P1-A11Y-001       | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src`                                                                                                                    |
 | P1-DOCS-001       | P1       | in-progress | 2026-07-12    | M0-trustworthy-local-alpha | `scripts/docs-check.mjs`、`.github/workflows/ci.yml`、`.github/workflows/docs-gate.yml`                                               |
 
@@ -48,13 +48,14 @@ owner: repository-maintainers
 
 ## P0-SEC-001: Loopback API 只有局部认证
 
-Task 1 已加入局部缓解：Electron 为每个 pi-server 进程生成高熵 token，所有 run 在读取业务数据
+Task 1 起加入局部缓解：Electron 为每个 pi-server 进程生成高熵 token，所有 run 与 Skills route 在读取业务数据
 前验证 bearer 和 Origin；CORS 只返回 packaged `null`/缺省 Origin 或已校验的开发 exact origin，
 不再反射任意网页来源。启动器在继承父进程环境前移除 capability token 和 allowed-origin，再注入
 本次启动生成/校验的值，缺失或无效 Vite 配置不会沿用旧 origin。
 
-P0 继续 open：workspace、provider、文件、审批等既有 route 仍不验证 bearer，raw 文件 URL 也
-没有凭据边界；缺少 Origin 的本地进程不受浏览器 CORS 限制。随机 loopback 端口和仅保护 run 的
+P0 继续 open：局部 capability 已覆盖 run 与 Skills route，但 workspace、provider、文件、审批等既有 route
+仍不验证 bearer，raw 文件 URL 也没有凭据边界；缺少 Origin 的本地进程不受浏览器 CORS 限制。随机
+loopback 端口和这项局部
 capability 都不是整套 API 的授权机制。
 
 修复目标：Electron 启动时生成进程级 secret，经 preload 提供给 renderer；除健康检查外的路由验证凭据；CORS 只允许明确的 renderer/dev origin；raw 文件不再依赖无认证 URL。
@@ -178,15 +179,15 @@ macOS 配置 `identity: null`，Windows 也未签名；没有 macOS notarization
 
 验收：干净机器安装与启动通过；签名可验证；更新失败可回退；发布 checklist 有真实证据。
 
-## P1-EXTENSIONS-001: Skills 与 MCP 不可用
+## P1-EXTENSIONS-001: Skills 生态与 MCP 不可用
 
-Settings 中 Skills/MCP 两个入口仍被禁用，Composer 也没有 Skill picker。Skills 已有 Catalog、受保护
-管理 API、显式 run preflight 和 revision-pinned runtime；loader 的 `noSkills: true` 只关闭 Pi 自身磁盘
-discovery，再由 snapshot override 注入 effective Skills。仓库仍没有 MCP server 配置、连接、发现或
-工具注入链路。
+Skills v1 已有 Catalog、受保护管理 API、显式 run preflight、revision-pinned runtime、Composer picker、
+blocked-turn 修复与 Settings 只读管理。loader 的 `noSkills: true` 只关闭 Pi 自身磁盘 discovery，再由
+snapshot override 注入 effective Skills。当前没有创建、导入、安装、编辑、卸载或删除 Skill 的产品生态；
+仓库也仍没有 MCP server 配置、连接、发现或工具注入链路。
 
-修复目标：完成 Skills 桌面管理与 Composer 选择流程；在安全边界稳定后设计 MCP 的来源、权限、诊断
-和管理流程。正式文档保持区分已实现的 Skills 后端与尚未接入的正常产品路径。
+修复目标：在安全边界稳定后设计 Skill 安装/编辑和 MCP 的来源、权限、诊断与管理流程。正式文档继续
+区分已实现的 Skills v1 产品路径、未实现的 Skill 生态，以及完全未接入的 MCP。
 
 验收：能力状态变更前有独立 spec、威胁模型、故障诊断和端到端测试。
 

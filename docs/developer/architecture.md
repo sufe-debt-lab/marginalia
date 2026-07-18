@@ -114,8 +114,9 @@ Skills selection 都不进入 persist partial。New chat 创建 session 成功�
 session 或等待接受期间的后续编辑会保留，Retry 也不会覆盖当前新草稿。因此 pre-start 401/409/413、
 stream EOF 或切换视图不会把未接受输入误记为已发送。
 
-`useSkillCatalog` 是 Composer 的 catalog controller：挂载、workspace 切换和每次菜单从关闭变为 `$` 或
-`/` 时刷新，并以 request generation 和 workspace identity 丢弃迟到响应；当前响应的 workspace identity
+`useSkillCatalog` 由 Chat/New Thread owner view 各持有一次，再把同一个 catalog controller 下传 Composer：
+挂载、workspace 切换和每次菜单从关闭变为 `$` 或 `/` 时刷新。picker 与 blocked repair 不会建立两份
+cache。Controller 以 request generation 和 workspace identity 丢弃迟到响应；当前响应的 workspace identity
 不匹配则进入 refresh error。失败保留最后成功 snapshot 供已选 chip 展示，但 picker 只显示 error/retry，
 不暴露 stale row。trigger 因空格、删除或其他编辑失效时，Composer 同步清空 Slash、Skill 与 mention 菜单
 状态，不修改受控正文或添加 selection。可选 candidate 必须同时满足非空
@@ -132,7 +133,10 @@ canonical path 防止跨行或跨 workspace 的迟到响应污染当前视图。
 catalog loading 或 toggle pending 时，Retry 在 DOM 与 handler 两层都被阻止，避免额外 refresh 使 pending
 PATCH 的 generation 失效并重新发布旧 snapshot。
 
-ChatView 的错误状态同时记录 `accepted` 与派生的 `retryable`。Retry 只在失败属于当前已接受轮且
+ChatView 把 pre-start failure 保存为 typed `BlockedTurn`，与 accepted run error 分离。Skill precondition
+从 `ApiError.details.invalidSelections` 读取 exact canonical identities，只标记 matching chips；其 Refresh
+复用当前 owner controller，并仅按最新 snapshot 清除已恢复 identity，不改绑或删除 selection。
+`session_busy`、401、413 和普通 EOF 只显示 Composer alert，不触发 catalog refresh。Retry 只在失败属于当前已接受轮且
 `lastSent` 已由该轮 acceptance 更新时出现；后续 pre-start 401/409/413/EOF 会保留新草稿并隐藏 Retry，
 不会重发更早的 accepted snapshot。Retry 也只在新请求收到 `run_started` 后替换旧失败气泡；若 retry
 preflight 失败，原 accepted attempt 仍保留在消息流中。接受 retry 后按该 attempt 收集的全部本地 user、

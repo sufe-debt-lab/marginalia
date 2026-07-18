@@ -17,7 +17,8 @@ workspace、session 或 Settings 不会串用或立即清空正文与附件。Ne
 重发同一轮正文、附件和 Skills selection，而不会覆盖当前新草稿。只有服务端明确发送
 `run_completed` 才算成功；未接受的失败只显示错误，不会出现可能重发旧消息的 Retry。
 服务端报告已接受 run 失败后，Composer 会等流完全结束再开放 Retry，避免服务端仍在清理当前 run 时立即
-重试并得到 `session_busy`。
+重试并得到 `session_busy`。Retry 开始时不会先删除旧失败轮；只有替代请求收到 `run_started` 后才一次性
+替换该轮的全部本地气泡。Retry 若在接受前失败，旧 accepted attempt 仍留在消息流中。
 
 ## Workspace 与会话
 
@@ -125,8 +126,18 @@ explicit-only、来源及 diagnostics。选择任意行（包括 Invalid）才�
 内容会明确提示。启停不会乐观更新，而是以服务端返回的新 snapshot 为准；刷新、预览或启停失败均可重试。
 新刷新或启停开始时会清除上一条 catalog 错误；请求进行中不能触发旧错误上的 Retry，避免旧刷新覆盖新的启停结果。
 
+发送前若所选 Skill 已删除、停用、失效、被遮蔽或 identity 不再匹配，服务端会在 `run_started` 前拒绝
+本轮。Desktop 不追加用户或错误气泡，也不清正文、附件和 chips；Composer 内联修复栏只把响应中 exact
+canonical path 匹配的 chips 标红。可以刷新当前 workspace catalog、只移除指定 path，或打开
+Settings -> Skills；切回对话时 scoped draft 会完整恢复。刷新成功只按最新 snapshot 清除已经恢复的红色
+状态，不自动删除、替换或改绑 chip，最终发送仍由服务端重新 preflight。
+
+`session_busy`、401、413 和普通 pre-start EOF 也只在 Composer 内联显示，并保留完整草稿，但不会触发
+catalog refresh 或显示普通 Retry。普通 Retry 只属于已经收到 `run_started` 的失败轮，并始终重发当时冻结
+的完整正文、附件和 Skills selection。
+
 Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。显式 block 单项
-最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB。选择失效和 payload 超限分别返回稳定的
+最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB，内容预览最多 256 KiB。选择失效和 payload 超限分别返回稳定的
 409/413；其他 run preparation 内部失败只返回通用 500，不包含内部 path、byte count 或异常消息。
 Shadowed selection 的 409 会额外返回当前 winner 的 canonical `winnerPath`；其他失败原因不包含该字段。
 
@@ -142,7 +153,7 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 
 ## 当前不可用
 
-- Blocked selection 修复流程仍未接入；Settings 已可管理磁盘上已发现 Skill 的启停并预览内容。
+- Skills v1 不提供创建、导入、安装、编辑、卸载或删除文件的生态能力。
 - MCP：没有 server 配置、连接或工具注入，设置入口禁用。
 - 独立 Quick chat 入口、版本快照、自动更新和数据导入导出仍未完成。
 - Slash menu 会显示 clear/help/model，但选择后当前不会执行对应动作。

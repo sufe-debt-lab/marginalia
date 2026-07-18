@@ -73,8 +73,9 @@ document、approval 等普通 method 仍只发送 JSON header。Skills list/cont
 `URLSearchParams` 编码，state update 只发送 `{ path, enabled, workspaceId? }`，run 的 `skills`
 selection 按调用方顺序序列化。
 
-renderer 的 `useSkillCatalog` 在 Composer 挂载、workspace 切换和每次新打开 `$` 或 `/` 菜单时调用
-`listSkills()`；Settings -> Skills 在页面挂载/重新进入、workspace 切换和手动刷新时也调用它。Hook 用
+renderer owner view 的 `useSkillCatalog` 在 Chat/New Thread 挂载、workspace 切换和每次 Composer 新打开
+`$` 或 `/` 菜单时调用 `listSkills()`，再把同一个 controller 下传给 Composer；picker 与 blocked repair
+不会各建一份可互相覆盖的 cache。Settings -> Skills 在页面挂载/重新进入、workspace 切换和手动刷新时也调用它。Hook 用
 request generation 与 requested workspace 拒绝迟到响应；当前请求返回 workspace 不匹配的 snapshot 时
 记录为 refresh failure。失败保留最后成功 snapshot，Composer picker 不允许从旧 snapshot 新增 selection，
 Settings 则保留旧行并显示重试。Settings 的 toggle 调用 `setSkillEnabled()`，只用响应 snapshot 替换状态，

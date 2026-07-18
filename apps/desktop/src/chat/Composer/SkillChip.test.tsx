@@ -60,4 +60,33 @@ describe("SkillChip", () => {
     expect(screen.getByTestId("skill-chip-/canonical/long/SKILL.md")).toHaveClass("max-w-full");
     expect(screen.getByText(`$${name}`)).toHaveClass("truncate");
   });
+
+  it("marks only an invalid canonical identity without changing its footprint", () => {
+    const { rerender } = render(
+      <SkillChip
+        skill={{ name: "pdf", path: candidate.canonicalPath }}
+        candidate={candidate}
+        invalid={false}
+        onRemove={vi.fn()}
+      />
+    );
+    const chip = screen.getByTestId(`skill-chip-${candidate.canonicalPath}`);
+    const stableClasses = chip.className;
+
+    rerender(
+      <SkillChip
+        skill={{ name: "pdf", path: candidate.canonicalPath }}
+        candidate={candidate}
+        invalid
+        onRemove={vi.fn()}
+      />
+    );
+
+    expect(chip).toHaveAttribute("data-invalid", "true");
+    expect(chip).toHaveAttribute("aria-invalid", "true");
+    expect(chip).toHaveClass("border-danger", "bg-danger-soft");
+    expect(
+      chip.className.replace("border-danger bg-danger-soft", "border-border bg-surface-2")
+    ).toBe(stableClasses);
+  });
 });

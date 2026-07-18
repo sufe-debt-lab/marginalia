@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient, SkillCandidate, SkillCatalogSnapshot } from "@/api/client.js";
+import { useSkillCatalog } from "@/hooks/useSkillCatalog.js";
 import { Composer as ControlledComposer } from "./Composer.js";
 
 const providers = [{ id: "p1", name: "Minimax", defaultModel: "M2.7" }];
@@ -47,7 +48,7 @@ function api(skills: SkillCandidate[] = []): ApiClient {
 
 type TestComposerProps = Omit<
   ComponentProps<typeof ControlledComposer>,
-  "text" | "onTextChange" | "skills" | "onAddSkill" | "onRemoveSkill"
+  "text" | "onTextChange" | "skills" | "onAddSkill" | "onRemoveSkill" | "skillCatalog"
 > &
   Partial<
     Pick<
@@ -58,9 +59,11 @@ type TestComposerProps = Omit<
 
 function Composer(props: TestComposerProps) {
   const [text, setText] = useState(props.text ?? "");
+  const skillCatalog = useSkillCatalog(props.api, props.workspaceId);
   return (
     <ControlledComposer
       {...props}
+      skillCatalog={skillCatalog}
       text={props.text ?? text}
       onTextChange={(next) => {
         if (props.text === undefined) setText(next);

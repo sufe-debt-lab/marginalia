@@ -9,6 +9,14 @@ export type SkillPickerItem = Omit<
   "name"
 > & { name: string };
 
+export type SkillCatalogController = {
+  snapshot: SkillCatalogSnapshot | null;
+  loading: boolean;
+  error: ApiError | Error | null;
+  refresh(): Promise<SkillCatalogSnapshot | null>;
+  setEnabled(path: string, enabled: boolean): Promise<SkillCatalogSnapshot | null>;
+};
+
 function asError(failure: unknown): Error {
   return failure instanceof Error ? failure : new Error(String(failure));
 }
@@ -16,13 +24,7 @@ function asError(failure: unknown): Error {
 export function useSkillCatalog(
   api: ApiClient,
   workspaceId: string | null
-): {
-  snapshot: SkillCatalogSnapshot | null;
-  loading: boolean;
-  error: ApiError | Error | null;
-  refresh(): Promise<SkillCatalogSnapshot | null>;
-  setEnabled(path: string, enabled: boolean): Promise<SkillCatalogSnapshot | null>;
-} {
+): SkillCatalogController {
   const [snapshot, setSnapshot] = useState<SkillCatalogSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);

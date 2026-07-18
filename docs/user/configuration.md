@@ -50,7 +50,8 @@ Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/mode
 workspace/session 时仍可恢复对应 owner 的草稿，但应用退出、renderer reload 或崩溃会丢失这些未接受内容。
 只有明确的 `run_completed` 才结束已接受 run；pre-start 401/409/413/EOF 保留草稿且不显示 Retry，避免
 复用更早一轮的 retry snapshot。started 后的失败保留该轮完整 snapshot，并在 terminal 后 drain 到 EOF、
-服务端完成 run 清理后允许显式 Retry。
+服务端完成 run 清理后允许显式 Retry。Retry 使用 immutable snapshot，并只在替代请求收到 `run_started`
+后删除旧 accepted attempt 的全部本地 entries；pre-start retry failure 保留旧 attempt。
 
 数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
 capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。
@@ -102,7 +103,8 @@ Composer 会在挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜
 
 Run request body 最多 4 MiB；最多提交 16 个 raw Skill selections，且每个 name/path 分别最多 16 KiB
 UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB；
-全部 blocks 按实际 prompt prefix 序列化计量（包含 block 间空行），合计最多 2 MiB。
+全部 blocks 按实际 prompt prefix 序列化计量（包含 block 间空行），合计最多 2 MiB。Catalog 保存和内容
+接口返回的 preview 最多 256 KiB；超出的正文仍按完整 bytes 参与显式 eligibility 与 run 限制。
 
 ### Skills 管理 API 与当前可用性
 
@@ -131,6 +133,12 @@ store 负责。Settings -> Skills 也使用同一 snapshot API：进入或重新
 重新列出全部 candidate；内容按选中 canonical path 延迟读取，启停只接受服务端返回的新 snapshot，不做
 乐观更新。新 refresh/toggle 会清除 retained error；任一 catalog 请求或 toggle 尚未完成时，旧错误的 Retry
 保持禁用且不会发起额外 GET。无法从已加载 workspace 列表解析的 active ID 按 global-only 请求处理。
+
+`409 skill_precondition_failed` 在 Composer 内保留 owner-scoped `{ text, contextFiles, skills }`，并按响应的
+exact canonical paths 标记 invalid chips。修复 Refresh 只用于这类 Skill precondition failure，调用当前
+owner workspace 的同一个 catalog controller；成功后仅在最新 candidate 仍为同 name/path 且 effective、
+enabled、explicit-eligible 时清除红色状态，不替换或删除 selection。Remove 只删除指定 path，打开 Settings
+再返回仍读取同一内存草稿。`session_busy`、401、413 和普通 pre-start EOF 不会错误触发 catalog refresh。
 
 Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
 预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的

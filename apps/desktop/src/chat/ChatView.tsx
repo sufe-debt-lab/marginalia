@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiClient, Approval } from "@/api/client.js";
+import {
+  ApiError,
+  type ApiClient,
+  type Approval,
+  type InvalidSkillSelection,
+  type SkillCatalogSnapshot
+} from "@/api/client.js";
 import { useMessages } from "@/hooks/useMessages.js";
 import { useProviders } from "@/hooks/useProviders.js";
+import { useSkillCatalog } from "@/hooks/useSkillCatalog.js";
 import { resolveComposerSelection } from "@/lib/provider-selection.js";
 import { useStreamingChat } from "@/hooks/useStreamingChat.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -11,6 +18,7 @@ import { Composer } from "./Composer/Composer.js";
 import { extractMentions } from "./Composer/mentions.js";
 import { MessageStream } from "./MessageStream.js";
 import { SaveToWorkspaceDialog } from "./SaveToWorkspaceDialog.js";
+import { SkillPreconditionBanner } from "./SkillPreconditionBanner.js";
 import type { ApprovalDecision } from "./ToolCard.js";
 
 function cloneTurnDraft(turn: TurnDraft): TurnDraft {
@@ -34,11 +42,79 @@ function sameTurnDraft(left: TurnDraft, right: TurnDraft): boolean {
   );
 }
 
-type ChatErrorState = {
+type AcceptedRunError = {
   message: string;
-  accepted: boolean;
+  accepted: true;
   retryable: boolean;
 };
+
+type BlockedTurn =
+  | { code: "skill_precondition_failed"; invalidSelections: InvalidSkillSelection[] }
+  | { code: "skill_payload_too_large" | "session_busy" | "unauthorized"; message: string };
+
+const INVALID_REASONS = new Set<InvalidSkillSelection["reason"]>([
+  "missing",
+  "disabled",
+  "invalid",
+  "shadowed",
+  "name_mismatch",
+  "too_large",
+  "unsupported_identifier"
+]);
+
+function invalidSelectionsFrom(error: ApiError): InvalidSkillSelection[] {
+  const values = error.details.invalidSelections;
+  if (!Array.isArray(values)) return [];
+  return values.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const selection = value as Record<string, unknown>;
+    if (
+      typeof selection.name !== "string" ||
+      typeof selection.path !== "string" ||
+      typeof selection.reason !== "string" ||
+      !INVALID_REASONS.has(selection.reason as InvalidSkillSelection["reason"])
+    ) {
+      return [];
+    }
+    return [
+      {
+        name: selection.name,
+        path: selection.path,
+        reason: selection.reason as InvalidSkillSelection["reason"],
+        ...(typeof selection.winnerPath === "string" ? { winnerPath: selection.winnerPath } : {})
+      }
+    ];
+  });
+}
+
+function blockedTurnFrom(error: ApiError): BlockedTurn | null {
+  if (error.code === "skill_precondition_failed") {
+    return { code: error.code, invalidSelections: invalidSelectionsFrom(error) };
+  }
+  if (error.code === "session_busy") return { code: error.code, message: error.message };
+  if (error.code === "skill_payload_too_large" || error.status === 413) {
+    return { code: "skill_payload_too_large", message: error.message };
+  }
+  if (error.code === "unauthorized" || error.status === 401) {
+    return { code: "unauthorized", message: error.message };
+  }
+  return null;
+}
+
+function selectionRecovered(
+  selection: { name: string; path: string },
+  snapshot: SkillCatalogSnapshot
+): boolean {
+  return snapshot.candidates.some(
+    (candidate) =>
+      candidate.canonicalPath === selection.path &&
+      candidate.name === selection.name &&
+      candidate.enabled &&
+      candidate.effective &&
+      candidate.status === "effective" &&
+      candidate.explicitEligible
+  );
+}
 
 export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string }) {
   const { t } = useTranslation();
@@ -62,6 +138,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   const reasoning = useAppStore((s) => s.reasoning);
   const setPermission = useAppStore((s) => s.setPermission);
   const setReasoning = useAppStore((s) => s.setReasoning);
+  const setView = useAppStore((s) => s.setView);
+  const skillCatalog = useSkillCatalog(api, activeWorkspaceId);
 
   const enabledProviders = providers.enabled;
   // Honour the stored selection only while it's still enabled; otherwise fall back
@@ -71,7 +149,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     composerProviderId,
     composerModel
   );
-  const [error, setError] = useState<ChatErrorState | null>(null);
+  const [error, setError] = useState<AcceptedRunError | null>(null);
+  const [blockedTurn, setBlockedTurn] = useState<BlockedTurn | null>(null);
+  const [preStartError, setPreStartError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<TurnDraft | null>(null);
   // Message queued for the save-to-workspace dialog: its markdown (write content)
   // plus the proposed file name. Null when the dialog is closed.
@@ -177,16 +257,27 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       lastSentRef.current = acceptedTurn;
       setLastSent(acceptedTurn);
     },
-    onComplete: () => setError(null),
+    onComplete: () => {
+      setError(null);
+      setBlockedTurn(null);
+      setPreStartError(null);
+    },
     onError: (streamError, accepted) => {
       if (!accepted) {
         clearSnapshotRef.current = null;
         retryCleanupRef.current = null;
+        setError(null);
+        const blocked = streamError instanceof ApiError ? blockedTurnFrom(streamError) : null;
+        setBlockedTurn(blocked);
+        setPreStartError(blocked ? null : streamError.message);
+        return;
       }
+      setBlockedTurn(null);
+      setPreStartError(null);
       setError({
         message: streamError.message,
-        accepted,
-        retryable: accepted && lastSentRef.current !== null
+        accepted: true,
+        retryable: lastSentRef.current !== null
       });
     }
   });
@@ -197,7 +288,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       try {
         await api.resolveApproval(sessionId, approvalId, decision);
       } catch (err) {
-        setError({ message: (err as Error).message, accepted: false, retryable: false });
+        setError(null);
+        setPreStartError((err as Error).message);
       }
     },
     [api, sessionId]
@@ -229,7 +321,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       return "saved";
     } catch (err) {
       if ((err as Error).message === "file exists") return "exists";
-      setError({ message: (err as Error).message, accepted: false, retryable: false });
+      setError(null);
+      setPreStartError((err as Error).message);
       setSaveTarget(null);
       return "saved";
     }
@@ -246,10 +339,14 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
 
   function submit(turn: TurnDraft) {
     if (!actualProviderId) {
-      setError({ message: t("chat.noProvider"), accepted: false, retryable: false });
+      setError(null);
+      setBlockedTurn(null);
+      setPreStartError(t("chat.noProvider"));
       return;
     }
     setError(null);
+    setBlockedTurn(null);
+    setPreStartError(null);
     retryCleanupRef.current = null;
     clearSnapshotRef.current = cloneTurnDraft(turn);
     void stream.send(withMentionedFiles(turn));
@@ -267,6 +364,8 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
     if (!pending || !actualProviderId) return;
     pendingTurnRef.current = null;
     setError(null);
+    setBlockedTurn(null);
+    setPreStartError(null);
     clearSnapshotRef.current = cloneTurnDraft(pending);
     void stream.send(withMentionedFiles(pending));
     // The claimed turn is nulled synchronously before send, so changes to the
@@ -277,12 +376,73 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
   function retry() {
     if (!error?.retryable || !lastSent) return;
     setError(null);
+    setBlockedTurn(null);
+    setPreStartError(null);
     // Keep the failed attempt visible until the retry is accepted. A pre-start
     // rejection must not erase an accepted turn from the conversation.
     retryCleanupRef.current = [...currentAttemptEntryIdsRef.current];
     clearSnapshotRef.current = null;
     void stream.send(lastSent);
   }
+
+  function removeSkill(path: string) {
+    removeTurnSkill(owner, path);
+    setBlockedTurn((current) => {
+      if (current?.code !== "skill_precondition_failed") return current;
+      const remaining = current.invalidSelections.filter((selection) => selection.path !== path);
+      return remaining.length === 0 ? null : { ...current, invalidSelections: remaining };
+    });
+  }
+
+  async function refreshBlockedSkills() {
+    if (blockedTurn?.code !== "skill_precondition_failed" || skillCatalog.loading) return;
+    const snapshot = await skillCatalog.refresh();
+    if (!snapshot) return;
+    setBlockedTurn((current) => {
+      if (current?.code !== "skill_precondition_failed") return current;
+      const selectedByPath = new Map(
+        getTurnDraft(owner).skills.map((selection) => [selection.path, selection])
+      );
+      const remaining = current.invalidSelections.filter((invalid) => {
+        const selection = selectedByPath.get(invalid.path);
+        return !selection || !selectionRecovered(selection, snapshot);
+      });
+      return remaining.length === 0 ? null : { ...current, invalidSelections: remaining };
+    });
+  }
+
+  const invalidSkillPaths = new Set(
+    blockedTurn?.code === "skill_precondition_failed"
+      ? blockedTurn.invalidSelections.map((selection) => selection.path)
+      : []
+  );
+  const blockedMessage =
+    blockedTurn?.code === "session_busy"
+      ? t("composer.sessionBusy")
+      : blockedTurn?.code === "unauthorized"
+        ? t("composer.unauthorized")
+        : blockedTurn?.code === "skill_payload_too_large"
+          ? t("composer.skillPayloadTooLarge")
+          : preStartError === "run ended before starting"
+            ? t("composer.runEndedBeforeStart")
+            : preStartError;
+  const composerStatus =
+    blockedTurn?.code === "skill_precondition_failed" ? (
+      <SkillPreconditionBanner
+        invalidSelections={blockedTurn.invalidSelections}
+        refreshing={skillCatalog.loading}
+        onRefresh={() => void refreshBlockedSkills()}
+        onRemove={removeSkill}
+        onOpenSettings={() => setView("settings")}
+      />
+    ) : blockedMessage ? (
+      <div
+        role="alert"
+        className="mb-2.5 rounded-lg border border-danger bg-danger-soft px-2.5 py-2 text-xs text-danger"
+      >
+        {blockedMessage}
+      </div>
+    ) : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -304,6 +464,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           <Composer
             api={api}
             workspaceId={activeWorkspaceId}
+            skillCatalog={skillCatalog}
             providers={enabledProviders}
             providerId={actualProviderId}
             model={actualModel}
@@ -315,7 +476,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
             onRemoveContextFile={(path) => removeTurnContextFile(owner, path)}
             skills={draft?.skills ?? []}
             onAddSkill={(skill) => addTurnSkill(owner, skill)}
-            onRemoveSkill={(path) => removeTurnSkill(owner, path)}
+            onRemoveSkill={removeSkill}
+            invalidSkillPaths={invalidSkillPaths}
+            status={composerStatus}
             permission={permission}
             reasoning={reasoning}
             onPermissionChange={setPermission}

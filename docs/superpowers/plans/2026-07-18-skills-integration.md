@@ -2543,7 +2543,7 @@ type SkillPreconditionBannerProps = {
 };
 ```
 
-- [ ] **Step 1: 写 blocked flow 失败测试**
+- [x] **Step 1: 写 blocked flow 失败测试**
 
 分别模拟 `session_busy`、`skill_precondition_failed`、`skill_payload_too_large`、401 和普通
 `run_started → run_failed`：
@@ -2560,7 +2560,7 @@ expect(screen.getByTestId("skill-chip-/old/pdf")).toHaveAttribute("data-invalid"
 expect(store.getTurnDraft("session:s1")).toEqual(originalTurn);
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -2570,7 +2570,7 @@ pnpm --filter @marginalia/desktop test -- SkillPreconditionBanner SkillChip Chat
 
 Expected: FAIL，所有错误仍被压成 string 并进入同一 retry UI。
 
-- [ ] **Step 3: 在 ChatView 保留 typed failure state**
+- [x] **Step 3: 在 ChatView 保留 typed failure state**
 
 ```ts
 type BlockedTurn =
@@ -2582,7 +2582,7 @@ type BlockedTurn =
 ApiError 时按 code 写 BlockedTurn。Skill failure 同时将 invalid path Set 下传 chips。普通 Error 在
 started 前作为 non-retry composer banner，仍不清 draft。
 
-- [ ] **Step 4: 实现三种修复动作**
+- [x] **Step 4: 实现三种修复动作**
 
 - Refresh：调用当前 workspace 的 `useSkillCatalog.refresh()`；成功后根据最新 candidate status
   清除已恢复 path 的红色标记，但不自动替换/删除 chip；最终发送仍 server preflight。
@@ -2592,13 +2592,14 @@ started 前作为 non-retry composer banner，仍不清 draft。
 为让 banner 与 picker 共用 refresh state，把 `useSkillCatalog` owner 提升到 NewThreadView/ChatView，
 再以 controller props 传 Composer；不得创建两个会互相覆盖的 UI cache。
 
-- [ ] **Step 5: 完成 Retry 与 first-turn 回归**
+- [x] **Step 5: 完成 Retry 与 first-turn 回归**
 
-`lastSent` 只在 `onAccepted` 设置；Retry 前删除上一 accepted attempt 的 optimistic bubbles，再发送
-完整 frozen turn。New Thread 的 `pendingTurn` 已由 Task 12 在首次 claim 时清空，因此自动提交失败
-不会 loop；`session:<newId>` draft 保留，用户修复后手动 Send 使用同一 turn。
+`lastSent` 只在 `onAccepted` 设置；Retry 先冻结上一 accepted attempt 的全部本地 entry IDs，并发送完整
+frozen turn，只有替代请求收到 `run_started` 后才删除旧 attempt。Retry 的 pre-start failure 保留旧
+accepted attempt。New Thread 的 `pendingTurn` 已由 Task 12 在首次 claim 时清空，因此自动提交失败不会
+loop；`session:<newId>` draft 保留，用户修复后手动 Send 使用同一 turn。
 
-- [ ] **Step 6: 同步 user/status/issue 正式文档**
+- [x] **Step 6: 同步 user/status/issue 正式文档**
 
 - `docs/user/guide.md`：`$`/`/`、多 chips、Settings 管理、Refresh、blocked send、Retry 和 read-only 限制。
 - `docs/user/concepts.md`：隐式 metadata 与显式完整正文、Pi session/history display 边界。
@@ -2608,7 +2609,7 @@ started 前作为 non-retry composer banner，仍不清 draft。
 - readiness audit 的 `P1-EXTENSIONS-001` evidence/修复目标同步；`P0-SEC-001` 仍 open，并明确局部
   capability 未保护其余 loopback routes。
 
-- [ ] **Step 7: focused 验证**
+- [x] **Step 7: focused 验证**
 
 Run:
 
@@ -2620,12 +2621,38 @@ pnpm docs:check
 
 Expected: PASS；所有 blocked path 都保留完整 draft，普通 accepted failure 的 Retry 不回归。
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add apps/desktop docs/user docs/product/status.md docs/developer/issues/2026-07-11-product-readiness-audit.md
 git commit -m "feat(desktop): recover blocked Skill turns"
 ```
+
+**Implementation Outcome (Task 15, 2026-07-18):**
+
+- 实现结果：ChatView 将 pre-start `ApiError` 保存为 typed `BlockedTurn`，与 accepted run error/Retry
+  分离；Skill precondition 以 exact canonical path 标红 chip，并提供 Refresh、精确 Remove 和 Open
+  Settings 三种内联修复动作。401、413、`session_busy` 与普通 pre-start EOF 保留完整草稿且不触发
+  Catalog refresh 或普通 Retry。
+- Catalog ownership：Chat/New Thread owner 各持有一次 `useSkillCatalog` controller 并下传 Composer，
+  picker 与 blocked repair 共用 snapshot/loading/refresh；Refresh 只按 owner 当前 draft 中 matching chip
+  与最新 snapshot 清除已恢复红色状态，不重绑或删除 selection。
+- Retry/first-turn：保留 Task 12 acceptance-deferred attempt replacement；retry pre-start failure 不删除旧
+  accepted attempt，首次 pending turn 只 claim 一次且失败后保留 session draft。
+- 验证：初始 focused RED 为 3 个失败文件、7 个失败测试；最终 focused 16 files / 108 tests、desktop
+  typecheck、docs static + diff 和 `git diff --check` 全部通过。Fresh `pnpm verify` 通过（docs 28、
+  chat-core 37、pi-server 270 + 1 opt-in skip、desktop 411，全部 build 通过）；`pnpm verify:visual`
+  报告 `changed=0 new=0 unchanged=32 orphan=0 errors=0`。
+- Review：deep `/check` 的 security、architecture/race、UI/a11y、test/docs 与 adversarial passes 无残留
+  Critical/Important/Minor。Review 发现并修复一个 stale retry edge：旧 name + 同 path 的冻结 retry
+  preflight 失败时，Refresh 必须使用较新草稿里的当前 matching chip identity；该边界另有 RED→GREEN
+  回归。
+- 正式文档：同步 user guide/concepts/configuration、developer API/architecture、product status、readiness
+  audit 和本 active plan。
+- 偏差与遗留：按 Task 12 已批准语义修正原 Step 5 的“Retry 前删除 bubbles”为收到替代请求
+  `run_started` 后再删除。无产品/API 偏差或新增依赖。Task 16 仍负责 deterministic Skills visual
+  scenarios、七张 Skills baselines 和 active records 归档；MCP、Skill 安装/编辑生态及整体
+  `P0-SEC-001` 继续 open。
 
 ---
 

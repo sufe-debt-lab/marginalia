@@ -1,10 +1,12 @@
 import { X } from "lucide-react";
 import type { SkillCandidate, SkillSelection, SkillSource } from "@/api/client.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
+import { cn } from "@/lib/cn.js";
 
 interface Props {
   skill: SkillSelection;
   candidate?: SkillCandidate;
+  invalid?: boolean;
   onRemove: (path: string) => void;
 }
 
@@ -17,7 +19,7 @@ const SOURCE_KEYS = {
   user_agents: "composer.skillSourceUserAgents"
 } as const satisfies Record<SkillSource, string>;
 
-export function SkillChip({ skill, candidate, onRemove }: Props) {
+export function SkillChip({ skill, candidate, invalid = false, onRemove }: Props) {
   const { t } = useTranslation();
   const source = candidate ? t(SOURCE_KEYS[candidate.source]) : t("composer.skillSourceUnknown");
   const title = `${source}: ${candidate?.canonicalPath ?? skill.path}`;
@@ -26,8 +28,13 @@ export function SkillChip({ skill, candidate, onRemove }: Props) {
   return (
     <div
       data-testid={`skill-chip-${skill.path}`}
+      data-invalid={invalid ? "true" : "false"}
+      aria-invalid={invalid}
       title={title}
-      className="flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border border-border bg-surface-2 py-1 pl-2.5 pr-1.5 text-xs"
+      className={cn(
+        "flex min-h-8 max-w-full items-center gap-1.5 rounded-lg border py-1 pl-2.5 pr-1.5 text-xs",
+        invalid ? "border-danger bg-danger-soft" : "border-border bg-surface-2"
+      )}
     >
       <span className="min-w-0 max-w-[220px] truncate font-mono font-medium text-text">
         ${skill.name}

@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { useRef } from "react";
 import type { ApiClient } from "@/api/client.js";
 import { useProviders } from "@/hooks/useProviders.js";
+import { useSkillCatalog } from "@/hooks/useSkillCatalog.js";
 import { resolveComposerSelection } from "@/lib/provider-selection.js";
 import { useWorkspaces } from "@/hooks/useWorkspaces.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
@@ -41,6 +42,7 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const setPermission = useAppStore((s) => s.setPermission);
   const setReasoning = useAppStore((s) => s.setReasoning);
   const submittingRef = useRef(false);
+  const skillCatalog = useSkillCatalog(api, activeWorkspaceId);
 
   const enabledProviders = providers.enabled;
   // Honour the stored selection only while it's still enabled; otherwise fall back
@@ -94,6 +96,7 @@ export function NewThreadView({ api }: { api: ApiClient }) {
         <Composer
           api={api}
           workspaceId={activeWorkspaceId}
+          skillCatalog={skillCatalog}
           providers={enabledProviders}
           providerId={actualProviderId}
           model={actualModel}
