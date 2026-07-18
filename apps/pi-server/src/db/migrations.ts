@@ -115,22 +115,25 @@ export function migrate(db: Database.Database) {
     );
   `);
 
-  const applied = new Set(
-    (db.prepare("select version from schema_migrations").all() as Array<{ version: number }>).map(
-      (row) => row.version
-    )
-  );
-
   for (const migration of migrations) {
-    if (applied.has(migration.version)) continue;
     db.transaction(() => {
-      db.exec(migration.sql);
+      const applied = db
+        .prepare("select 1 from schema_migrations where version = ?")
+        .get(migration.version);
+
+      if (migration.version === 1) {
+        db.exec(migration.sql);
+        repairV1SessionColumns(db);
+        if (applied) return;
+      } else {
+        if (applied) return;
+        db.exec(migration.sql);
+      }
+
       db.prepare("insert into schema_migrations (version, applied_at) values (?, ?)").run(
         migration.version,
         Date.now()
       );
-    })();
+    }).immediate();
   }
-
-  repairV1SessionColumns(db);
 }

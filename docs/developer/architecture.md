@@ -115,8 +115,10 @@ lease 不跨 pi-server 重启持久化，renderer 的 `sendingRef` 也仍只保�
 历史消息的读取也分两种来源（`apps/pi-server/src/app.ts#readMessagesFromSessionFile`）：若该 session 已有 `agentSessionPath`（pi 落盘的 session 文件），从该文件读；否则从 SQLite 的 `messages` 表读并转成 `ChatEntry`。
 
 SQLite schema 由 `migrate()`（`apps/pi-server/src/db/migrations.ts#migrate`）按版本顺序升级，每个版本
-使用独立 transaction。v1 建立既有 workspace/session/provider/run/approval 数据模型，并保留对历史
-异常数据库缺失 `sessions.model` 或 `sessions.agent_session_path` 的幂等修复；v2 只增加
+使用独立的 `BEGIN IMMEDIATE` transaction，并在取得写锁后重新检查版本，保证两个连接并发启动时只
+应用一次。v1 transaction 在记录版本前建立既有 workspace/session/provider/run/approval 数据模型，
+并补齐 `sessions.model` 与 `sessions.agent_session_path`；已记录 v1 的历史异常数据库也先在该 transaction
+中幂等修复，再进入 v2。migration body、兼容修复和版本记录不会留下部分提交；v2 只增加
 `skill_preferences`。`createSkillPreferenceStore()`
 （`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）以调用方已解析的 canonical
 path 原字符串保存启停状态，缺省为启用，并通过单次 `list()` 为后续 Catalog 构造偏好 map。Store 不

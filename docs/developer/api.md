@@ -278,9 +278,11 @@ schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置和 secret 边界
 | `skill_preferences` | `skill_path, enabled, updated_at`；`enabled` 只能为 `0` 或 `1`                                           |
 | `schema_migrations` | `version, applied_at`                                                                                    |
 
-数据库迁移按版本顺序分别在 transaction 中执行。全新数据库记录 v1 和 v2；已有 v1 数据库只补
-`skill_preferences` 和 v2 记录。v1 的兼容修复仍会幂等补齐历史数据库可能缺失的
-`sessions.model` 与 `sessions.agent_session_path` 列。
+数据库迁移按版本顺序分别在 `BEGIN IMMEDIATE` transaction 中执行，并在取得写锁后重新检查版本，
+因此多个连接并发启动不会重复应用同一版本。全新数据库在 v1 transaction 内完成既有 DDL 和
+`sessions.model` / `sessions.agent_session_path` 兼容列后才记录 v1；已有 v1 数据库也先在独立的 v1
+transaction 中幂等修复这两列，再尝试 v2。migration SQL、兼容修复和对应版本记录分别保持原子性；
+已有 v1 数据库只补 `skill_preferences` 和 v2 记录。
 
 `createSkillPreferenceStore()`（`apps/pi-server/src/db/skill-preferences.ts#createSkillPreferenceStore`）
 是 Skill 启停偏好的数据库入口。调用方传入的 canonical path 字符串会原样作为主键；没有记录时视为

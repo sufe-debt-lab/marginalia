@@ -799,6 +799,16 @@ Expected: PASS；fresh DB 得到 v1+v2，真实 v1 DB 只补 v2，不丢既有�
 - 偏差与遗留：原 Files 清单漏列已有断言 `apps/pi-server/test/workspace-session.test.ts`，完整门禁发现后
   已同步到 v1+v2；第一次全门禁先修复 API 文档格式，第二次暴露该旧断言，第三次完整通过。无实现
   偏差或新增遗留。
+- Formal review fixes：v1 bootstrap/历史列修复现已在记录 v1 前由独立 `BEGIN IMMEDIATE`
+  transaction 原子完成，v2 失败不会阻止已记录 v1 的必要修复；每个版本在取得写锁后重新检查
+  `schema_migrations`，两个真实 worker connection 的同库回归证明并发 migrate 都成功且 v2 只应用
+  一次。新增强制 v2 失败、version insert 回滚和部分 column repair 回滚覆盖。
+- Formal review RED：原实现的 focused migration suite exit 1，3 项按预期失败（fresh v1 与异常 v1
+  在 v2 失败后均缺兼容列；两个连接中一个报 `table skill_preferences already exists`），另有 5 项通过；
+  独立 partial-repair rollback 校准在旧实现下 1 项失败、8 项 skipped。
+- Formal review GREEN：Task 4 focused suite 41/41 通过，pi-server typecheck 与 `pnpm docs:check`
+  通过；最终 `pnpm verify` 通过，包含 docs 28、chat-core 14、pi-server 160（另 1 个 opt-in smoke
+  skip）、desktop 330 tests 和全部 builds。security、architecture 与 adversarial review 无 finding。
 
 - [x] **Step 6: 提交**
 
