@@ -82,4 +82,14 @@ describe("desktop dev script", () => {
 
     expect(packageJson.scripts["prepack:app"]).toMatch(/-r build/);
   });
+
+  it("builds workspace library exports before root commands consume them", () => {
+    const packageJson = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), "../../package.json"), "utf8")
+    ) as { scripts: Record<string, string> };
+
+    expect(packageJson.scripts.predev).toContain("build:workspace-libs");
+    expect(packageJson.scripts.pretest).toContain("build:workspace-libs");
+    expect(packageJson.scripts.pretypecheck).toContain("build:workspace-libs");
+  });
 });

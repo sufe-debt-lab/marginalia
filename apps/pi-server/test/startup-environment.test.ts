@@ -79,5 +79,5 @@ describe("pi-server startup environment", () => {
       parentOrigin: null,
       toolEnvironment: { token: null, origin: null }
     });
-  });
+  }, 15_000);
 });

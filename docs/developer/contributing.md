@@ -49,6 +49,8 @@ PR 应包含同一行为的测试、实现、正式文档和验证证据。不�
 pnpm verify
 ```
 
+根级 `dev`、`test` 和 `typecheck` 会自行先构建 workspace library exports；验证结果不能依赖工作区中历史遗留的 `packages/chat-core/dist`。修改这些 lifecycle scripts 时，保留干净 checkout 的回归覆盖。
+
 UI 改动另跑：
 
 ```bash

@@ -27,6 +27,8 @@ desktop 的打包 scripts（`apps/desktop/package.json`）：
 | `package`               | `prepack:app` + `electron-builder --dir`。                          |
 | `dist`                  | `prepack:app` + `electron-builder`（出安装包）。                    |
 
+根级 `dev`、`test` 和 `typecheck` 通过 `build:workspace-libs` 先生成 `@marginalia/chat-core` 的 `dist` exports；打包仍由 `prepack:app` 的拓扑式 `pnpm -r build` 生成全部 workspace 产物。两条路径都不依赖 checkout 中已有的 ignored build output。
+
 root/pi-server 的 ABI 恢复 scripts：
 
 | script          | 内容                                                                              |
