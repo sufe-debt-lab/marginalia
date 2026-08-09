@@ -443,7 +443,7 @@ function isCheckedCodeReference(token) {
     return false;
   }
   if (/[*<>\s]/.test(token) || token.includes("..")) return false;
-  return !GENERATED_PATH_PARTS.some((part) => `/${token}`.includes(part));
+  return !GENERATED_PATH_PARTS.some((part) => `/${token}/`.includes(part));
 }
 
 function isFormalDocument(file) {

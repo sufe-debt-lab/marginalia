@@ -69,6 +69,8 @@ pnpm docs:check -- --base <base-sha> --declaration <json-file>
 
 diff 检查对二进制变更（如截图基线 PNG）安全：changed-line 提取使用有损 UTF-8 解码，二进制不会让检查崩溃，其中的 ASCII 内容仍会被 `changedLinePattern` 规则匹配到。
 
+当前树检查在干净 CI 的构建步骤之前运行。正式文档可以描述 `dist`、`release`、`resources`、`output` 等生成目录；源码引用守卫会跳过这些目录，不依赖本地是否已经生成构建产物。修改这套识别规则时必须同步 `scripts/docs-check.test.mjs` 的干净工作区回归。
+
 ## Docs impact
 
 PR 模板要求填写受影响的正式文档、产品状态、活跃 spec/plan 和验证结果。高信号代码路径由 `docs/contracts/docs-impact.json` 映射到必须更新的文档。

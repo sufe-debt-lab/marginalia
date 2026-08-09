@@ -118,7 +118,7 @@ same_change: true
 
 ### 当前树检查
 
-`pnpm docs:check` 检查当前文档链接和 heading fragment、源码路径和 symbol anchor、根级 pnpm script、产品状态 schema、Superpowers 元数据和索引，以及 AGENTS/CLAUDE 规则文件。正式文档使用 `path` 或 `path#symbol`，不使用容易漂移的 `path:line`。
+`pnpm docs:check` 检查当前文档链接和 heading fragment、源码路径和 symbol anchor、根级 pnpm script、产品状态 schema、Superpowers 元数据和索引，以及 AGENTS/CLAUDE 规则文件。正式文档使用 `path` 或 `path#symbol`，不使用容易漂移的 `path:line`。CI 会在构建前运行这项检查，因此 `dist`、`dist-electron`、`release`、`resources`、`output` 等生成目录无论位于路径中间还是末尾，都不会被当成必须已存在的源码引用。
 
 `docs/internal/` 的历史正文不参与源码引用和 Markdown 链接检查；归档元数据中的稳定 ID 仍会校验。
 

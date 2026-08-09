@@ -136,7 +136,7 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 - **i18n 强制**（`apps/desktop`）：每个面向用户的字符串（文本、`aria-label`、placeholder、toast）都要走 `t()`（`@/i18n/useTranslation.js`）。新增 key 要同时加到 `src/i18n/messages.ts` 的 `en` 和 `zh`——`zh` 用 `satisfies`，漏 key 会在 typecheck 报错。UI 里不允许硬编码英文。
 - **设计 token**：视觉风格锁定在 mono + serif + emerald（见 `src/styles.css` + `tailwind.config.ts`）。用设计 token（`text-muted`、`border-soft`、`brand`、`.dot`、`.h-display` 等），不要写临时颜色。
 - **聊天模型约定**：保持消息体为 pi 原生形状，不重新引入扁平化的 `UiMessage`/`UiToolCall`。详见[系统架构 · 单一事实源](./architecture.md#单一事实源single-source-of-truth)。
-- **文档代码引用**：`docs/` 里指向源码时用 `path`（整文件）或 `path#符号`（文件内稳定的标识符 / 路由 / 字符串），**不要用 `path:line`**——行号会随上方代码变动而静默失真。引用写成 repo 根相对路径，根级守卫 `scripts/docs-check.test.mjs` 会校验文件存在、锚点命中，并在出现 `:line` 时报错。需要精确到某一行时，用提交 SHA 固定的 GitHub permalink。
+- **文档代码引用**：`docs/` 里指向源码时用 `path`（整文件）或 `path#符号`（文件内稳定的标识符 / 路由 / 字符串），**不要用 `path:line`**——行号会随上方代码变动而静默失真。引用写成 repo 根相对路径，根级守卫 `scripts/docs-check.test.mjs` 会校验文件存在、锚点命中，并在出现 `:line` 时报错。`apps/pi-server/dist` 这类生成目录会被明确跳过，因为 CI 在构建前运行文档检查；是否存在本地构建产物不能改变结果。需要精确到某一行时，用提交 SHA 固定的 GitHub permalink。
 
 ## 完成前检查
 

@@ -195,6 +195,14 @@ test("Markdown links, fragments, source anchors, and path:line references are ch
   });
 });
 
+test("generated directory references do not depend on local build artifacts", () => {
+  fixture((root) => {
+    write(root, "docs/user/guide.md", "# Guide\n\n`apps/pi-server/dist`\n");
+
+    assert.deepEqual(checkCodeReferences(root, ["docs/user/guide.md"]), []);
+  });
+});
+
 test("Markdown and source reads reject symlinks, outside targets, and oversized files", () => {
   fixture((root) => {
     const outside = mkdtempSync(path.join(os.tmpdir(), "marginalia-docs-outside-"));
