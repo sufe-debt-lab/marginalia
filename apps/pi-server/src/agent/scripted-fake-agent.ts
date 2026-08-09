@@ -159,6 +159,7 @@ export class ScriptedFakeAgentClient implements AgentClient {
     let started = false;
     return {
       sessionFile: plain.sessionFile,
+      release() {},
       start(message, promptOptions) {
         if (started) throw new Error("prepared run already started");
         started = true;

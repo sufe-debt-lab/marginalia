@@ -102,9 +102,12 @@ Composer 会在挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜
 失败并提供重试，不会重新开放最后成功 snapshot 中的旧候选行。
 
 Run request body 最多 4 MiB；最多提交 16 个 raw Skill selections，且每个 name/path 分别最多 16 KiB
-UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式 XML block 单项最多 512 KiB；
-全部 blocks 按实际 prompt prefix 序列化计量（包含 block 间空行），合计最多 2 MiB。Catalog 保存和内容
-接口返回的 preview 最多 256 KiB；超出的正文仍按完整 bytes 参与显式 eligibility 与 run 限制。
+UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。显式调用要求原始 `SKILL.md` 文件最多
+512 KiB（边界包含）；XML wrapper 不计入这个单项门槛。全部 blocks 按实际 prompt prefix 序列化计量
+（包含 block 间空行），合计最多 2 MiB。Catalog 保存和内容接口返回的 preview 最多 256 KiB；非法
+UTF-8 文件标为 invalid，不会把 replacement characters 截断后的内容静默发送给 agent。正文含 XML 1.0
+非法 control character，或 name/canonical path/base directory 含这类字符或 CR/LF 时，文件仍可在管理页
+显示诊断和 preview，但不能显式选择；普通正文换行不受影响。
 
 ### Skills 管理 API 与当前可用性
 
@@ -133,6 +136,17 @@ store 负责。Settings -> Skills 也使用同一 snapshot API：进入或重新
 重新列出全部 candidate；内容按选中 canonical path 延迟读取，启停只接受服务端返回的新 snapshot，不做
 乐观更新。新 refresh/toggle 会清除 retained error；任一 catalog 请求或 toggle 尚未完成时，旧错误的 Retry
 保持禁用且不会发起额外 GET。无法从已加载 workspace 列表解析的 active ID 按 global-only 请求处理。
+从 blocked-turn 入口打开 Settings → Skills 时，Skills tab 会获得焦点；Settings 导航向辅助技术暴露当前
+选中 tab。Settings 的 vertical tabs 支持 Arrow Up/Down/Left/Right、Home 和 End，并跳过禁用的 MCP。
+Composer 的 `$`/`/` 列表会让键盘高亮项保持可见，option 不进入 Tab 顺序；Retry 在 listbox 外并在刷新后
+把焦点还给输入框。Loading/empty/error 在 listbox 外播报，IME composition 不触发选项；慢文件搜索只在
+原 workspace 与 textarea 仍拥有焦点时发布。Cmd/Ctrl+Enter 在菜单打开时只选择当前项，不会同时提交消息。
+
+Agent session cache 会在 effective Skills、canonical workspace root、provider、model 或 readonly/default
+工具 profile 改变时淘汰并重建；Ask/Full policy 与 reasoning 按轮动态应用。因此同一 session 从 Full 切到
+Read-only 不会继续复用可写工具集，重开持久化 session 时也以当前 canonical workspace root 覆盖旧 cwd。
+Cache 的 20 项 LRU 只淘汰 idle session；prepared/active run 以 reservation 固定，全部繁忙时允许暂时超过
+soft cap，settled 或未启动 preparation 释放后再收敛。
 
 `409 skill_precondition_failed` 在 Composer 内保留 owner-scoped `{ text, contextFiles, skills }`，并按响应的
 exact canonical paths 标记 invalid chips。修复 Refresh 只用于这类 Skill precondition failure，调用当前

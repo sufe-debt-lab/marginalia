@@ -124,6 +124,13 @@ cache。Controller 以 request generation 和 workspace identity 丢弃迟到响
 状态，不修改受控正文或添加 selection。可选 candidate 必须同时满足非空
 `name`、`enabled`、`status === "effective"` 和 `explicitEligible`。`$` 菜单只显示 Skills；`/` 菜单把
 Commands 与 Skills 作为视觉分区，但使用同一个 flat selectable row 序列，所以标题不会进入键盘导航。
+打开菜单时 textarea 暴露 `aria-controls` / `aria-activedescendant`，键盘高亮项自动滚动到可见区域；
+option 不进入 Tab 顺序，DOM focus 始终由 textarea 持有。加载失败的 Retry 位于 listbox 外；点击后立即把
+焦点还给 textarea，因此刷新成功后可继续 Arrow/Enter；loading、empty 与 error 通过 listbox 外的 live
+status 播报，加载期间 listbox 标记 `aria-busy`。IME composition 期间菜单不处理 Enter/方向键。
+Cmd/Ctrl+Enter 只选择当前菜单项，不会在同一个事件里同时提交消息。Mention/attachment 搜索用 request
+generation、workspace identity 与 textarea focus ownership 共同发布；新 trigger、Escape、workspace
+切换或焦点转移都会使迟到结果失效，因此慢查询不会重开旧菜单或从 Permission/Model popup 抢回焦点。
 两个入口都提交 exact `{ name, canonicalPath }`，删除触发 token，并由 scoped turn draft store 按 canonical
 path 去重；Composer 保持 ordered chips，不建立桌面专用 `/skill:*` 协议。
 
@@ -134,6 +141,9 @@ snapshot 为唯一状态源。Catalog、content 和 toggle 都以 request genera
 canonical path 防止跨行或跨 workspace 的迟到响应污染当前视图。新 catalog 操作会清除 retained error；
 catalog loading 或 toggle pending 时，Retry 在 DOM 与 handler 两层都被阻止，避免额外 refresh 使 pending
 PATCH 的 generation 失效并重新发布旧 snapshot。
+Settings 导航使用 vertical tab/tablist/tabpanel 语义；Arrow Up/Down/Left/Right、Home 与 End 在可用 tab
+间移动并选择，跳过禁用的 MCP。从 blocked-turn 修复入口直达 Skills 时，Skills tab 在挂载后取得焦点，
+避免焦点遗留在已经卸载的 Chat 控件上。
 
 ChatView 把 pre-start failure 保存为 typed `BlockedTurn`，与 accepted run error 分离。Skill precondition
 从 `ApiError.details.invalidSelections` 读取 exact canonical identities，只标记 matching chips；其 Refresh
@@ -167,7 +177,8 @@ Marginalia `<attached_files>` envelope。`packages/chat-core/src/user-display.ts
 契约；其中 `normalizeAgentPromptForDisplay()`
 （`packages/chat-core/src/user-display.ts#normalizeAgentPromptForDisplay`）严格解析连续 Skill blocks、只解码
 Skill builder 支持的五种 XML attribute entities，并按原顺序生成 `$name` markers。附件 envelope 只接受
-attachment builder 的四种 attribute entities（不含 `&apos;`），其中 `mime` entry 必须包含 header newline、
+attachment builder 的四种 named entities（不含 `&apos;`）以及 `&#9;`、`&#10;`、`&#13;` 三种由 builder
+生成的 whitespace entities，其中 `mime` entry 必须包含 header newline、
 body 和 closing tag 前 newline，`error` entry 必须在 header newline 后立即 closing；完整 wrapper 还必须位于
 字符串末尾。疑似 Skill 前缀、unknown entity、variant/body grammar 错误或 closing-tag 歧义会保留对应原文；
 不完整附件 suffix 也保持可见。解析不查询当前 Catalog，因此磁盘上已删除的 Skill 仍按 session 内保存的
@@ -218,17 +229,19 @@ Catalog pipeline。输出固定按 source priority、ancestor depth、relative p
 ### Skill candidate 稳定解析
 
 `loadSkillCandidate()`（`apps/pi-server/src/skills/candidate-loader.ts#loadSkillCandidate`）一次只处理
-一个 discovery descriptor。每次尝试严格执行 discovered path realpath、读取 bytes A、以 canonical
-path 单独调用 Pi `loadSkills()`、再次 realpath、读取 bytes B；Pi 调用固定
-`skillPaths: [canonicalPath]` 和 `includeDefaults: false`。只有两次 canonical path 相等且 bytes 的
-SHA-256 相等时，才发布夹在两次读取之间得到的 Pi metadata、diagnostics 与 bytes B。路径或内容不一致
+一个 discovery descriptor。每次尝试严格执行 discovered path realpath、读取 bytes A、把 A 写入私有
+临时目录并以单文件 `loadSkills()` 解析该捕获版本、再次 realpath、读取 bytes B；临时解析结果的 path 与
+baseDir 在发布前映射回 canonical identity。只有两次 canonical path 相等且 bytes 的 SHA-256 相等时，
+才发布由 bytes A 解析出的 Pi metadata/diagnostics 与相同内容的 bytes B，因此同一路径在解析期间发生
+A→B→A 变化也不能混合 metadata 和正文。路径或内容不一致
 最多重试三次；持续变化、realpath、读取或 parser 失败只把当前 candidate 变成 invalid diagnostic，
 不会使整个 Catalog refresh reject。
 
 Pi 返回 `Skill` 即保留为 valid，即使同时返回 warning；Pi 没有返回 `Skill` 才是解析 invalid。稳定
-bytes 用 UTF-8 解码，`bytesTotal` 和大小限制始终按 Buffer bytes 判断。显式调用的正文上限为 512 KiB
-（边界包含），preview 上限为 256 KiB；超过正文上限或 name、canonical path、canonical base directory
-含 XML 1.0 不允许的字符时，candidate 仍保留 Pi metadata 和 preview，但
+bytes 必须是合法 UTF-8，否则发布 `invalid_utf8` error 并把 candidate 标为 invalid；`bytesTotal` 和大小
+限制始终按 Buffer bytes 判断。显式调用的原始 `SKILL.md` 文件上限为 512 KiB（边界包含），preview 上限
+为 256 KiB；超过文件上限，正文含 XML 1.0 不允许的字符，或 name、canonical path、canonical base
+directory 含 XML 1.0 不允许的字符或 CR/LF 时，candidate 仍保留 Pi metadata 和 preview，但
 `explicitEligible: false`、`rawContent: null`。`disable-model-invocation` 直接映射为 `explicitOnly`，
 完整稳定内容用 SHA-256 `contentHash` 标识。Preference、canonical identity 去重、同名 collision 和
 effective winner 由下一阶段 Catalog reducer 处理。
@@ -260,17 +273,26 @@ collision 和 content identity；`effectiveRevision` 只投影 discovery 顺序�
 canonical path 与正文 hash。`refreshedAt` 不进入 revision，因此同一状态重复 refresh 的 revision 不变；
 非 effective candidate 或仅 diagnostic/preview 变化不会重建 runtime identity。
 
-Refresh 开始时只解析一次 canonical workspace root，并把同一个值用于 cache key、discovery 和 snapshot，
-避免排队期间 workspace symlink retarget 把新 target 的 candidate 发布到旧 key。Global-only 使用独立固定
-key。Candidate descriptor 仍全部经过 Task 6 stable loader 后才按 canonical identity first-wins 去重，避免
-提前丢掉 invalid/diagnostic candidate；loader 使用固定四 worker 并保持 descriptor result 顺序，限制并发
-read/parse 数量。
+Refresh 开始时只解析一次 canonical workspace root，并把 workspace identity 与该 canonical root 的组合
+用于 cache key、discovery 和 snapshot，避免排队期间 workspace symlink retarget 把新 target 的 candidate
+发布到旧 key，也避免两个 workspace 记录共享目录时串用 snapshot。Global-only 使用独立固定 key。
+Candidate descriptor 仍全部经过 Task 6 stable loader 后才按 canonical identity first-wins 去重，避免提前
+丢掉 invalid/diagnostic candidate；单次 build 的 loader 使用固定四 worker 并保持 descriptor result 顺序，
+整个 service 同时最多运行两个 catalog build，限制跨 workspace 的 read/parse 放大。
 
-每个 cache key 有 promise chain 和递增 generation：refresh 串行执行，只有调用时最高 generation 可以
-发布到 `current()`；每次完成的成功结果也会在内部暂存。如果较新的 generation 失败，它向上 reject，并
-保留或发布最近一次成功结果；stale success 仍不能覆盖 newer success。`setEnabled()` 先 refresh，再按
-exact canonical path 验证当前 membership，只在命中后写 preference 并再次 refresh。Workspace symlink
-或 candidate symlink retarget 后，旧 canonical selection 不再命中新 snapshot。
+Service-wide build admission 还限制最多 20 个等待者；等待 build slot 超过 30 秒或队列已满时以 Catalog
+failure fail closed，run preparation 返回通用错误，picker/Settings 保留 Retry。这个上限约束 HTTP promise、
+refresh state 与 waiter 的增长，但不声称能强制取消已经进入 discovery/load 的任意第三方 Promise：若两个
+active build 永不 settle，后续 workspace 会在有界等待后失败。Pi 的同步 `loadSkillsFromDir` 若卡在网络
+文件系统还会阻塞 event loop，timer 本身也无法运行；这是当前同步 discovery 的已知可用性 residual。
+
+每个 cache key 维护递增 generation、一个 active build 和至多一个 trailing build；active 期间的 refresh
+burst 合并到同一个 trailing promise，只有调用时最高 generation 可以发布到 `current()`。每次完成的成功
+结果也会在内部暂存；较新的 generation 失败时向上 reject，并保留或发布最近一次成功结果，stale success
+仍不能覆盖 newer success。Global key 固定保留；workspace identity 的 idle state/snapshot 使用 20 项 LRU
+上限，active/trailing build 完成后再参与淘汰。`setEnabled()` 先 refresh，再按 exact canonical path 验证
+当前 membership，只在命中后写 preference 并再次 refresh。Workspace symlink 或 candidate symlink
+retarget 后，旧 canonical selection 不再命中新 snapshot。
 
 ### Skills HTTP 管理边界
 
@@ -294,7 +316,8 @@ Skill。
 
 Desktop Composer 已通过 `GET /skills` 接入 picker，并把 exact selection 交给 run API。Settings Skills
 入口使用 list/state/content route 展示全部 candidate、管理启停 preference，并允许预览 invalid candidate；
-它不创建、导入、安装、编辑或删除文件。Blocked selection 修复仍不是普通桌面流程可操作的功能。
+它不创建、导入、安装、编辑或删除文件。Blocked selection 可从 Composer 直接 Refresh、移除或深链到
+Settings → Skills 修复。
 
 ## Agent session 与资源
 
@@ -305,13 +328,16 @@ stream read failure 都会 best-effort cancel，reader 始终释放 lock。随�
 每个 identity field 16 KiB UTF-8，再只使用该 immutable snapshot：显式选择按 canonical path 首次去重
 和排序，再按 exact path/name/status 校验；XML
 block 的 body 只来自 snapshot `rawContent`，不会重新读盘。Builder 与 Pi 0.75.5 使用相同的 newline 和
-frontmatter boundary，分别转义 XML attribute/text，并拒绝 XML 1.0 不支持的 control character。Prompt
+frontmatter boundary，只转义 wrapper attribute 与 References baseDir；Skill body 保持 Pi 原生原文。
+正文拒绝 XML 1.0 不支持的 control character，wrapper identity 还拒绝 CR/LF，确保 builder 与重开历史的
+严格 grammar 一致。附件 path/mime/error 中的 tab 与换行由 builder 编码为受限 numeric entities。Prompt
 拼接顺序固定为 Skill blocks → user text → trailing `attached_files` envelope。
 Shadowed selection 的 typed 409 从 candidate `shadowedBy` 复制当前 winner canonical path 到
 `winnerPath`；其他 invalid reason 的对象省略该字段。
 
-显式 XML block 单项最多 512 KiB；全部 blocks 以 `blocks.join("\n\n")` 实际序列化后的 UTF-8 bytes
-（包含分隔符）计量，最多 2 MiB。Pre-create typed Skill failure 保留 409/413；其他内部失败统一返回
+单个候选的原始 `SKILL.md` 最多 512 KiB；wrapper 不再造成边界候选被二次拒绝。全部 blocks 以
+`blocks.join("\n\n")` 实际序列化后的 UTF-8 bytes（包含分隔符）计量，最多 2 MiB。Pre-create typed
+Skill failure 保留 409/413；其他内部失败统一返回
 `500 run_preparation_failed`，不暴露异常消息、内部 path 或 byte count。
 
 同一 preflight 还产出 `{ effectiveRevision, loadResult }` runtime snapshot。`PiCodingAgentClient.prepare()`
@@ -321,15 +347,24 @@ context file discovery 也保持关闭，只注入 Marginalia 审批 extension�
 loader，供显式 block 调用；Pi 原生 `formatSkillsForPrompt()` 按 `disableModelInvocation` 把它排除在
 隐式 system prompt 列表之外。启动 prompt 时服务端强制 `expandPromptTemplates: false`，禁止 Pi 原生
 `/skill:name` 从 `skill.filePath` 重读磁盘；显式调用只能经过 snapshot preflight 生成的 block。
-`prepare()` 不调用 prompt；`PreparedAgentRun.start()` 才建立事件订阅并启动 prompt，返回可中止的
-事件流和始终可等待的 `settled` Promise。MCP 仍没有配置或工具注入链路。
+`prepare()` 不调用 prompt；registry 的 `acquirePinned()` 在 entry 发布与 LRU 淘汰之间原子建立 reservation，
+避免并发 session preparation 在 `await` 边界淘汰刚创建的 handle。`PreparedAgentRun.start()` 才建立事件
+订阅并启动 prompt，返回可中止的事件流和始终可等待的 `settled` Promise；正常路径在 settled 时释放
+reservation，create-run/start 前失败或 post-acquire 初始化异常会幂等 release。MCP 仍没有配置或工具注入链路。
 
-AgentSession 由 `AgentSessionRegistry` 按 session ID 和 `resourceRevision` 缓存，其中 revision 固定使用
-Catalog `effectiveRevision`。相同 revision 的 cache hit 复用 handle；revision 变化时先 dispose 旧
-handle，再用同一个已持久化 `agentSessionPath` 创建 session。仅 diagnostic、disabled loser 或 preview
+Run 使用 Catalog snapshot 已固定的 canonical `workspaceRoot` 同时构建附件消息并调用 agent preparation，
+不会在同一轮退回数据库里可能已被 symlink retarget 的原始 root。AgentSession 由
+`AgentSessionRegistry` 按 session ID、canonical workspace root、`resourceRevision` 与 `runtimeRevision` 缓存；
+resource revision 固定使用 Catalog `effectiveRevision`，runtime revision 覆盖 provider、model 与 readonly/default
+工具 profile。任一 identity 变化时先 dispose 旧 handle，再用同一个已持久化 `agentSessionPath` 重建；重开
+`SessionManager` 时显式以当前 canonical root 覆盖历史 header 的 cwd。Ask/Full 共用 default 工具集并由
+每轮 gateway policy 动态区分，Reasoning 也通过 setter 动态更新。仅 diagnostic、disabled loser 或 preview
 变化不会改变 effective revision，因此不会重建 session。Run lease 在整个 refresh/preflight/prepare/
-execution settled 边界内阻止同 session 的第二次 refresh 或 acquire。Reasoning 仍通过 setter 动态更新，
-权限工具集没有同类更新路径；provider、model 或 permission 变化时缓存仍不能保证一致。
+execution settled 边界内阻止同 session 的第二次 refresh 或 acquire。
+
+Registry 的 20 项 LRU 是 idle-session soft cap：淘汰只选择未被 reservation pin 的 handle；所有候选都在
+运行或已 preparation 时允许暂时超出上限，release 后再从最旧 idle entry 收敛。显式 shutdown 仍可
+`disposeAll()`；这个进程内保护不关闭跨进程所有权与崩溃恢复的 `P0-RUN-001`。
 
 Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provider.name)` 和 model ID 调用 `getModel()`，没有把该 URL 注入请求。Provider Test 只检查本地 ModelRegistry 和是否配置凭据，不验证 key 或网络。
 
@@ -344,7 +379,9 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - Skill discovery 沿用 Pi symlink 语义，不要求 canonical target 留在 source root。持有 capability 的调用方
   只有在外部 target 已通过预先存在、可发现的 Skill symlink 成为当前 snapshot member 时才能取得其
   snapshot preview；单独提交任意 path 不会触发读取，content route 也不重读 target。
-- Ask 审批按字符串前缀判断 shell，新文件 write 默认直通；Read-only 还受缓存 session 配置影响。
+- Catalog admission 只提供两个 active build、20 个 waiter 与 30 秒排队等待的有界 fail-closed；无法取消的
+  active Promise 或同步 Pi discovery 卡顿仍可让所有 workspace refresh 暂时不可用。
+- Ask 审批按字符串前缀判断 shell，新文件 write 默认直通。
 - Provider key 以明文写入 SQLite。
 
 修复目标和验收条件见[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。

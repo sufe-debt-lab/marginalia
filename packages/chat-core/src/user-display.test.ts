@@ -129,6 +129,17 @@ describe("normalizeAgentPromptForDisplay", () => {
     });
   });
 
+  it("accepts generated attachment attributes with encoded whitespace controls", () => {
+    const envelope = attachmentEnvelope(
+      '<attached_file path="line&#10;break&#9;.md" error="missing&#13;file">\n</attached_file>'
+    );
+
+    expect(normalizeAgentPromptForDisplay(`inspect\n\n${envelope}`)).toEqual({
+      skillNames: [],
+      text: "inspect"
+    });
+  });
+
   it.each([
     [
       "mime attachment with an immediate close",

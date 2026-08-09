@@ -1,10 +1,10 @@
 ---
 type: plan
 record_id: PLAN-P2-SKILLS-001
-status: approved
+status: active
 source_spec_id: SPEC-P2-SKILLS-001
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-07-19
 target_milestone: post-M0
 owner: repository-maintainers
 docs_impact:
@@ -47,7 +47,7 @@ Testing Library、Electron screenshot verification。
 - `agent_event` 保持 raw pi payload；只保留现有 run-level SSE envelopes。
 - `packages/chat-core` 只放 pi-shaped 类型桥和无 UI 依赖的纯展示辅助。
 - Skill identity、偏好、去重和选择校验统一使用 canonical realpath；客户端 path 永远不是任意文件读取权限。
-- Run body 最多 4 MiB；raw 显式选择最多 16 个，每个 name/path 最多 16 KiB UTF-8；单项正文最多
+- Run body 最多 4 MiB；raw 显式选择最多 16 个，每个 name/path 最多 16 KiB UTF-8；单个原始 `SKILL.md` 最多
   512 KiB；合计 blocks 最多 2 MiB；preview 最多 256 KiB。
 - 每任务测试先行，先观察目标失败，再写最小实现；每个任务独立 Conventional Commit。
 - 用户流程、HTTP、SQLite、权限或架构进入正常路径时，在同一任务同步正式文档。
@@ -69,7 +69,7 @@ picker identity 必须能被同一 snapshot 在发送前复验，并由同一 re
 - **apps/pi-server/src/run/session-run-leases.ts**：每个 session 的进程内 single-flight lease。
 - `apps/pi-server/src/agent/agent-client.ts`：`prepare/start/settled` 公共生命周期契约。
 - `apps/pi-server/src/agent/pi-coding-agent-client.ts`：revision-pinned Pi loader 与 execution stream。
-- `apps/pi-server/src/agent/agent-session-registry.ts`：按 `effectiveRevision` 复用或重建 session handle。
+- `apps/pi-server/src/agent/agent-session-registry.ts`：按 canonical workspace root 与 `effectiveRevision` 复用或重建 session handle。
 - **apps/pi-server/src/agent/agent-message.ts**：Skill blocks、用户正文、附件 envelope 的最终拼装。
 - `apps/pi-server/src/db/migrations.ts`：真实的 v1 → v2 schema migration。
 - **apps/pi-server/src/db/skill-preferences.ts**：canonical path 启停偏好的唯一数据库入口。
@@ -1044,7 +1044,7 @@ export type ParsedSkillCandidate = DiscoveredSkillFile & {
 export type CandidateLoaderDeps = {
   realpath(path: string): Promise<string>;
   readFile(path: string): Promise<Buffer>;
-  parse(path: string): LoadSkillsResult;
+  parse(path: string, content: Buffer): LoadSkillsResult;
 };
 
 export function loadSkillCandidate(
@@ -1089,17 +1089,13 @@ Expected: FAIL，loader 不存在。
 
 - [x] **Step 3: 实现三次稳定读取协议**
 
-每次 attempt 严格执行：`realpath A → read A → parse(canonical A) → realpath B → read B`；只有
-realpath 和 SHA-256 都相同时接受该 parsed result 与 B bytes。默认 parser：
+每次 attempt 严格执行：`realpath A → read A → parse(canonical A, bytes A) → realpath B → read B`；
+只有 realpath 和 SHA-256 都相同时接受该 parsed result 与 B bytes。默认 parser 把 bytes A 写入私有
+临时目录，用单文件 Pi loader 解析捕获内容，再把结果 identity 映射回 canonical path/baseDir：
 
 ```ts
-const parse = (filePath: string): LoadSkillsResult =>
-  loadSkills({
-    cwd: path.dirname(filePath),
-    agentDir: path.dirname(filePath),
-    skillPaths: [filePath],
-    includeDefaults: false
-  });
+const parse = (filePath: string, content: Buffer): LoadSkillsResult =>
+  parseCapturedSkillContent(filePath, content);
 ```
 
 每个 candidate 独立调用，不能先按 name/collision/disabled 跳过。三次都不稳定时返回 invalid
@@ -1107,8 +1103,9 @@ candidate，而不是 reject 整个 refresh。
 
 - [x] **Step 4: 固定 valid/warning/size/control-char 判定**
 
-Pi 返回 `skill` 即 valid，即使 diagnostics 有 warning；`skill === null` 才 invalid。正文用 UTF-8
-decode；eligible candidate 保留最多 512 KiB 的完整 `rawContent`，其他只留 256 KiB prefix。
+Pi 返回 `skill` 即 valid，即使 diagnostics 有 warning；`skill === null` 才 invalid。原始 bytes 必须是
+合法 UTF-8，否则产生 `invalid_utf8` 并标为 invalid；eligible candidate 保留最多 512 KiB 原始文件的完整
+`rawContent`，其他只留 256 KiB prefix。
 identifier 检查只接受 XML 1.0 合法字符：
 
 ```ts
@@ -1139,12 +1136,12 @@ Expected: PASS；warning candidate 仍 valid，第三次不稳定只影响该 ca
 
 **Task 6 results (2026-07-18):**
 
-- 实际完成：新增 `ParsedSkillCandidate`、512 KiB 显式正文与 256 KiB preview byte 常量，以及单
-  candidate loader。每次最多三次严格执行 realpath A、read A、Pi parse(canonical A)、realpath B、
+- 实际完成：新增 `ParsedSkillCandidate`、512 KiB 显式文件与 256 KiB preview byte 常量，以及单
+  candidate loader。每次最多三次严格执行 realpath A、read A、captured-byte Pi parse、realpath B、
   read B；只有 canonical path 与 SHA-256 同时相等才发布夹在稳定 reads 之间的 parsed result 和 bytes
   B。失败或三次不稳定返回当前 invalid candidate diagnostic，不 reject 整体 refresh。
-- Pi 与内容语义：默认 parser 每次只传一个 canonical path 且 `includeDefaults: false`；Pi warning 加
-  `Skill` 仍 valid，只有没有 `Skill` 才 invalid。正文按 UTF-8 decode，所有大小决定按 Buffer bytes；
+- Pi 与内容语义：默认 parser 每次只解析一份捕获内容且 `includeDefaults: false`，发布前恢复 canonical
+  identity；Pi warning 加 `Skill` 仍 valid，只有没有 `Skill` 才 invalid。非法 UTF-8 标为 invalid，所有大小决定按 Buffer bytes；
   512 KiB 边界可显式调用，超限只留 256 KiB preview；`disable-model-invocation` 映射
   `explicitOnly`。Name、canonical path 或 canonical base directory 含 XML 1.0 不支持字符时保留 Pi
   metadata、禁止显式调用并产生 `unsupported_identifier`。
@@ -1292,9 +1289,10 @@ effective `LoadSkillsResult` 直接由第一阶段保存的 Pi `Skill` objects �
 - [x] **Step 4: 实现 revision 与串行 refresh**
 
 对稳定 JSON projection 用 SHA-256；projection 数组保持 discovery 顺序，object key 手工固定。
-每个 canonical workspace root（global 用固定 key）维护 promise chain + generation。只有当前最高
-generation 可 `snapshots.set(key, deepFreeze(snapshot))`；失败不覆盖上一份成功 snapshot，但当前
-调用仍 reject，让 picker 禁止新增。
+每个 `[workspaceId, canonical workspace root]`（global 用固定 key）维护 generation、一个 active build
+和至多一个 trailing build。只有当前最高 generation 可 `snapshots.set(key, deepFreeze(snapshot))`；失败
+不覆盖上一份成功 snapshot，但当前调用仍 reject，让 picker 禁止新增。Service-wide build slot 最多两个，
+waiter 最多 20 个并在 30 秒后 fail closed。
 
 - [x] **Step 5: 同步概念和配置文档**
 
@@ -1322,8 +1320,9 @@ Expected: PASS；相同磁盘状态在乱序 readdir 下产生相同 revisions�
   固定指向 canonical winner。
 - Revision 与 cache：稳定 fixed-key JSON projection 生成 SHA-256 `catalogRevision` 和
   `effectiveRevision`；前者覆盖管理可见 candidate/diagnostic/preference/preview，后者只覆盖 effective
-  metadata/path/order/body hash。Canonical workspace/global cache 分区，per-key promise chain 与
-  generation 阻止旧 refresh 发布；失败 reject 且保留既有 snapshot。
+  metadata/path/order/body hash。Workspace identity + canonical root/global fixed key 分区，per-key
+  active + one trailing 与 generation 阻止旧 refresh 发布；失败 reject 且保留既有 snapshot。Service-wide
+  admission 限制两个 active build、20 个 waiter 和 30 秒等待；无法取消的 active build 保留 fail-closed residual。
 - Immutability 与 mutation：snapshot 深拷贝 loader-owned Pi Skill/sourceInfo/diagnostics 后递归冻结，
   不冻结上游共享对象，也不重新读盘或 parse。`setEnabled()` 执行 refresh、exact canonical membership、
   preference upsert、refresh；缺失或 symlink retarget 后旧 path 抛 `skill_candidate_not_found`。
@@ -1554,8 +1553,8 @@ export function prepareSkillTurn(
 - [x] **Step 1: 写纯 preflight 失败测试**
 
 覆盖 0/1/N selections、canonical path 首次去重与顺序、全部 invalid reasons、name mismatch 不自动
-改绑、disabled winner 后旧 path 不改绑 successor、16/17 数量边界、512 KiB item、2 MiB total、
-explicit-only 可显式调用、五种 attribute entities、References text escaping、unsupported control char。
+改绑、disabled winner 后旧 path 不改绑 successor、16/17 数量边界、512 KiB 原始文件边界、2 MiB total、
+explicit-only 可显式调用、五种 attribute entities、References text escaping、Pi-native raw body、unsupported control char。
 
 ```ts
 expect(plan.blocks.join("\n\n")).toBe(
@@ -1591,13 +1590,15 @@ export function stripPiFrontmatter(content: string): string {
 }
 ```
 
-builder 分别实现 `escapeXmlAttribute`（`& " < > '`）和 `escapeXmlText`（`& < >`），绝不有损替换
-control chars。block UTF-8 byte size 用 `Buffer.byteLength`，合计超过限制抛 typed 413 error。
+builder 用 `escapeXmlAttribute` 处理 wrapper identity、用 `escapeXmlText` 处理 References baseDir；Skill body
+与 Pi 原生展开一致地保留原文，绝不有损替换 control chars。全部 blocks 的 UTF-8 合计超过限制时抛
+typed 413 error；单项 512 KiB 以原始 `SKILL.md` 文件计量，不包含 builder wrapper。
 
 - [x] **Step 4: 让 registry 按 effectiveRevision 重建**
 
-`AcquireInput` 增加 `resourceRevision: string`，`SessionHandle` 保存同字段。cache hit 只有 revision 相同
-才复用；不同则先 evict 旧 handle，再以同一个 `agentSessionPath` 建新 session。该方法只在 Task 3
+`AcquireInput` 增加 `resourceRevision: string`，`SessionHandle` 保存 canonical workspace root 与 revision。
+cache hit 只有 root 和 revision 都相同才复用；任一不同则先 evict 旧 handle，再以同一个
+`agentSessionPath` 建新 session。该方法只在 Task 3
 lease 内调用。测试 active execution 期间 route 不会调用 acquire；空闲后的 revision 变化才重建。
 
 - [x] **Step 5: 注入 pinned skillsOverride**
@@ -1634,6 +1635,9 @@ prompt：effective Skills 被注入；`disableModelInvocation=true` 的 Skill �
 run body 增加 `skills?: SkillSelection[]`。lease 内先 `catalog.refresh`，再 `prepareSkillTurn`，然后
 `buildAgentMessage({ skillBlocks: plan.blocks, ... })`，成功后才 `agentClient.prepare({ runtimeSkills:
 plan.runtime, ... })` 和 `createRun`。typed failures 响应：
+
+Message build 与 `prepare` 都使用本次 snapshot 固定的 canonical workspace root；不会重新采用数据库中
+可能已被 symlink retarget 的 raw root。
 
 ```ts
 return c.json(
@@ -1672,12 +1676,12 @@ Expected: PASS；0/1/N Skills 与隐式 loader 使用同一 effectiveRevision，
 
 - 实际完成：新增纯 `prepareSkillTurn()`，从 immutable Catalog snapshot 构建 ordered explicit blocks 和
   pinned runtime。Canonical path 首次去重、exact path/name/status 校验、全部七种 invalid reason、
-  explicit-only、16/17、512 KiB item、2 MiB total、Pi 0.75.5 frontmatter/newline、XML entities 与
+  explicit-only、16/17、512 KiB 原始文件、2 MiB total、Pi 0.75.5 frontmatter/newline、XML entities 与
   control-character fail-closed 均有单元测试。
 - Runtime/cache：每次 run 在 session lease 内 refresh，包括零显式选择；Pi loader 以
   `noSkills: true + skillsOverride` 注入 effective Skills/diagnostics，explicit-only 保留在 loader 并由 Pi
-  原生隐式 prompt formatter 排除。Registry 只在 `effectiveRevision` 变化时 dispose/rebuild，并保留
-  `agentSessionPath`；busy request 不 refresh 或 prepare/acquire。
+  原生隐式 prompt formatter 排除。Registry 在 canonical workspace root 或 `effectiveRevision` 变化时
+  dispose/rebuild，并保留 `agentSessionPath`；busy request 不 refresh 或 prepare/acquire。
 - Transaction：固定顺序为 refresh → preflight → message build → prepare → run insert → SSE/start。所有
   Skill 409/413、refresh、body/message 和 prepare failure 都在 run insert/start 前返回，run count 保持 0。
 - RED：规定 focused command exit 1；preflight module 缺失，registry revision 未重建，Pi acquire 没有
@@ -2849,13 +2853,23 @@ Expected: worktree clean；任务 commits 与归档引用一致；docs check PAS
   阻断真实 Pi Bash child 继承；browser fallback token 必须从 query 移到读取后立即清除的 fragment；W1
   deferred session 创建完成前切换 W2 时必须恢复 W1 并保留 W2 draft；blocked Open Settings 必须直达
   Skills，而普通入口即使在同页也必须回 General。每项行为/安全变更均先得到目标 RED 再实现 GREEN。
-- 本次修正只采用合法前向状态：spec 为 active，plan 为 approved；删除 archive/outcome/same_change
+- 本次修正只采用合法前向状态：spec 为 active；plan 先保持 approved，随后本轮实施修复时合法前进为
+  active。删除 archive/outcome/same_change
   frontmatter，并把两个 records 和 active index 恢复到 `docs/superpowers/`。实现进度与验证证据保留在
   本文，不冒充已完成的归档。
 - 最终复核：desktop focused 12 files / 98 tests、pi-server capability 2 files / 10 tests、两包 typecheck、
   docs static + `--base ad07b03`、format 和 diff-check 通过；fresh `pnpm verify` 为 docs 28、chat-core 37、
   pi-server 272 + 1 opt-in skip、desktop 422，lint/typecheck/build 全绿。`pnpm verify:visual` 的 39 条报告
   已逐行检查，全部 unchanged，`changed=0 new=0 orphan=0 errors=0`。
-- 后续 closeout 必须分阶段：先让 plan 在一个进入 base 的 change 中从 approved 转 active；之后新的
-  change 才能补最终 Implementation Outcome、精确 implementation refs、completed metadata 和 internal
-  archive。MCP、整体 `P0-SEC-001` 与全部已批准 residual risks 在此期间继续 open。
+- 本轮已满足 staged lifecycle 的第一阶段：相对 base `4d48da1`，plan 从 approved 前进为 active，并继续
+  接收 review 修复。后续新的 change 才能补最终 Implementation Outcome、精确 implementation refs、
+  completed metadata 和 internal archive。MCP、整体 `P0-SEC-001` 与全部已批准 residual risks 在此期间继续 open。
+- 2026-07-19 多 agent 最终 review 新发现并修复：candidate byte pinning/UTF-8/XML/raw-body budget 与 canonical
+  run root 已收口；Catalog 改为 identity+canonical-root key、active+one trailing、两个 service build slot、
+  20 waiter/30 秒 fail-closed；AgentSession cache 增 runtime identity、原子 prepared reservation、idle-only
+  soft-cap LRU 与所有 pre-return/start/settled release 路径；Desktop 收口 async file-menu generation/focus、
+  IME、live status、Settings tab/panel 和 stale completion。无法取消的 active build 与同步 Pi discovery
+  卡顿仍按正式架构记录为可用性 residual，不被描述为已完全消除。
+- 2026-07-19 fresh full verification：`pnpm verify` 通过（docs 28、chat-core 38、pi-server 294 + 1 opt-in
+  skip、desktop 440，lint/typecheck/build 全绿）；`pnpm verify:visual` 的完整报告为 39 unchanged、
+  `changed=0 new=0 orphan=0 errors=0`，逐项检查后无需更新 baseline。

@@ -121,7 +121,7 @@ describe("AppShell", () => {
       return new Response("[]", { headers: { "content-type": "application/json" } });
     });
     render(<AppShell serverUrl="http://x" capabilityToken="token" />);
-    await userEvent.click(screen.getByRole("button", { name: /^skills$/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /^skills$/i }));
 
     expect(await screen.findAllByText("Research")).not.toHaveLength(0);
     await waitFor(() =>
@@ -196,7 +196,7 @@ describe("AppShell", () => {
 
     render(<AppShell serverUrl="http://x" capabilityToken="token" />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Skills" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Skills" }));
     expect(await screen.findByText("Disk Skills")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -235,7 +235,7 @@ describe("AppShell", () => {
       return new Response("[]", { headers: { "content-type": "application/json" } });
     });
     render(<AppShell serverUrl="http://x" capabilityToken="token" />);
-    await userEvent.click(screen.getByRole("button", { name: /^skills$/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /^skills$/i }));
 
     await waitFor(() =>
       expect(global.fetch).toHaveBeenCalledWith(

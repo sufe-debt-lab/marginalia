@@ -73,11 +73,15 @@ diff 检查对二进制变更（如截图基线 PNG）安全：changed-line 提�
 
 PR 模板要求填写受影响的正式文档、产品状态、活跃 spec/plan 和验证结果。高信号代码路径由 `docs/contracts/docs-impact.json` 映射到必须更新的文档。
 
-`skills-management` 规则覆盖 pi-server Skills catalog，以及 desktop 的 `useSkillCatalog`、Composer、
-Settings 和 store 相关路径。无论改动处于 backend 还是 UI 阶段，同一 diff 都要更新使用指南、用户配置、
-developer API、系统架构和产品状态，并准确区分“后端已实现”和“用户工作流已可用”。修改
-`docs/contracts/docs-impact.json` 本身会命中 `documentation-contracts`，需要同步本文与文档生命周期，
-记录 pattern 和贡献者应运行的 diff-impact 命令。
+`skills-management` 规则覆盖 pi-server Skills catalog、prompt/history serialization、Pi runtime
+injection、agent session cache，以及 desktop 的 `useSkillCatalog`/streaming hooks、Composer、Chat/New
+chat、blocked repair、AppShell/Sidebar Settings composition、Settings 和 store 相关路径。
+`skills-desktop-api` 与 `skills-route-composition` 分别以窄 changed-line pattern 补充覆盖 desktop client
+中的 Skills DTO/调用和 `app.ts` 中的 Skills route、snapshot、runtime 与 canonical-root 组合。无论改动处于 backend 还是 UI
+阶段，同一 diff 都要更新使用指南、用户配置、developer API、系统架构和产品状态，并准确区分“后端已实现”
+和“用户工作流已可用”。修改 `docs/contracts/docs-impact.json` 本身
+会命中 `documentation-contracts`，需要同步本文与文档生命周期，记录 pattern 和贡献者应运行的
+diff-impact 命令。
 
 纯内部重构可以声明豁免：
 

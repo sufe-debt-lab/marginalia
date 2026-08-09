@@ -1,3 +1,4 @@
+import { useId, type KeyboardEvent, type RefObject } from "react";
 import type { SkillPickerItem } from "@/hooks/useSkillCatalog.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { cn } from "@/lib/cn.js";
@@ -21,6 +22,9 @@ interface Props {
   onSelect: (row: SlashRow) => void;
   onRetrySkills: () => void;
   onClose: () => void;
+  id?: string;
+  ownerRef?: RefObject<HTMLElement | null>;
+  onActiveOptionChange?: (id: string | null) => void;
 }
 
 function skillMatches(item: SkillPickerItem, query: string): boolean {
@@ -39,9 +43,14 @@ export function SlashMenu({
   skillsError,
   onSelect,
   onRetrySkills,
-  onClose
+  onClose,
+  id,
+  ownerRef,
+  onActiveOptionChange
 }: Props) {
   const { t } = useTranslation();
+  const generatedId = useId();
+  const menuId = id ?? `slash-menu-${generatedId}`;
   const normalizedQuery = query.toLocaleLowerCase();
   const commandRows: SlashRow[] = COMMANDS.filter((command) =>
     command.name.startsWith(normalizedQuery)
@@ -63,81 +72,109 @@ export function SlashMenu({
           }));
   const selectableRows = [...commandRows, ...skillRows];
   const resetKey = `${query}\0${selectableRows.map((row) => row.key).join("\0")}`;
-  const { activeIndex, setActiveIndex } = useMenuNav(selectableRows, onSelect, onClose, resetKey);
+  const { activeIndex, setActiveIndex, optionId } = useMenuNav(
+    selectableRows,
+    onSelect,
+    onClose,
+    resetKey,
+    { menuId, ownerRef, onActiveOptionChange }
+  );
+
+  function retrySkills() {
+    onRetrySkills();
+    ownerRef?.current?.focus();
+  }
+
+  function handleRetryKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    onClose();
+    ownerRef?.current?.focus();
+  }
 
   return (
-    <div
-      role="listbox"
-      aria-label={t("composer.slashMenu")}
-      className={cn(COMPOSER_MENU_CLS, "max-h-[190px] w-80 overflow-auto")}
-    >
-      <SectionLabel>{t("composer.commandsSection")}</SectionLabel>
-      {commandRows.length === 0 ? (
-        <MenuStatus>{t("composer.noCommands")}</MenuStatus>
-      ) : (
-        commandRows.map((row, index) =>
-          row.kind === "command" ? (
-            <button
-              key={row.key}
-              type="button"
-              role="option"
-              aria-selected={index === activeIndex}
-              className={rowClass(index === activeIndex)}
-              onClick={() => onSelect(row)}
-              onMouseEnter={() => setActiveIndex(index)}
-            >
-              <span className="font-mono font-medium">/{row.name}</span>
-              <span className="truncate text-text-muted">{t(row.helpKey)}</span>
-            </button>
-          ) : null
-        )
-      )}
+    <div className={cn(COMPOSER_MENU_CLS, "max-h-[190px] w-80 overflow-auto")}>
+      <div
+        role="listbox"
+        id={menuId}
+        aria-label={t("composer.slashMenu")}
+        aria-busy={skillsLoading}
+      >
+        <SectionLabel>{t("composer.commandsSection")}</SectionLabel>
+        {commandRows.length === 0 ? (
+          <MenuPlaceholder>{t("composer.noCommands")}</MenuPlaceholder>
+        ) : (
+          commandRows.map((row, index) =>
+            row.kind === "command" ? (
+              <button
+                key={row.key}
+                type="button"
+                tabIndex={-1}
+                id={optionId(index)}
+                role="option"
+                aria-selected={index === activeIndex}
+                className={rowClass(index === activeIndex)}
+                onClick={() => onSelect(row)}
+                onMouseEnter={() => setActiveIndex(index)}
+              >
+                <span className="font-mono font-medium">/{row.name}</span>
+                <span className="truncate text-text-muted">{t(row.helpKey)}</span>
+              </button>
+            ) : null
+          )
+        )}
 
-      <div className="my-1 border-t border-border-soft" />
-      <SectionLabel>{t("composer.skillsSection")}</SectionLabel>
-      {skillsLoading ? (
+        <div role="presentation" className="my-1 border-t border-border-soft" />
+        <SectionLabel>{t("composer.skillsSection")}</SectionLabel>
+        {!skillsLoading && !skillsError && skillRows.length > 0
+          ? skillRows.map((row, skillIndex) => {
+              if (row.kind !== "skill") return null;
+              const index = commandRows.length + skillIndex;
+              return (
+                <button
+                  key={row.key}
+                  type="button"
+                  tabIndex={-1}
+                  id={optionId(index)}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  className={rowClass(index === activeIndex)}
+                  onClick={() => onSelect(row)}
+                  onMouseEnter={() => setActiveIndex(index)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono font-medium">${row.skill.name}</span>
+                    {row.skill.description && (
+                      <span className="mt-0.5 block truncate text-[11px] text-text-muted">
+                        {row.skill.description}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-text-subtle">
+                    {t("composer.skillType")}
+                  </span>
+                </button>
+              );
+            })
+          : null}
+      </div>
+      {!skillsError && skillsLoading ? (
         <MenuStatus>{t("common.loading")}</MenuStatus>
-      ) : skillsError ? (
+      ) : !skillsError && skillRows.length === 0 ? (
+        <MenuStatus>{t("composer.noSkills")}</MenuStatus>
+      ) : null}
+      {skillsError && (
         <div className="flex min-h-10 items-center justify-between gap-3 px-2.5 py-2 text-xs text-text-muted">
-          <span>{t("composer.skillsRefreshFailed")}</span>
+          <span role="status">{t("composer.skillsRefreshFailed")}</span>
           <button
             type="button"
-            onClick={onRetrySkills}
+            onClick={retrySkills}
+            onKeyDown={handleRetryKeyDown}
             className="shrink-0 rounded-md px-2 py-1 font-medium text-brand transition-colors hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {t("common.retry")}
           </button>
         </div>
-      ) : skillRows.length === 0 ? (
-        <MenuStatus>{t("composer.noSkills")}</MenuStatus>
-      ) : (
-        skillRows.map((row, skillIndex) => {
-          if (row.kind !== "skill") return null;
-          const index = commandRows.length + skillIndex;
-          return (
-            <button
-              key={row.key}
-              type="button"
-              role="option"
-              aria-selected={index === activeIndex}
-              className={rowClass(index === activeIndex)}
-              onClick={() => onSelect(row)}
-              onMouseEnter={() => setActiveIndex(index)}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-mono font-medium">${row.skill.name}</span>
-                {row.skill.description && (
-                  <span className="mt-0.5 block truncate text-[11px] text-text-muted">
-                    {row.skill.description}
-                  </span>
-                )}
-              </span>
-              <span className="shrink-0 text-[10px] text-text-subtle">
-                {t("composer.skillType")}
-              </span>
-            </button>
-          );
-        })
       )}
     </div>
   );
@@ -145,7 +182,10 @@ export function SlashMenu({
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="px-2.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-text-subtle">
+    <div
+      role="presentation"
+      className="px-2.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-text-subtle"
+    >
       {children}
     </div>
   );
@@ -153,7 +193,20 @@ function SectionLabel({ children }: { children: string }) {
 
 function MenuStatus({ children }: { children: string }) {
   return (
-    <div className="flex min-h-10 items-center px-2.5 py-2 text-xs text-text-muted">{children}</div>
+    <div role="status" className="flex min-h-10 items-center px-2.5 py-2 text-xs text-text-muted">
+      {children}
+    </div>
+  );
+}
+
+function MenuPlaceholder({ children }: { children: string }) {
+  return (
+    <div
+      role="presentation"
+      className="flex min-h-10 items-center px-2.5 py-2 text-xs text-text-muted"
+    >
+      {children}
+    </div>
   );
 }
 

@@ -3,7 +3,7 @@ type: spec
 record_id: SPEC-P2-SKILLS-001
 status: active
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-07-19
 target_milestone: post-M0
 owner: repository-maintainers
 docs_impact:
@@ -177,12 +177,12 @@ Catalog 使用明确的两阶段 pipeline。
 出现。每个 candidate 都必须独立解析，不因 disabled 或同名关系跳过：
 
 1. 读取 canonical file 得到 bytes A 和 hash A。
-2. 只用该单一 path 调用 Pi 导出的 `loadSkills({ skillPaths: [path], includeDefaults: false })`，
-   获取 parsed Skill 和 diagnostics；单文件调用不会产生跨 candidate collision。
+2. 把 bytes A 写入私有临时目录，只用该捕获文件调用 Pi 导出的
+   `loadSkills({ skillPaths: [capturedPath], includeDefaults: false })`，获取 parsed Skill 和 diagnostics，
+   再把结果 identity 映射回 canonical path/baseDir；这样 parser 不会重读可被替换的来源 path。
 3. 再次解析 realpath 并读取 bytes B/hash B。
-4. 只有 realpath 未改变且 hash A 等于 hash B 时，才把 Pi parsed result 与 bytes B 组合成
-   candidate。解析发生在两次相同读取之间，因此 metadata、diagnostics 和保留正文属于同一个
-   稳定文件版本。
+4. 只有 realpath 未改变且 hash A 等于 hash B 时，才把 bytes A 的 Pi parsed result 与相同内容的 bytes B
+   组合成 candidate；即使来源 path 在解析期间发生 A→B→A，也不会混合 metadata、diagnostics 和正文。
 5. 不一致时最多重试三次；仍不稳定则发布 `invalid` candidate 和 `unstable_file` diagnostic，
    不让一个持续变化的文件阻止其他 Skills 刷新。
 
@@ -349,6 +349,7 @@ AgentClient.prepare(configWithoutMessage) -> PreparedAgentRun
 
 PreparedAgentRun
   sessionFile
+  release()  # 未 start 时幂等释放 preparation reservation
   start(message, promptOptions) -> AgentRunExecution
 
 AgentRunExecution
@@ -357,9 +358,11 @@ AgentRunExecution
   settled: Promise<void>
 ```
 
-SSE disconnect 只触发 `abort()`，不能直接释放 lease。Route 的 `finally` 必须等待 `settled` 后再
+Registry 必须在同一个同步临界段内插入 handle、建立 reservation 并执行 idle LRU；不能在
+`await acquire()` 返回后再 pin。SSE disconnect 只触发 `abort()`，不能直接释放 lease。Route 的 `finally` 必须等待 `settled` 后再
 释放；这保证断开的旧 prompt 不会与随后取得 lease 的新 run 同时写同一 Pi session。若
-`prepare` 或 `createRun` 前步骤失败，直接释放 lease且没有 run；`start` 后的错误属于真实 run，
+`prepare`、post-acquire 初始化或 `createRun` 前步骤失败，幂等释放 reservation 与 lease 且没有 run；
+`start` 后的错误属于真实 run，
 按现有 run failure contract 记录。
 
 显式选择的 preflight 规则：
@@ -368,12 +371,14 @@ SSE disconnect 只触发 `abort()`，不能直接释放 lease。Route 的 `final
   auth 必须先于 body 读取。
 - 每轮最多提交 16 个 raw Skill selections，在 canonical path 去重前检查；每个 selection 的 name/path
   分别最多 16 KiB UTF-8。
-- 每个当前 Skill body 最多 512 KiB；超过时仍可作为 Pi warning candidate/隐式元数据存在，
+- 每个当前原始 `SKILL.md` 文件最多 512 KiB；超过时仍可作为 Pi warning candidate/隐式元数据存在，
   但 `explicitEligible: false`，不出现在 picker。
+- 原始文件必须是合法 UTF-8；非法输入为 `invalid` 并产生 `invalid_utf8` diagnostic，不做有损替换发送。
 - 本轮展开后的全部 Skill blocks 最多 2 MiB。
 - 每个 path 必须仍然存在于最新 snapshot，且 valid、enabled、effective、explicitEligible。
 - Name 必须匹配；同路径重复项安静去重。
-- Name、canonical path 或 baseDir 含 XML 1.0 不允许的控制字符时不可显式调用。
+- 正文含 XML 1.0 不允许的控制字符时不可显式调用；Name、canonical path 或 baseDir 除同样限制外还
+  不允许 CR/LF，保证 block builder 与历史 parser 的 wrapper grammar 一致。
 
 任一选择失败返回 `409 skill_precondition_failed`：
 
@@ -405,9 +410,14 @@ Catalog 负责发现和解析；每个 AgentSession 获得自己的 `DefaultReso
   collision 后临时过滤 disabled paths。
 - 审批 extension 和当前关闭的 prompt/theme/context discovery 保持原有边界。
 
-AgentSession handle 记录 `effectiveRevision`。Catalog 只有 diagnostics、disabled loser 或展示
-字段变化而 effective 集合不变时，不重建 AgentSession。Effective metadata、path、显式正文或
-顺序变化时，在持有 session lease 且 session 空闲的前提下重建。
+AgentSession handle 记录 canonical workspace root、`effectiveRevision` 与覆盖 provider/model/tool profile
+的 runtime revision。Catalog 只有 diagnostics、disabled loser 或展示字段变化而 effective 集合不变时，
+不重建 AgentSession；canonical root、effective metadata/path/正文/顺序、provider、model 或
+readonly/default 工具 profile 变化时，在持有 session lease 且 session 空闲的前提下重建。持久化 session
+重开时以当前 canonical root 覆盖旧 header cwd；每轮消息构建与 agent preparation 都使用同一 snapshot
+固定的 canonical root。Registry 的 20 项 LRU 只淘汰 idle handle；`prepare()` 通过原子 reservation 固定
+prepared/active handle，繁忙时容量可暂时超过 soft cap，并在未启动 preparation release 或 execution
+settled 后收敛。该进程内边界不替代 `P0-RUN-001` 的跨进程所有权与恢复语义。
 
 Pi 构造 system prompt 时读取 effective Skills。`explicitOnly` Skills 继续由 Pi 的
 `disable-model-invocation` 语义从隐式列表排除，但它们仍可通过 `$` 或 `/` 显式选择。
@@ -417,9 +427,11 @@ Pi 构造 system prompt 时读取 effective Skills。`explicitOnly` Skills 继�
 不把多个选择转换成 Pi 的单个 `/skill:name` 命令。服务端从同一 snapshot bytes strip
 frontmatter，按用户选择顺序生成 Pi 原生格式。Block builder 对 `name` 和 `location` 使用标准
 XML attribute escaping（`&amp;`、`&quot;`、`&lt;`、`&gt;`、`&apos;`），对 References 行中的
-baseDir 使用 XML text escaping。History parser 使用完全匹配的 decoder 后再展示 `$name`；
-客户端 name 始终与 decoded logical name 比较。XML 1.0 不允许的控制字符不做有损替换，直接使
-candidate `explicitEligible: false` 并产生 `unsupported_identifier` diagnostic。
+baseDir 使用 XML text escaping；Skill body 与 Pi 原生展开一致地保留原文。History parser 使用完全匹配的
+decoder 后再展示 `$name`；客户端 name 始终与 decoded logical name 比较。XML 1.0 不允许的控制字符不做
+有损替换，wrapper identity 中的 CR/LF 也不直接序列化；两者都会使 candidate
+`explicitEligible: false` 并产生 `unsupported_identifier` diagnostic。Attachment builder 对 attribute
+中的 tab/LF/CR 使用受限 numeric entities，history parser 只接受相同集合。
 
 ```xml
 <skill name="brainstorming" location="/canonical/path/brainstorming/SKILL.md">
@@ -456,6 +468,9 @@ Skill blocks 位于消息最前；用户正文随后；现有 `<attached_files>`
 - 支持多个 chips，保持选择顺序；canonical path 重复时不新增。
 - Picker refresh 失败时不允许从旧请求新增选择；已经存在的 chips 保留，最终仍由发送
   preflight 校验。
+- Textarea 通过 `aria-controls` 和 `aria-activedescendant` 关联当前 listbox；option 不进入 Tab 顺序，
+  箭头移动后高亮项必须滚动到可见区域。Retry 位于 listbox 外并在执行后恢复 textarea focus。菜单打开时
+  Cmd/Ctrl+Enter 只执行当前项选择，不得同时触发消息提交。
 
 ### Composer 状态所有权
 
@@ -471,6 +486,7 @@ Composer draft 不能只存在于组件本地，因为 ChatView 和 Settings 互
 
 New Thread 创建 session 时传递完整一次性 `pendingTurn`，而不是只传 `pendingPrompt` 字符串，
 确保首轮 text、附件和有序 Skill identities 一起进入 ChatView。
+若 New Thread 在 `createSession` 完成前卸载，迟到结果不得移动草稿、设置 pending turn 或抢回导航。
 
 ### 接受、失败与 Retry
 
@@ -498,6 +514,7 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 - 展示 source、发现路径和 canonical path。
 - 选择行后按需读取只读 preview 和 diagnostics。
 - Enabled toggle 与 Refresh；toggle 立即返回新的 snapshot。
+- Settings 导航使用 tab semantics；从 blocked-turn 入口深链到 Skills 时，Skills tab 挂载后取得焦点。
 
 ## Pi session 历史展示
 
@@ -540,10 +557,12 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 ## 资源与隔离边界
 
 - Run request 最多 4 MiB；最多 16 个 raw 显式 selections；每个 selection name/path 最多 16 KiB
-  UTF-8；单项 block 512 KiB、含分隔符的实际序列化总展开 2 MiB、preview 256 KiB。
-- Catalog refresh 按 workspace 串行；snapshot 发布后不可变。
+  UTF-8；单个原始 `SKILL.md` 512 KiB、含分隔符的实际序列化总展开 2 MiB、preview 256 KiB。
+- Catalog refresh 按 `[workspaceId, canonical workspace root]` 隔离；每个 key 只有一个 active 和至多一个
+  trailing build，snapshot 发布后不可变。Service-wide 同时最多两个 build、20 个 waiter，等待 30 秒后
+  fail closed；无法取消的 active Promise 与同步 discovery 卡顿仍是已知可用性 residual。
 - AgentSession 不共享可变 loader 实例；Settings refresh 不会在运行中热改资源。
-- Global-only 与各 workspace Catalog 分开缓存，workspace key 使用 canonical workspace root。
+- Global-only 与各 workspace Catalog 分开缓存，workspace key 同时使用 workspace identity 与 canonical root。
 - 同一 realpath 的 symlink alias 只加载一次。
 - Capability token 不落数据库、不输出日志。Snapshot 对 explicit-eligible Skill 保留最多
   512 KiB 完整 bytes；对超限或 invalid candidate 只保留 256 KiB preview prefix 和总字节数。
@@ -653,7 +672,7 @@ Task 9 deep security review 确认两项必须收紧的边界，已由 repositor
    大 JSON body 消耗解析资源。Run route 现在在 capability auth 后、JSON decode 前以 streaming cap
    限制 4 MiB body，并在去重前限制 16 个 raw selections 与每个 name/path 16 KiB UTF-8。
 
-这些变更不改变 canonical first-path dedupe、exact membership、512 KiB block 或 2 MiB expanded total
+这些变更不改变 canonical first-path dedupe、exact membership、512 KiB 原始文件或 2 MiB expanded total
 语义。后续任何目录规则、API、持久化、认证、历史展示或大小限制变化，仍必须先更新本节并重新确认
 相应正式文档。
 
@@ -671,18 +690,23 @@ Task 9 deep security review 确认两项必须收紧的边界，已由 repositor
 - 设计偏差：除本 spec 已记录的 `expandPromptTemplates: false` 与 raw request caps 外，实施增加 stale
   request/generation guards、acceptance-deferred retry replacement、40 px chip remove target 和 picker
   高度修复。这些变化收紧竞态、安全或可访问性边界，不扩大产品范围。
+- 2026-07-19 最终 review 修复：Catalog 增加 service-wide 两个 active build、20 个 waiter 与 30 秒排队
+  fail-closed；AgentSession registry 以原子 prepared reservation 保护 active handle，只对 idle entry 执行
+  20 项 soft-cap LRU，并覆盖 create-run/start/reasoning 初始化失败的幂等 release。Composer 文件搜索加入
+  generation/workspace/focus ownership，IME 与 live-status/listbox 语义补齐；Settings 使用稳定 panel ID。
 - 验证：各任务均保存 RED→GREEN 证据；closeout 执行 `pnpm verify` 与 `pnpm verify:visual`。最终
-  docs 28、chat-core 37、pi-server 270（另 1 项 opt-in skip）、desktop 418 tests 通过，全部 build
+  docs 28、chat-core 38、pi-server 294（另 1 项 opt-in skip）、desktop 440 tests 通过，全部 build
   通过；visual 为 39 张 unchanged，且 `changed=0 new=0 orphan=0 errors=0`。
 - 正式文档：同步 `docs/user/guide.md`、`docs/user/concepts.md`、
   `docs/user/configuration.md`、`docs/developer/api.md`、`docs/developer/architecture.md`、
   `docs/developer/development.md`、`docs/product/status.md`、readiness audit 与 screenshot harness README。
 - 实现引用：实际 ancestry base `ad07b03` 后的 Task 1–15 commits 为 `0fc70e2` 至 `7a778ae`；Task 16
   代码、baseline 和首次 closeout 尝试位于 `c4d56f7`。这些 SHA 只作进度证据，不是归档 frontmatter。
-- 生命周期状态：相对 `ad07b03`，spec 只能从 approved 转 active；本记录因此继续留在
-  `docs/superpowers/`。实现已经完成，但归档必须等待 plan 在后续 base 先从 approved 合法转 active，
-  再由新的 change 同时把 spec/plan 转 completed 并迁入 `docs/internal/`。
+- 生命周期状态：相对 `ad07b03`，spec 已从 approved 转 active；相对后续 base `4d48da1`，plan 也在本轮
+  review 修复中从 approved 合法转 active。两个记录继续留在 `docs/superpowers/`，由新的 change 补
+  Implementation Outcome 后再转 completed 并迁入 `docs/internal/`。
 - 遗留问题：MCP 与 Skill 创建、安装、编辑、更新生态仍不在 V1；整体 loopback API 的
   `P0-SEC-001` 仍 open。已批准 residual risks 保持不变，包括 Pi discovery 的同步无界读取与目录
   symlink cycle、canonical out-of-root Skill symlink、512 KiB eligibility 前完整文件读取，以及历史
-  prompt 归一化的保守 provenance 限制。
+  prompt 归一化的保守 provenance 限制。无法强制取消的 active Catalog Promise 也可能让后续 refresh
+  在有界等待后 fail closed；同步 Pi discovery 卡顿时 event-loop timer 无法提供 deadline。

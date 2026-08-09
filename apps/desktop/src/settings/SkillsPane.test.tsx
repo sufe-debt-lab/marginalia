@@ -157,6 +157,8 @@ describe("SkillsPane", () => {
     const api = fakeApi();
     render(<SkillsPane api={api} workspace={{ id: "w1", name: "Research" }} />);
     const search = await screen.findByRole("searchbox", { name: /search skills/i });
+    expect(search).toHaveAttribute("name", "skills-search");
+    expect(search).toHaveAttribute("autocomplete", "off");
 
     for (const [query, expected] of [
       ["alpha", "alpha"],

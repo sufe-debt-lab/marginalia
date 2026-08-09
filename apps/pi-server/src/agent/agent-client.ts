@@ -66,6 +66,8 @@ export type AgentRunExecution = {
 export type PreparedAgentRun = {
   /** Final session file path. Persist this in DB so future runs reuse it. */
   sessionFile: string;
+  /** Releases preparation resources when this run will not be started. Idempotent. */
+  release(): void;
   /** Starts the prompt after preparation has completed. */
   start(message: string, promptOptions?: PromptOptions): AgentRunExecution;
 };

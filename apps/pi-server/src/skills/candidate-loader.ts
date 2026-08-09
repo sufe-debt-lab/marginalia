@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { isUtf8 } from "node:buffer";
+import { mkdirSync, mkdtempSync, promises as fs, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   loadSkills,
@@ -20,21 +22,70 @@ export type { ParsedSkillCandidate } from "./types.js";
 export type CandidateLoaderDeps = {
   realpath(path: string): Promise<string>;
   readFile(path: string): Promise<Buffer>;
-  parse(path: string): LoadSkillsResult;
+  parse(path: string, content: Buffer): LoadSkillsResult;
 };
 
 const MAX_STABLE_READ_ATTEMPTS = 3;
 
+function replacePath(value: string | undefined, temporaryPath: string, canonicalPath: string) {
+  return value === temporaryPath ? canonicalPath : value;
+}
+
+export function parseCapturedSkillContent(filePath: string, content: Buffer): LoadSkillsResult {
+  const temporaryRoot = mkdtempSync(path.join(tmpdir(), "marginalia-skill-parse-"));
+  const skillDirectory = path.join(temporaryRoot, path.basename(path.dirname(filePath)) || "skill");
+  const temporaryPath = path.join(skillDirectory, path.basename(filePath));
+  const canonicalBaseDir = path.dirname(filePath);
+
+  try {
+    mkdirSync(skillDirectory, { recursive: true });
+    writeFileSync(temporaryPath, content);
+    const parsed = loadSkills({
+      cwd: skillDirectory,
+      agentDir: skillDirectory,
+      skillPaths: [temporaryPath],
+      includeDefaults: false
+    });
+    return {
+      skills: parsed.skills.map((skill) => ({
+        ...skill,
+        filePath,
+        baseDir: canonicalBaseDir,
+        sourceInfo: {
+          ...skill.sourceInfo,
+          path: filePath,
+          ...(skill.sourceInfo.baseDir === undefined ? {} : { baseDir: canonicalBaseDir })
+        }
+      })),
+      diagnostics: parsed.diagnostics.map((diagnostic) => ({
+        ...diagnostic,
+        ...(diagnostic.path === undefined
+          ? {}
+          : { path: replacePath(diagnostic.path, temporaryPath, filePath) }),
+        ...(diagnostic.collision
+          ? {
+              collision: {
+                ...diagnostic.collision,
+                winnerPath:
+                  replacePath(diagnostic.collision.winnerPath, temporaryPath, filePath) ??
+                  diagnostic.collision.winnerPath,
+                loserPath:
+                  replacePath(diagnostic.collision.loserPath, temporaryPath, filePath) ??
+                  diagnostic.collision.loserPath
+              }
+            }
+          : {})
+      }))
+    };
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
 const defaultDeps: CandidateLoaderDeps = {
   realpath: (filePath) => fs.realpath(filePath),
   readFile: (filePath) => fs.readFile(filePath),
-  parse: (filePath) =>
-    loadSkills({
-      cwd: path.dirname(filePath),
-      agentDir: path.dirname(filePath),
-      skillPaths: [filePath],
-      includeDefaults: false
-    })
+  parse: parseCapturedSkillContent
 };
 
 function hash(content: Buffer): string {
@@ -121,12 +172,17 @@ function parsedCandidate(
   content: Buffer,
   parsed: LoadSkillsResult
 ): ParsedSkillCandidate {
-  const parsedSkill = parsed.skills[0] ?? null;
+  const validUtf8 = isUtf8(content);
+  const parsedSkill = validUtf8 ? (parsed.skills[0] ?? null) : null;
   const canonicalBaseDir = path.dirname(canonicalPath);
   const diagnostics = parsed.diagnostics.map(piDiagnostic);
   const tooLarge = content.byteLength > SKILL_EXPLICIT_BYTES;
-  const unsupportedIdentifier = Boolean(
-    parsedSkill && [parsedSkill.name, canonicalPath, canonicalBaseDir].some(hasUnsupportedXmlChar)
+  const unsupportedXmlCharacter = Boolean(
+    parsedSkill &&
+    ([parsedSkill.name, canonicalPath, canonicalBaseDir].some(
+      (value) => hasUnsupportedXmlChar(value) || /[\r\n]/.test(value)
+    ) ||
+      (validUtf8 && hasUnsupportedXmlChar(content.toString("utf8"))))
   );
 
   if (tooLarge) {
@@ -137,16 +193,24 @@ function parsedCandidate(
       path: canonicalPath
     });
   }
-  if (unsupportedIdentifier) {
+  if (!validUtf8) {
+    diagnostics.push({
+      code: "invalid_utf8",
+      level: "error",
+      message: "Skill file is not valid UTF-8",
+      path: canonicalPath
+    });
+  }
+  if (unsupportedXmlCharacter) {
     diagnostics.push({
       code: "unsupported_identifier",
       level: "error",
-      message: "Skill identifier contains a character unsupported by XML 1.0",
+      message: "Skill identifier or body cannot be represented by the prompt/history wrapper",
       path: canonicalPath
     });
   }
 
-  const explicitEligible = parsedSkill !== null && !tooLarge && !unsupportedIdentifier;
+  const explicitEligible = parsedSkill !== null && !tooLarge && !unsupportedXmlCharacter;
   const preview = decodeUtf8WithinByteBudget(content, SKILL_PREVIEW_BYTES);
   const rawContent = explicitEligible
     ? decodeUtf8WithinByteBudget(content, SKILL_EXPLICIT_BYTES).content
@@ -212,7 +276,7 @@ export async function loadSkillCandidate(
 
     let parsed: LoadSkillsResult;
     try {
-      parsed = deps.parse(canonicalPathA);
+      parsed = deps.parse(canonicalPathA, contentA);
     } catch (error) {
       return failureCandidate(
         descriptor,

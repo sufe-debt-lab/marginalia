@@ -72,6 +72,10 @@ Electron runtime 或 Electron 视觉验证。应用读取 fragment 后立即清�
 `capabilityToken` 写法不会被接受，并会被清除。fragment 不进入初始 HTTP 请求，但仍可能进入浏览器
 history、截图或扩展可见状态，因此只在可信本机开发环境使用并避免记录或分享该 URL。
 
+Electron 只接受 `http:`/`https:` 且 host 为 `127.0.0.1`、`localhost` 或 bracketed IPv6 loopback
+`[::1]` 且不含 userinfo/credentials 的 `VITE_DEV_SERVER_URL`。其他 host、协议、credentials 或无效 URL
+会被忽略并回退到 packaged renderer entry；这项校验也决定注入 pi-server 的 exact development Origin。
+
 ## 常用命令
 
 全部包（根目录，`-r` 递归）：
@@ -118,7 +122,7 @@ pnpm --filter @marginalia/desktop test -- <pattern>
 | `MARGINALIA_DB_PATH`          | 覆盖 SQLite 路径（默认 `~/.marginalia/db.sqlite`）。                                                                                                                                                                                                                 |
 | `MARGINALIA_CAPABILITY_TOKEN` | Electron 启动 pi-server 时自动注入的进程 bearer；server 启动即复制到内存 policy 并从 `process.env` 删除，正常开发不要手工设置，也不要写入日志或 SQLite。                                                                                                             |
 | `MARGINALIA_ALLOWED_ORIGIN`   | Electron 开发模式从已校验的 loopback Vite URL 自动注入的 exact CORS origin；server 启动即读取并从 `process.env` 删除，打包 renderer 不设置。                                                                                                                         |
-| `VITE_DEV_SERVER_URL`         | Electron 从该 URL 加载 renderer；`pnpm dev` 自动设置。                                                                                                                                                                                                               |
+| `VITE_DEV_SERVER_URL`         | Electron 只从已校验的 IPv4/localhost/bracketed IPv6 loopback URL 加载 renderer；`pnpm dev` 自动设置。                                                                                                                                                                |
 | `MARGINALIA_FAKE_AGENT`       | 设为 `1` 时 pi-server 用 `ScriptedFakeAgentClient`（`apps/pi-server/src/agent/scripted-fake-agent.ts`）替换真实 agent，按消息关键字回放确定性脚本（含审批事件）。**仅用于截图验证（`approval-flow` 场景）和本地调试**，不接入任何真实模型；不要在打包/生产环境设置。 |
 
 完整清单见[配置 · 环境变量](../user/configuration.md#环境变量)。

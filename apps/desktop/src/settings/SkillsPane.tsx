@@ -222,6 +222,8 @@ export function SkillsPane({ api, workspace }: SkillsPaneProps) {
             />
             <input
               type="search"
+              name="skills-search"
+              autoComplete="off"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               aria-label={t("settings.skillsSearch")}

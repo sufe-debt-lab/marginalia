@@ -34,6 +34,15 @@ export class SkillCandidateNotFoundError extends Error {
   }
 }
 
+export class SkillCatalogBusyError extends Error {
+  readonly code = "skill_catalog_busy";
+
+  constructor() {
+    super("Skill catalog build queue is full");
+    this.name = "SkillCatalogBusyError";
+  }
+}
+
 export type SkillCatalogDependencies = {
   homeDir: string;
   preferences: SkillPreferenceStore;
@@ -41,6 +50,14 @@ export type SkillCatalogDependencies = {
   loadCandidate?: (descriptor: DiscoveredSkillFile) => Promise<ParsedSkillCandidate>;
   canonicalizeWorkspaceRoot?: (workspaceRoot: string) => string;
   now?: () => number;
+  /** Maximum idle workspace identities retained in memory. Global-only is pinned. */
+  maxWorkspaceCacheEntries?: number;
+  /** Maximum catalog builds running across all workspace identities. */
+  maxConcurrentBuilds?: number;
+  /** Maximum distinct catalog builds waiting for a service-wide build slot. */
+  maxQueuedBuilds?: number;
+  /** Maximum wait for a service-wide build slot before failing closed. */
+  queueWaitTimeoutMs?: number;
 };
 
 type CatalogInput = {
@@ -50,7 +67,14 @@ type CatalogInput = {
 
 type RefreshState = {
   generation: number;
-  chain: Promise<void>;
+  active: Promise<SkillCatalogSnapshot> | null;
+  trailing: {
+    input: CatalogInput;
+    generation: number;
+    promise: Promise<SkillCatalogSnapshot>;
+    resolve(snapshot: SkillCatalogSnapshot): void;
+    reject(error: unknown): void;
+  } | null;
   latestSuccess: SkillCatalogSnapshot | null;
 };
 
@@ -399,8 +423,82 @@ export function createSkillCatalogService(
   const canonicalizeWorkspaceRoot =
     dependencies.canonicalizeWorkspaceRoot ?? defaultCanonicalizeWorkspaceRoot;
   const now = dependencies.now ?? Date.now;
+  const maxWorkspaceCacheEntries = Math.max(1, dependencies.maxWorkspaceCacheEntries ?? 20);
+  const maxConcurrentBuilds = Math.max(1, Math.floor(dependencies.maxConcurrentBuilds ?? 2));
+  const maxQueuedBuilds = Math.max(0, Math.floor(dependencies.maxQueuedBuilds ?? 20));
+  const queueWaitTimeoutMs = Math.max(1, Math.floor(dependencies.queueWaitTimeoutMs ?? 30_000));
   const snapshots = new Map<string, SkillCatalogSnapshot>();
   const refreshStates = new Map<string, RefreshState>();
+  let activeBuilds = 0;
+  const buildWaiters: Array<{ resolve(): void; timer: ReturnType<typeof setTimeout> }> = [];
+
+  async function withBuildSlot<T>(operation: () => Promise<T>): Promise<T> {
+    if (activeBuilds >= maxConcurrentBuilds) {
+      if (buildWaiters.length >= maxQueuedBuilds) throw new SkillCatalogBusyError();
+      await new Promise<void>((resolve, reject) => {
+        const waiter = {
+          resolve: () => {
+            clearTimeout(waiter.timer);
+            resolve();
+          },
+          timer: undefined as unknown as ReturnType<typeof setTimeout>
+        };
+        waiter.timer = setTimeout(() => {
+          const index = buildWaiters.indexOf(waiter);
+          if (index < 0) return;
+          buildWaiters.splice(index, 1);
+          reject(new SkillCatalogBusyError());
+        }, queueWaitTimeoutMs);
+        waiter.timer.unref?.();
+        buildWaiters.push(waiter);
+      });
+    } else {
+      activeBuilds += 1;
+    }
+    try {
+      return await operation();
+    } finally {
+      const next = buildWaiters.shift();
+      if (next) {
+        // Transfer this slot directly so a new caller cannot overtake the waiter.
+        next.resolve();
+      } else {
+        activeBuilds -= 1;
+      }
+    }
+  }
+
+  function touchCacheKey(key: string) {
+    const state = refreshStates.get(key);
+    if (state) {
+      refreshStates.delete(key);
+      refreshStates.set(key, state);
+    }
+    const snapshot = snapshots.get(key);
+    if (snapshot) {
+      snapshots.delete(key);
+      snapshots.set(key, snapshot);
+    }
+  }
+
+  function publishSnapshot(key: string, snapshot: SkillCatalogSnapshot) {
+    snapshots.delete(key);
+    snapshots.set(key, snapshot);
+  }
+
+  function evictIdleWorkspaceCaches() {
+    let workspaceCount = [...refreshStates.keys()].filter((key) => key !== GLOBAL_CACHE_KEY).length;
+    while (workspaceCount > maxWorkspaceCacheEntries) {
+      const oldestIdleKey = [...refreshStates].find(
+        ([key, state]) =>
+          key !== GLOBAL_CACHE_KEY && state.active === null && state.trailing === null
+      )?.[0];
+      if (!oldestIdleKey) return;
+      refreshStates.delete(oldestIdleKey);
+      snapshots.delete(oldestIdleKey);
+      workspaceCount -= 1;
+    }
+  }
 
   function normalizeInput(input: CatalogInput): CatalogInput {
     return input.workspaceRoot === null
@@ -409,17 +507,58 @@ export function createSkillCatalogService(
   }
 
   function cacheKey(input: CatalogInput): string {
-    return input.workspaceRoot === null ? GLOBAL_CACHE_KEY : `workspace:${input.workspaceRoot}`;
+    return input.workspaceRoot === null
+      ? GLOBAL_CACHE_KEY
+      : `workspace:${JSON.stringify([input.workspaceId, input.workspaceRoot])}`;
   }
 
   async function build(input: CatalogInput): Promise<SkillCatalogSnapshot> {
-    const descriptors = await discover({
-      workspaceRoot: input.workspaceRoot,
-      homeDir: dependencies.homeDir
+    return withBuildSlot(async () => {
+      const descriptors = await discover({
+        workspaceRoot: input.workspaceRoot,
+        homeDir: dependencies.homeDir
+      });
+      const parsedCandidates = await loadCandidates(descriptors, loadCandidate);
+      const preferenceRows = dependencies.preferences.list();
+      return buildSnapshot(input, parsedCandidates, preferenceRows, now());
     });
-    const parsedCandidates = await loadCandidates(descriptors, loadCandidate);
-    const preferenceRows = dependencies.preferences.list();
-    return buildSnapshot(input, parsedCandidates, preferenceRows, now());
+  }
+
+  function startBuild(
+    key: string,
+    state: RefreshState,
+    input: CatalogInput,
+    generation: number
+  ): Promise<SkillCatalogSnapshot> {
+    const completed = build(input).then(
+      (snapshot) => {
+        state.latestSuccess = snapshot;
+        if (generation === state.generation) publishSnapshot(key, snapshot);
+        return snapshot;
+      },
+      (error) => {
+        if (generation === state.generation && state.latestSuccess) {
+          publishSnapshot(key, state.latestSuccess);
+        }
+        throw error;
+      }
+    );
+    const finalized = completed.finally(() => {
+      if (state.active === finalized) state.active = null;
+      const trailing = state.trailing;
+      state.trailing = null;
+      if (trailing) {
+        startBuild(key, state, trailing.input, trailing.generation).then(
+          trailing.resolve,
+          trailing.reject
+        );
+        return;
+      }
+      touchCacheKey(key);
+      evictIdleWorkspaceCaches();
+    });
+    state.active = finalized;
+    return finalized;
   }
 
   const catalog: SkillCatalogService = {
@@ -428,30 +567,44 @@ export function createSkillCatalogService(
       const key = cacheKey(normalizedInput);
       const state = refreshStates.get(key) ?? {
         generation: 0,
-        chain: Promise.resolve(),
+        active: null,
+        trailing: null,
         latestSuccess: null
       };
-      refreshStates.set(key, state);
-      const generation = ++state.generation;
-      const pending = state.chain.then(() => build(normalizedInput));
-      state.chain = pending.then(
-        (snapshot) => {
-          state.latestSuccess = snapshot;
-          if (generation === state.generation) {
-            snapshots.set(key, snapshot);
-          }
-        },
-        () => {
-          if (generation === state.generation && state.latestSuccess) {
-            snapshots.set(key, state.latestSuccess);
-          }
-        }
-      );
-      return pending;
+      if (!refreshStates.has(key)) refreshStates.set(key, state);
+      touchCacheKey(key);
+      if (!state.active) {
+        const pending = startBuild(key, state, normalizedInput, ++state.generation);
+        evictIdleWorkspaceCaches();
+        return pending;
+      }
+      if (state.trailing) {
+        state.trailing.input = normalizedInput;
+        state.trailing.generation = ++state.generation;
+        return state.trailing.promise;
+      }
+
+      let resolve!: (snapshot: SkillCatalogSnapshot) => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<SkillCatalogSnapshot>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+      });
+      state.trailing = {
+        input: normalizedInput,
+        generation: ++state.generation,
+        promise,
+        resolve,
+        reject
+      };
+      return promise;
     },
 
     current(input) {
-      return snapshots.get(cacheKey(normalizeInput(input))) ?? null;
+      const key = cacheKey(normalizeInput(input));
+      const snapshot = snapshots.get(key) ?? null;
+      if (snapshot) touchCacheKey(key);
+      return snapshot;
     },
 
     async setEnabled(input) {

@@ -54,6 +54,7 @@ export class FakeAgentClient implements AgentClient {
     let started = false;
     return {
       sessionFile: `/tmp/fake/${input.sessionId}.jsonl`,
+      release() {},
       start: () => {
         if (started) throw new Error("prepared run already started");
         started = true;

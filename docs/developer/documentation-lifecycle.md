@@ -142,10 +142,14 @@ same_change: true
 
 高信号代码路径与必须同步的正式文档保存在 `docs/contracts/docs-impact.json`。CI 以 PR base 和 HEAD 的 merge-base 计算三点 diff。规则命中后，`requireAll` 中每个文件都必须出现在 diff 中。
 
-Skills 的 `skills-management` 规则覆盖 server catalog、desktop `useSkillCatalog` hook、Composer、Settings
-和 store。命中后必须在同一 diff 更新使用指南、用户配置、developer API、系统架构和产品状态；backend
-阶段也要明确 UI/runtime 尚不可用，不能等到后续桌面任务再首次补文档。修改 impact mapping 本身会命中
-`documentation-contracts`，因此必须同步本文和贡献指南，说明新增 pattern、必需文档与本地验证方式。
+Skills 的 `skills-management` 规则覆盖 server catalog、显式 prompt serialization、session history
+normalization、Pi runtime injection、agent session cache，以及 desktop `useSkillCatalog`/streaming hooks、
+Composer、Chat/New chat、blocked repair、AppShell/Sidebar Settings composition、Settings 和 store。
+`skills-desktop-api` 与 `skills-route-composition` 还用窄 changed-line pattern 覆盖 desktop client 的
+Skills DTO/调用，以及 `app.ts` 中的 Skills route、snapshot、runtime 与 canonical-root 组合，避免普通 HTTP 改动触发整套 Skills
+文档。任一规则命中后必须在同一 diff 更新使用指南、用户配置、developer API、系统架构和产品状态；
+backend 阶段也要明确 UI/runtime 尚不可用，不能等到后续桌面任务再首次补文档。修改 impact mapping 本身
+会命中 `documentation-contracts`，因此必须同步本文和贡献指南，说明新增 pattern、必需文档与本地验证方式。
 
 纯内部重构可以豁免，但 PR body 最多只能有一个机器可读声明：
 

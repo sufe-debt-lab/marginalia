@@ -32,9 +32,10 @@ function memoryDb() {
   return db;
 }
 
-function preparedRun(events: AgentRunEvent[], sessionFile = "/tmp/test.jsonl") {
+function preparedRun(events: AgentRunEvent[], sessionFile = "/tmp/test.jsonl", release = () => {}) {
   return {
     sessionFile,
+    release,
     start() {
       return {
         events: (async function* () {
@@ -283,6 +284,61 @@ describe("chat runs", () => {
       loadResult: { skills: [], diagnostics: [] }
     });
     expect(runCount(db)).toBe(1);
+  });
+
+  it("pins message preparation and the agent runtime to the catalog workspace root", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "canonical-run-root-"));
+    const canonicalRoot = path.join(root, "target");
+    const retargetedRoot = path.join(root, "retargeted");
+    const aliasRoot = path.join(root, "alias");
+    fs.mkdirSync(canonicalRoot);
+    fs.mkdirSync(retargetedRoot);
+    fs.writeFileSync(path.join(canonicalRoot, "note.md"), "canonical target bytes");
+    fs.writeFileSync(path.join(retargetedRoot, "note.md"), "retargeted alias bytes");
+    fs.symlinkSync(canonicalRoot, aliasRoot, "dir");
+    const { db, workspace, session, providerId } = setupRun(aliasRoot);
+    const skillCatalog = fixedCatalog(
+      catalogSnapshot({ workspaceId: workspace.id, workspaceRoot: canonicalRoot })
+    );
+    let preparedInput: any;
+    let startedMessage = "";
+    const agentClient = {
+      async prepare(input: any) {
+        preparedInput = input;
+        const prepared = preparedRun([]);
+        return {
+          ...prepared,
+          start(message: string) {
+            startedMessage = message;
+            return prepared.start();
+          }
+        };
+      },
+      resolveApproval() {
+        return false;
+      },
+      cancelPending() {
+        return 0;
+      }
+    };
+    const app = createApp({ db, agentClient, capability, skillCatalog });
+    fs.unlinkSync(aliasRoot);
+    fs.symlinkSync(retargetedRoot, aliasRoot, "dir");
+
+    try {
+      const response = await runRequest(app, session.id, providerId, {
+        contextFiles: ["note.md"],
+        skills: []
+      });
+      await response.text();
+
+      expect(response.status).toBe(200);
+      expect(preparedInput.workspaceRoot).toBe(canonicalRoot);
+      expect(startedMessage).toContain("canonical target bytes");
+      expect(startedMessage).not.toContain("retargeted alias bytes");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("returns skill 409/413 failures before prepare and before creating a run", async () => {
@@ -799,9 +855,10 @@ describe("chat runs", () => {
 
   it("does not retain a run or lease when run creation fails", async () => {
     const { db, session, providerId } = setupRun();
+    const release = vi.fn();
     const agentClient = {
       async prepare() {
-        return preparedRun([]);
+        return preparedRun([], "/tmp/test.jsonl", release);
       },
       resolveApproval() {
         return false;
@@ -818,6 +875,7 @@ describe("chat runs", () => {
     const failed = await runRequest(app, session.id, providerId);
     expect(failed.status).toBe(500);
     expect(runCount(db)).toBe(0);
+    expect(release).toHaveBeenCalledTimes(1);
 
     db.exec("drop trigger reject_run");
     const retry = await runRequest(app, session.id, providerId);
@@ -828,10 +886,12 @@ describe("chat runs", () => {
 
   it("marks a created run failed when start throws", async () => {
     const { db, session, providerId } = setupRun();
+    const release = vi.fn();
     const agentClient = {
       async prepare() {
         return {
           sessionFile: "/tmp/start-failure.jsonl",
+          release,
           start() {
             throw new Error("start failed");
           }
@@ -849,6 +909,7 @@ describe("chat runs", () => {
     const response = await runRequest(app, session.id, providerId);
     expect(await response.text()).toContain('"type":"run_failed"');
     expect(runStatuses(db)).toEqual(["failed"]);
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("does not abort an execution after normal event completion", async () => {

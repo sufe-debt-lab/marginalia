@@ -26,7 +26,7 @@ function fakeApi(): ApiClient {
 }
 
 async function openProvidersPane() {
-  await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+  await userEvent.click(screen.getByRole("tab", { name: /providers/i }));
   await waitFor(() => expect(screen.getByText("Anthropic")).toBeInTheDocument());
 }
 
@@ -59,7 +59,7 @@ describe("SettingsView", () => {
     const { container } = render(<SettingsView api={fakeApi()} />);
     expect(container.querySelector(".motion-tab-panel")).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /providers/i }));
 
     await waitFor(() => expect(screen.getByText("Anthropic")).toBeInTheDocument());
     expect(container.querySelector(".motion-tab-panel")).not.toBeNull();
@@ -67,13 +67,13 @@ describe("SettingsView", () => {
 
   it("switches to the Providers pane and lists providers", async () => {
     render(<SettingsView api={fakeApi()} />);
-    await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /providers/i }));
     await waitFor(() => expect(screen.getByText("Anthropic")).toBeInTheDocument());
   });
 
   it("add-provider opens a preset picker, then a quick-add form", async () => {
     render(<SettingsView api={fakeApi()} />);
-    await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /providers/i }));
     await userEvent.click(screen.getByRole("button", { name: /add provider/i }));
     // preset cards first — scope to the dialog (the "Others" list also lists OpenAI)
     const dialog = await screen.findByRole("dialog");
@@ -85,7 +85,7 @@ describe("SettingsView", () => {
 
   it("shows each provider default model", async () => {
     render(<SettingsView api={fakeApi()} />);
-    await userEvent.click(screen.getByRole("button", { name: /providers/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /providers/i }));
     await waitFor(() => expect(screen.getByText("claude-sonnet-4.6")).toBeInTheDocument());
     expect(screen.getByText(/^default$/i)).toBeInTheDocument();
   });
@@ -138,8 +138,8 @@ describe("SettingsView", () => {
   it("enables Skills while MCP stays disabled and refreshes whenever Skills is re-entered", async () => {
     const api = fakeApi();
     render(<SettingsView api={api} skillsWorkspace={{ id: "w1", name: "Research" }} />);
-    const skills = screen.getByRole("button", { name: /^skills$/i });
-    const mcp = screen.getByRole("button", { name: /^mcp$/i });
+    const skills = screen.getByRole("tab", { name: /^skills$/i });
+    const mcp = screen.getByRole("tab", { name: /^mcp$/i });
 
     expect(skills).toBeEnabled();
     expect(mcp).toBeDisabled();
@@ -149,9 +149,56 @@ describe("SettingsView", () => {
     const skillsPane = screen.getByTestId("settings-pane-width");
     expect(skillsPane).toHaveClass("max-w-[920px]");
 
-    await userEvent.click(screen.getByRole("button", { name: /^general$/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /^general$/i }));
     expect(screen.getByTestId("settings-pane-width")).toHaveClass("max-w-[440px]");
     await userEvent.click(skills);
     await waitFor(() => expect(api.listSkills).toHaveBeenCalledTimes(2));
+  });
+
+  it("exposes Settings navigation as tabs and focuses a deep-linked Skills tab", async () => {
+    const api = fakeApi();
+    render(
+      <SettingsView
+        api={api}
+        skillsWorkspace={{ id: "w1", name: "Research" }}
+        initialTab="skills"
+      />
+    );
+
+    const skills = screen.getByRole("tab", { name: /^skills$/i });
+    const panel = screen.getByRole("tabpanel");
+    expect(skills).toHaveAttribute("aria-selected", "true");
+    expect(skills).toHaveFocus();
+    expect(panel).toHaveAttribute("aria-labelledby", skills.id);
+    for (const name of [/^general$/i, /^providers$/i, /^skills$/i]) {
+      expect(screen.getByRole("tab", { name })).toHaveAttribute("aria-controls", panel.id);
+    }
+    expect(screen.getByRole("tab", { name: /^mcp$/i })).not.toHaveAttribute("aria-controls");
+    await waitFor(() => expect(api.listSkills).toHaveBeenCalledWith("w1"));
+  });
+
+  it("moves through enabled Settings tabs with vertical tablist keys", async () => {
+    render(<SettingsView api={fakeApi()} skillsWorkspace={{ id: "w1", name: "Research" }} />);
+
+    const general = screen.getByRole("tab", { name: /^general$/i });
+    const providers = screen.getByRole("tab", { name: /^providers$/i });
+    const skills = screen.getByRole("tab", { name: /^skills$/i });
+    expect(general).toHaveFocus();
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(providers).toHaveFocus();
+    expect(providers).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(skills).toHaveFocus();
+    expect(skills).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.keyboard("{Home}");
+    expect(general).toHaveFocus();
+    expect(general).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.keyboard("{End}");
+    expect(skills).toHaveFocus();
+    expect(skills).toHaveAttribute("aria-selected", "true");
   });
 });

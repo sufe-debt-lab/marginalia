@@ -70,26 +70,47 @@ export class PiCodingAgentClient implements AgentClient {
     if (input.permission === "readonly") config.tools = READONLY_TOOLS;
     if (input.reasoning) config.thinkingLevel = input.reasoning;
 
-    const handle = await this.registry.acquire({
+    const reservation = await this.registry.acquirePinned({
       sessionId: input.sessionId,
       workspaceRoot: input.workspaceRoot,
       agentSessionPath: input.agentSessionPath ?? null,
       resourceRevision: input.runtimeSkills.effectiveRevision,
+      runtimeRevision: JSON.stringify([
+        input.piProviderId,
+        input.modelId,
+        input.permission === "readonly" ? "readonly" : "default"
+      ]),
       config
     });
+    const { handle } = reservation;
+    let released = false;
+    const releaseReservation = () => {
+      if (released) return;
+      released = true;
+      reservation.release();
+    };
 
     // Reasoning is dynamic: apply per run so cached sessions also honour it.
     const session = handle.session as unknown as {
       setThinkingLevel?: (level: string) => void;
     };
-    if (input.reasoning && typeof session.setThinkingLevel === "function") {
-      session.setThinkingLevel(input.reasoning);
+    try {
+      if (input.reasoning && typeof session.setThinkingLevel === "function") {
+        session.setThinkingLevel(input.reasoning);
+      }
+    } catch (error) {
+      releaseReservation();
+      throw error;
     }
 
     let started = false;
     return {
       sessionFile: handle.sessionFile,
+      release: () => {
+        if (!started) releaseReservation();
+      },
       start: (message, promptOptions) => {
+        if (released) throw new Error("prepared run already released");
         if (started) throw new Error("prepared run already started");
         started = true;
         const queue: AgentRunEvent[] = [];
@@ -109,19 +130,22 @@ export class PiCodingAgentClient implements AgentClient {
           waiters.shift()?.();
         };
 
-        const offApproval = this.gateway.onEvent(input.sessionId, pushEvent);
-        const unsubscribe = handle.session.subscribe(pushEvent);
+        let offApproval: () => void = () => {};
+        let unsubscribe: (() => void) | void;
         const finish = (failure?: unknown) => {
           if (finished) return;
           error = failure ?? null;
           finished = true;
           offApproval();
           unsubscribe?.();
+          releaseReservation();
           for (const waiter of waiters.splice(0)) waiter();
           resolveSettled();
         };
 
         try {
+          offApproval = this.gateway.onEvent(input.sessionId, pushEvent);
+          unsubscribe = handle.session.subscribe(pushEvent);
           Promise.resolve(
             handle.session.prompt(message, {
               ...(promptOptions ?? {}),

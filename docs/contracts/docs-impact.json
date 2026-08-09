@@ -19,12 +19,47 @@
     {
       "id": "skills-management",
       "paths": [
+        "packages/chat-core/src/user-display.ts",
         "apps/pi-server/src/skills/**",
+        "apps/pi-server/src/agent/agent-message.ts",
+        "apps/pi-server/src/agent/pi-coding-agent-client.ts",
+        "apps/pi-server/src/agent/agent-session-registry.ts",
+        "apps/pi-server/src/agent/session-messages.ts",
         "apps/desktop/src/hooks/useSkillCatalog*",
+        "apps/desktop/src/hooks/useStreamingChat.ts",
         "apps/desktop/src/chat/Composer/**",
+        "apps/desktop/src/chat/ChatView.tsx",
+        "apps/desktop/src/chat/SkillPreconditionBanner.tsx",
+        "apps/desktop/src/chat/NewThreadView.tsx",
+        "apps/desktop/src/app/AppShell.tsx",
+        "apps/desktop/src/sidebar/Sidebar.tsx",
         "apps/desktop/src/settings/**",
         "apps/desktop/src/store/**"
       ],
+      "requireAll": [
+        "docs/user/guide.md",
+        "docs/user/configuration.md",
+        "docs/developer/api.md",
+        "docs/developer/architecture.md",
+        "docs/product/status.md"
+      ]
+    },
+    {
+      "id": "skills-desktop-api",
+      "paths": ["apps/desktop/src/api/client.ts"],
+      "changedLinePattern": "(skill|Skill|catalogRevision|invalidSelections)",
+      "requireAll": [
+        "docs/user/guide.md",
+        "docs/user/configuration.md",
+        "docs/developer/api.md",
+        "docs/developer/architecture.md",
+        "docs/product/status.md"
+      ]
+    },
+    {
+      "id": "skills-route-composition",
+      "paths": ["apps/pi-server/src/app.ts"],
+      "changedLinePattern": "(skill|Skill|catalogRevision|runtimeSkills|snapshot\\.workspaceRoot)",
       "requireAll": [
         "docs/user/guide.md",
         "docs/user/configuration.md",

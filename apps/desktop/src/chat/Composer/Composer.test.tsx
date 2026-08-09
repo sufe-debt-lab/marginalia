@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -158,6 +158,45 @@ describe("Composer", () => {
     await userEvent.type(input, "hi");
     await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
     expect(onSubmit).toHaveBeenCalledWith({ text: "hi", contextFiles: [], skills: [] });
+  });
+
+  it("selects the open Skill menu item without also submitting on Cmd/Ctrl+Enter", async () => {
+    const pdf = candidate("pdf");
+    const onAddSkill = vi.fn();
+    const onSubmit = vi.fn();
+    render(
+      <Composer
+        api={api([pdf])}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        onAddSkill={onAddSkill}
+        onRemoveSkill={vi.fn()}
+        sending={false}
+        onSubmit={onSubmit}
+        placeholder=""
+      />
+    );
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.type(input, "$pdf");
+    const listbox = await screen.findByRole("listbox", { name: "Skills" });
+
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+    expect(input).toHaveAttribute(
+      "aria-activedescendant",
+      screen.getByRole("option", { name: /\$pdf/i }).id
+    );
+
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+    expect(onAddSkill).toHaveBeenCalledWith({ name: "pdf", path: pdf.canonicalPath });
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("@ inserts an inline mention token without creating an attachment card", async () => {
@@ -444,11 +483,59 @@ describe("Composer", () => {
     expect(onAdd).not.toHaveBeenCalled();
   });
 
-  it("the + button opens an attachment picker and selecting adds a context file", async () => {
-    const onAdd = vi.fn();
+  it("does not let a stale mention search compete with a newer Skill menu", async () => {
+    let finishSearch!: (items: { path: string }[]) => void;
+    const client = api([candidate("pdf")]);
+    (client.searchFiles as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSearch = resolve;
+        })
+    );
+    const onAddContextFile = vi.fn();
+    const onAddSkill = vi.fn();
     render(
       <Composer
-        api={api()}
+        api={client}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={onAddContextFile}
+        onRemoveContextFile={vi.fn()}
+        onAddSkill={onAddSkill}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.type(input, "@a");
+    await userEvent.clear(input);
+    await userEvent.type(input, "$pdf");
+    expect(await screen.findByRole("listbox", { name: "Skills" })).toBeInTheDocument();
+
+    await act(async () => finishSearch([{ path: "stale.md" }]));
+
+    expect(screen.queryByRole("listbox", { name: "File suggestions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Skills" })).toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    expect(onAddSkill).toHaveBeenCalledWith({ name: "pdf", path: "/skills/pdf/SKILL.md" });
+    expect(onAddContextFile).not.toHaveBeenCalled();
+  });
+
+  it("the + button returns focus to the textarea for attachment keyboard selection and Escape", async () => {
+    const onAdd = vi.fn();
+    const client = api();
+    (client.searchFiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { path: "src/App.tsx" },
+      { path: "README.md" }
+    ]);
+    render(
+      <Composer
+        api={client}
         workspaceId="w"
         providers={providers}
         providerId="p1"
@@ -462,9 +549,157 @@ describe("Composer", () => {
         placeholder=""
       />
     );
+    const input = screen.getByRole("textbox", { name: /message/i });
     await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
-    await userEvent.click(await screen.findByText("src/App.tsx"));
-    expect(onAdd).toHaveBeenCalledWith("src/App.tsx");
+    const menu = await screen.findByRole("listbox", { name: "File suggestions" });
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute("aria-controls", menu.id);
+
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(onAdd).toHaveBeenCalledWith("README.md");
+
+    await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
+    expect(await screen.findByRole("listbox", { name: "File suggestions" })).toBeInTheDocument();
+    expect(input).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox", { name: "File suggestions" })).not.toBeInTheDocument();
+    expect(onAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not publish a pending attachment menu after focus moves to another control", async () => {
+    let finishSearch!: (items: { path: string }[]) => void;
+    const client = api();
+    (client.searchFiles as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSearch = resolve;
+        })
+    );
+    render(
+      <Composer
+        api={client}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
+    await userEvent.click(screen.getByRole("button", { name: /tool permission/i }));
+    expect(await screen.findByText("Read-only")).toBeInTheDocument();
+
+    await act(async () => finishSearch([{ path: "stale.md" }]));
+
+    expect(screen.queryByText("stale.md")).not.toBeInTheDocument();
+    expect(screen.getByText("Read-only")).toBeInTheDocument();
+    expect(input).not.toHaveFocus();
+  });
+
+  it("does not publish a stale attachment search after the workspace changes", async () => {
+    let finishSearch!: (items: { path: string }[]) => void;
+    const client = api();
+    (client.searchFiles as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSearch = resolve;
+        })
+    );
+    const props = {
+      api: client,
+      providers,
+      providerId: "p1",
+      model: "M2.7",
+      onModelChange: vi.fn(),
+      contextFiles: [] as string[],
+      onAddContextFile: vi.fn(),
+      onRemoveContextFile: vi.fn(),
+      sending: false,
+      onSubmit: vi.fn(),
+      placeholder: ""
+    };
+    const view = render(<Composer {...props} workspaceId="w" />);
+
+    await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
+    view.rerender(<Composer {...props} workspaceId="w2" />);
+    await act(async () => finishSearch([{ path: "stale.md" }]));
+
+    expect(screen.queryByRole("listbox", { name: "File suggestions" })).not.toBeInTheDocument();
+  });
+
+  it("closes an already-open file menu when the workspace changes", async () => {
+    const client = api();
+    const props = {
+      api: client,
+      providers,
+      providerId: "p1",
+      model: "M2.7",
+      onModelChange: vi.fn(),
+      contextFiles: [] as string[],
+      onAddContextFile: vi.fn(),
+      onRemoveContextFile: vi.fn(),
+      sending: false,
+      onSubmit: vi.fn(),
+      placeholder: ""
+    };
+    const view = render(<Composer {...props} workspaceId="w" />);
+
+    await userEvent.click(screen.getByRole("button", { name: /add attachment/i }));
+    expect(await screen.findByRole("listbox", { name: "File suggestions" })).toBeInTheDocument();
+
+    view.rerender(<Composer {...props} workspaceId="w2" />);
+
+    expect(screen.queryByRole("listbox", { name: "File suggestions" })).not.toBeInTheDocument();
+  });
+
+  it("hides old mention results and Escape cancels the refined pending search", async () => {
+    let finishRefinedSearch!: (items: { path: string }[]) => void;
+    const client = api();
+    (client.searchFiles as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_workspaceId: string, query: string) => {
+        if (query === "a") return [{ path: "alpha.md" }];
+        if (query === "ab") {
+          return new Promise((resolve) => {
+            finishRefinedSearch = resolve;
+          });
+        }
+        return [];
+      }
+    );
+    render(
+      <Composer
+        api={client}
+        workspaceId="w"
+        providers={providers}
+        providerId="p1"
+        model="M2.7"
+        onModelChange={vi.fn()}
+        contextFiles={[]}
+        onAddContextFile={vi.fn()}
+        onRemoveContextFile={vi.fn()}
+        sending={false}
+        onSubmit={vi.fn()}
+        placeholder=""
+      />
+    );
+    const input = screen.getByRole("textbox", { name: /message/i });
+    await userEvent.type(input, "@a");
+    expect(await screen.findByText("alpha.md")).toBeInTheDocument();
+
+    await userEvent.type(input, "b");
+    expect(screen.queryByText("alpha.md")).not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await act(async () => finishRefinedSearch([{ path: "about.md" }]));
+
+    expect(screen.queryByRole("listbox", { name: "File suggestions" })).not.toBeInTheDocument();
   });
 
   it("can send with only attachments and no text", async () => {

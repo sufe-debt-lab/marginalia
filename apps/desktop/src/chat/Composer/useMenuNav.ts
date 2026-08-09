@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 
 /** Floating listbox surface above the composer — shared by the mention & slash menus. */
 export const COMPOSER_MENU_CLS =
@@ -14,16 +14,33 @@ export function useMenuNav<T>(
   items: readonly T[],
   onPick: (item: T) => void,
   onClose: () => void,
-  resetKey: unknown
+  resetKey: unknown,
+  options: {
+    menuId: string;
+    ownerRef?: RefObject<HTMLElement | null>;
+    onActiveOptionChange?: (id: string | null) => void;
+  }
 ) {
+  const { menuId, ownerRef, onActiveOptionChange } = options;
   const [activeIndex, setActiveIndex] = useState(0);
+  const activeOptionId = items.length > 0 ? `${menuId}-option-${activeIndex}` : null;
 
   useEffect(() => {
     setActiveIndex(0);
   }, [resetKey]);
 
   useEffect(() => {
+    if (activeOptionId) {
+      document.getElementById(activeOptionId)?.scrollIntoView?.({ block: "nearest" });
+    }
+    onActiveOptionChange?.(activeOptionId);
+    return () => onActiveOptionChange?.(null);
+  }, [activeOptionId, onActiveOptionChange]);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (ownerRef?.current && e.target !== ownerRef.current) return;
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") {
         onClose();
         return;
@@ -49,7 +66,11 @@ export function useMenuNav<T>(
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeIndex, items, onClose, onPick]);
+  }, [activeIndex, items, onClose, onPick, ownerRef]);
 
-  return { activeIndex, setActiveIndex };
+  return {
+    activeIndex,
+    setActiveIndex,
+    optionId: (index: number) => `${menuId}-option-${index}`
+  };
 }

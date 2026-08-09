@@ -12,7 +12,8 @@ Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工
 
 没有启用 provider 时不要发送消息。Composer 草稿按 New chat 的 workspace 或现有 session 隔离；切换
 workspace、session 或 Settings 不会串用或立即清空正文与附件。New chat 只有创建 session 成功后才转移
-完整草稿。Desktop 收到 `run_started` 才把本轮视为已接受；若对应草稿仍等于刚提交的快照才清空，发送
+完整草稿；若创建期间离开 New chat，迟到结果不会移动草稿或抢回导航。Desktop 收到 `run_started` 才把
+本轮视为已接受；若对应草稿仍等于刚提交的快照才清空，发送
 等待期间的后续编辑会保留。此前的 401/409/413 或流提前结束会保留输入，接受后的失败则可用 Retry
 重发同一轮正文、附件和 Skills selection，而不会覆盖当前新草稿。只有服务端明确发送
 `run_completed` 才算成功；未接受的失败只显示错误，不会出现可能重发旧消息的 Retry。
@@ -55,11 +56,11 @@ Marginalia 不会在创建 workspace 时批量上传目录。运行对话后，a
 
 Composer 提供三个档位，默认值目前是 Full access：
 
-| Mode          | Current behavior                                     | Important limitation                                            |
-| ------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
-| Full access   | 使用 pi 默认 coding tools，不经过 Marginalia 审批    | 可读写绝对路径并运行宿主 shell                                  |
-| Ask each time | 通过审批 extension 检查 bash、edit、write 和未知工具 | 名称与实际语义不完全一致：部分 shell 前缀和新文件写入会自动放行 |
-| Read-only     | 新建 AgentSession 时只请求 read、grep、find、ls      | 缓存 session 可能保留旧工具配置，不能作为强安全保证             |
+| Mode          | Current behavior                                               | Important limitation                                            |
+| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------- |
+| Full access   | 使用 pi 默认 coding tools，不经过 Marginalia 审批              | 可读写绝对路径并运行宿主 shell                                  |
+| Ask each time | 通过审批 extension 检查 bash、edit、write 和未知工具           | 名称与实际语义不完全一致：部分 shell 前缀和新文件写入会自动放行 |
+| Read-only     | 只请求 read、grep、find、ls；从其他 profile 切换时重建 session | 不是操作系统沙箱，工具仍以宿主用户权限读取文件                  |
 
 切换权限会改变产品意图，但当前实现不能提供操作系统级隔离。处理重要资料时，先准备备份，并把 agent 工具视为拥有当前用户权限的本地程序。
 
@@ -117,7 +118,10 @@ warning diagnostic 和 explicit-only 状态也会显示。磁盘上名为 `skill
 Catalog 会在 Composer 挂载、workspace 切换，以及每次新打开 `$` 或 `/` 菜单时刷新。加载、请求失败或
 响应 workspace 不匹配时，菜单不会允许从旧 snapshot 新增 Skill，而已有 snapshot 和已选 chips 会保留；
 可在菜单中重试。当前只允许选择 `name` 非空、enabled、status 为 `effective` 且 `explicitEligible` 的
-candidate。
+candidate。菜单打开时焦点保留在输入框，option 由方向键/Enter 操作而不进入 Tab 顺序；刷新失败的
+Retry 位于列表语义之外，执行后会把焦点还给输入框，成功加载后可继续键盘选择。加载、空结果和失败会向
+辅助技术播报；中文/日文输入法仍在组词时，Enter 不会误选菜单项。慢文件搜索返回前若切换 workspace、
+按 Escape 或把焦点移到 Permission/Model，旧结果不会重开菜单或抢回焦点。
 
 Settings -> Skills 现在提供只读磁盘管理页。页面根据当前 workspace 展示 workspace 与 user/global 的全部
 candidate；当前 workspace 无法从已加载列表解析时只展示 user/global 来源。可以按名称、描述、发现路径或
@@ -125,6 +129,7 @@ canonical path 搜索，并查看 Effective、Enabled · Shadowed、Disabled、I
 explicit-only、来源及 diagnostics。选择任意行（包括 Invalid）才会按需加载服务端保存的内容预览；截断
 内容会明确提示。启停不会乐观更新，而是以服务端返回的新 snapshot 为准；刷新、预览或启停失败均可重试。
 新刷新或启停开始时会清除上一条 catalog 错误；请求进行中不能触发旧错误上的 Retry，避免旧刷新覆盖新的启停结果。
+Settings tabs 支持 Arrow Up/Down/Left/Right、Home 和 End，且跳过禁用的 MCP 入口。
 
 发送前若所选 Skill 已删除、停用、失效、被遮蔽或 identity 不再匹配，服务端会在 `run_started` 前拒绝
 本轮。Desktop 不追加用户或错误气泡，也不清正文、附件和 chips；Composer 内联修复栏只把响应中 exact
@@ -138,8 +143,10 @@ Settings -> Skills；切回对话时 scoped draft 会完整恢复。刷新成功
 catalog refresh 或显示普通 Retry。普通 Retry 只属于已经收到 `run_started` 的失败轮，并始终重发当时冻结
 的完整正文、附件和 Skills selection。
 
-Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。显式 block 单项
-最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB，内容预览最多 256 KiB。选择失效和 payload 超限分别返回稳定的
+Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。可显式调用的原始
+`SKILL.md` 文件最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB，内容预览最多 256 KiB；
+非法 UTF-8 文件显示为 Invalid，不会被发送。Skill 正文中的 XML 1.0 非法 control character，以及
+name/path 中的 CR/LF 也会阻止显式发送并保留诊断；普通正文换行仍可使用。选择失效和 payload 超限分别返回稳定的
 409/413；其他 run preparation 内部失败只返回通用 500，不包含内部 path、byte count 或异常消息。
 Shadowed selection 的 409 会额外返回当前 winner 的 canonical `winnerPath`；其他失败原因不包含该字段。
 

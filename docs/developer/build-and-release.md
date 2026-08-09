@@ -36,6 +36,11 @@ root/pi-server 的 ABI 恢复 scripts：
 
 流程：**构建所有包 → 构建并部署 pi-server bundle → electron-builder 组装安装包**。
 
+Packaged main process 始终加载应用内 `dist/index.html`，不接受 `VITE_DEV_SERVER_URL` 覆盖。只有未打包开发
+进程会接受 `http:`/`https:` 的 `127.0.0.1`、`localhost` 或 bracketed IPv6 loopback `[::1]`；其他 host、
+协议、带 userinfo/credentials 或无效 URL 均回退到 packaged renderer entry。这条 renderer entry trust
+contract 由 Electron main 单元测试覆盖。
+
 ## pi-server bundle 与 better-sqlite3 ABI
 
 脚本：`apps/desktop/scripts/build-pi-server.mjs`。这是整个打包里最绕的部分，原因是 better-sqlite3 是原生模块，而 **Electron 用的 `NODE_MODULE_VERSION`（ABI）与系统 Node 不同**。

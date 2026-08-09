@@ -802,7 +802,7 @@ async function scenarioCoreUi(ctx) {
   await capture(ctx, "core-ui", "settings-general");
 
   await ctx.page
-    .getByRole("button", { name: /providers|服务商/i })
+    .getByRole("tab", { name: /providers|服务商/i })
     .first()
     .click({ timeout: 5000 });
   await ctx.page
@@ -887,7 +887,7 @@ async function scenarioCoreUi(ctx) {
   await ctx.page.keyboard.press("Escape");
 
   await ctx.page
-    .getByRole("button", { name: /general|通用/i })
+    .getByRole("tab", { name: /general|通用/i })
     .first()
     .click({ timeout: 5000 });
   await ctx.page.getByRole("button", { name: "中文" }).first().click({ timeout: 5000 });
@@ -1096,7 +1096,7 @@ async function scenarioApprovalFlow(ctx) {
 }
 
 async function openSkillsSettings(page) {
-  const skills = page.getByRole("button", { name: /^(skills|技能)$/i }).first();
+  const skills = page.getByRole("tab", { name: /^(skills|技能)$/i }).first();
   if (!(await skills.isVisible())) {
     await page
       .getByRole("button", { name: /^(settings|设置)$/i })

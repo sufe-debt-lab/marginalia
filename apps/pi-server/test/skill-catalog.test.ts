@@ -607,6 +607,107 @@ describe("Skill catalog refresh and cache", () => {
     );
   });
 
+  it("bounds catalog builds across distinct workspace identities", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const discover = vi.fn(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return [];
+    });
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover,
+      loadCandidate: async () => {
+        throw new Error("no candidates expected");
+      },
+      canonicalizeWorkspaceRoot: (root) => path.resolve(root),
+      maxConcurrentBuilds: 2
+    });
+
+    await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        catalog.refresh({
+          workspaceId: `workspace-${index}`,
+          workspaceRoot: `/workspace/${index}`
+        })
+      )
+    );
+
+    expect(discover).toHaveBeenCalledTimes(8);
+    expect(maximumActive).toBe(2);
+  });
+
+  it("rejects distinct workspace builds beyond the bounded service queue", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const discover = vi.fn(async ({ workspaceRoot }: { workspaceRoot?: string | null }) => {
+      if (workspaceRoot === "/workspace/first") await firstGate;
+      return [];
+    });
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover,
+      loadCandidate: async () => {
+        throw new Error("no candidates expected");
+      },
+      canonicalizeWorkspaceRoot: (root) => path.resolve(root),
+      maxConcurrentBuilds: 1,
+      maxQueuedBuilds: 1
+    });
+    const input = (id: string) => ({ workspaceId: id, workspaceRoot: `/workspace/${id}` });
+
+    const first = catalog.refresh(input("first"));
+    await vi.waitFor(() => expect(discover).toHaveBeenCalledTimes(1));
+    const second = catalog.refresh(input("second"));
+    const overflow = catalog.refresh(input("overflow"));
+    setTimeout(releaseFirst, 20);
+
+    await expect(overflow).rejects.toThrow("Skill catalog build queue is full");
+    await Promise.all([first, second]);
+    expect(discover).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out a queued catalog build when active builds do not settle", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const discover = vi
+      .fn<SkillCatalogDependencies["discover"]>()
+      .mockImplementationOnce(async () => {
+        await firstGate;
+        return [];
+      })
+      .mockResolvedValue([]);
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover,
+      loadCandidate: async () => {
+        throw new Error("no candidates expected");
+      },
+      canonicalizeWorkspaceRoot: (root) => path.resolve(root),
+      maxConcurrentBuilds: 1,
+      maxQueuedBuilds: 1,
+      queueWaitTimeoutMs: 10
+    });
+
+    const first = catalog.refresh({ workspaceId: "w1", workspaceRoot: "/workspace/one" });
+    await vi.waitFor(() => expect(discover).toHaveBeenCalledTimes(1));
+    const queued = catalog.refresh({ workspaceId: "w2", workspaceRoot: "/workspace/two" });
+
+    await expect(queued).rejects.toThrow("Skill catalog build queue is full");
+    releaseFirst();
+    await expect(first).resolves.toBeDefined();
+  });
+
   it("rejects a failed refresh and retains the prior successful snapshot", async () => {
     const fixture = parsed("stable/SKILL.md");
     const discover = vi
@@ -659,6 +760,83 @@ describe("Skill catalog refresh and cache", () => {
     );
     expect(globalSnapshot.candidates[0]?.relativePath).toBe("global/SKILL.md");
     expect(workspaceSnapshot.candidates[0]?.relativePath).toBe("workspace/SKILL.md");
+  });
+
+  it("isolates workspace identities that share the same canonical root", async () => {
+    const fixture = parsed("shared-root/SKILL.md");
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover: async () => [descriptor(fixture.relativePath, fixture)],
+      loadCandidate: async () => fixture,
+      canonicalizeWorkspaceRoot: () => "/canonical-shared"
+    });
+    const firstInput = { workspaceId: "workspace-a", workspaceRoot: "/alias-a" };
+    const secondInput = { workspaceId: "workspace-b", workspaceRoot: "/alias-b" };
+
+    const first = await catalog.refresh(firstInput);
+    const second = await catalog.refresh(secondInput);
+
+    expect(first.workspaceId).toBe("workspace-a");
+    expect(second.workspaceId).toBe("workspace-b");
+    expect(catalog.current(firstInput)?.workspaceId).toBe("workspace-a");
+    expect(catalog.current(secondInput)?.workspaceId).toBe("workspace-b");
+  });
+
+  it("bounds idle workspace snapshots with LRU eviction while retaining global state", async () => {
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover: async () => [],
+      loadCandidate: async () => {
+        throw new Error("no candidates expected");
+      },
+      canonicalizeWorkspaceRoot: (root) => path.resolve(root),
+      maxWorkspaceCacheEntries: 2
+    });
+    const input = (id: string) => ({ workspaceId: id, workspaceRoot: `/workspace/${id}` });
+
+    const globalSnapshot = await catalog.refresh(globalOnly);
+    const first = await catalog.refresh(input("first"));
+    await catalog.refresh(input("second"));
+    expect(catalog.current(input("first"))).toBe(first); // make first most recently used
+    const third = await catalog.refresh(input("third"));
+
+    expect(catalog.current(globalOnly)).toBe(globalSnapshot);
+    expect(catalog.current(input("first"))).toBe(first);
+    expect(catalog.current(input("second"))).toBeNull();
+    expect(catalog.current(input("third"))).toBe(third);
+  });
+
+  it("coalesces a same-workspace refresh burst into at most one trailing rebuild", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const discover = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) await firstGate;
+      return [];
+    });
+    const catalog = createSkillCatalogService({
+      homeDir: "/home/test",
+      preferences: preferences(),
+      discover,
+      loadCandidate: async () => {
+        throw new Error("no candidates expected");
+      },
+      canonicalizeWorkspaceRoot: (root) => path.resolve(root)
+    });
+
+    const first = catalog.refresh(workspace);
+    await vi.waitFor(() => expect(discover).toHaveBeenCalledTimes(1));
+    const burst = Array.from({ length: 99 }, () => catalog.refresh(workspace));
+    releaseFirst();
+    await Promise.all([first, ...burst]);
+
+    expect(discover).toHaveBeenCalledTimes(2);
+    expect(new Set(await Promise.all(burst))).toHaveProperty("size", 1);
   });
 });
 

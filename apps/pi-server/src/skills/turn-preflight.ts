@@ -6,7 +6,6 @@ import type { SkillCandidate, SkillCatalogSnapshot, SkillDiagnostic } from "./ty
 export const MAX_SKILL_SELECTIONS = 16;
 /** Maximum UTF-8 bytes accepted for either selection identity field. */
 export const MAX_SKILL_SELECTION_FIELD_BYTES = 16 * 1024;
-const MAX_SKILL_BLOCK_BYTES = 512 * 1024;
 const MAX_SKILL_TOTAL_BYTES = 2 * 1024 * 1024;
 
 export type SkillSelection = { name: string; path: string };
@@ -169,7 +168,10 @@ function validateSelection(
 
   const body = stripPiFrontmatter(candidate.rawContent);
   if (
-    [selection.name, selection.path, candidate.canonicalBaseDir, body].some(hasUnsupportedXmlChar)
+    [selection.name, selection.path, candidate.canonicalBaseDir].some(
+      (value) => hasUnsupportedXmlChar(value) || /[\r\n]/.test(value)
+    ) ||
+    hasUnsupportedXmlChar(body)
   ) {
     return { invalid: { ...selection, reason: "unsupported_identifier" } };
   }
@@ -182,7 +184,7 @@ function buildSkillBlock(candidate: SkillCandidate): string {
   return (
     `<skill name="${escapeXmlAttribute(skill.name)}" location="${escapeXmlAttribute(candidate.canonicalPath)}">\n` +
     `References are relative to ${escapeXmlText(candidate.canonicalBaseDir)}.\n\n` +
-    `${escapeXmlText(body)}\n</skill>`
+    `${body}\n</skill>`
   );
 }
 
@@ -214,10 +216,6 @@ export function prepareSkillTurn(
   }
 
   const blocks = candidates.map(buildSkillBlock);
-  for (const block of blocks) {
-    const bytes = Buffer.byteLength(block, "utf8");
-    if (bytes > MAX_SKILL_BLOCK_BYTES) throw new SkillPayloadTooLargeError();
-  }
   if (Buffer.byteLength(blocks.join("\n\n"), "utf8") > MAX_SKILL_TOTAL_BYTES) {
     throw new SkillPayloadTooLargeError();
   }

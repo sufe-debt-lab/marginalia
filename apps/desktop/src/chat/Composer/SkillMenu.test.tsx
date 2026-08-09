@@ -1,6 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRef } from "react";
 import type { SkillPickerItem } from "@/hooks/useSkillCatalog.js";
 import { SkillMenu } from "./SkillMenu.js";
 
@@ -38,7 +39,10 @@ describe("SkillMenu", () => {
         onClose={vi.fn()}
       />
     );
-    expect(screen.getByRole("listbox", { name: "Skills" })).toHaveClass("max-h-[190px]");
+    expect(screen.getByRole("listbox", { name: "Skills" }).parentElement).toHaveClass(
+      "max-h-[190px]"
+    );
+    expect(screen.getByRole("option", { name: /\$pdf/i })).toHaveAttribute("tabindex", "-1");
   });
 
   it("searches by name and description and selects a structured item", async () => {
@@ -83,28 +87,115 @@ describe("SkillMenu", () => {
     };
     const { rerender } = render(<SkillMenu {...props} loading />);
     expect(screen.getByText("Loading...")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading...");
+    expect(screen.getByRole("listbox", { name: "Skills" })).toHaveAttribute("aria-busy", "true");
 
     rerender(<SkillMenu {...props} loading={false} />);
     expect(screen.getByText("No Skills available")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("No Skills available");
   });
 
   it("hides stale rows after an error and offers Retry", async () => {
     const onRetry = vi.fn();
+    const onSelect = vi.fn();
+    const ownerRef = createRef<HTMLTextAreaElement>();
+    const { rerender } = render(
+      <>
+        <SkillMenu
+          items={skills}
+          query=""
+          loading={false}
+          error={new Error("offline")}
+          onSelect={onSelect}
+          onRetry={onRetry}
+          onClose={vi.fn()}
+          ownerRef={ownerRef}
+        />
+        <textarea ref={ownerRef} aria-label="Owner" />
+      </>
+    );
+
+    expect(screen.getByText("Skills could not be refreshed")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Skills could not be refreshed");
+    expect(screen.queryByText("$pdf")).not.toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(screen.getByRole("listbox", { name: "Skills" })).not.toContainElement(retry);
+    await userEvent.click(retry);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("textbox", { name: "Owner" })).toHaveFocus();
+
+    rerender(
+      <>
+        <SkillMenu
+          items={skills}
+          query=""
+          loading={false}
+          error={null}
+          onSelect={onSelect}
+          onRetry={onRetry}
+          onClose={vi.fn()}
+          ownerRef={ownerRef}
+        />
+        <textarea ref={ownerRef} aria-label="Owner" />
+      </>
+    );
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(onSelect).toHaveBeenCalledWith(skills[1]);
+  });
+
+  it("scrolls the keyboard-active option into view", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView
+    });
     render(
       <SkillMenu
         items={skills}
         query=""
         loading={false}
-        error={new Error("offline")}
+        error={null}
         onSelect={vi.fn()}
-        onRetry={onRetry}
+        onRetry={vi.fn()}
         onClose={vi.fn()}
       />
     );
+    scrollIntoView.mockClear();
 
-    expect(screen.getByText("Skills could not be refreshed")).toBeInTheDocument();
-    expect(screen.queryByText("$pdf")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetry).toHaveBeenCalledTimes(1);
+    await userEvent.keyboard("{ArrowDown}");
+
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" });
+    expect(screen.getByRole("option", { name: /\$brainstorming/i })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+  });
+
+  it("does not select a menu item while an IME composition is active", () => {
+    const onSelect = vi.fn();
+    const ownerRef = createRef<HTMLTextAreaElement>();
+    render(
+      <>
+        <SkillMenu
+          items={skills}
+          query=""
+          loading={false}
+          error={null}
+          onSelect={onSelect}
+          onRetry={vi.fn()}
+          onClose={vi.fn()}
+          ownerRef={ownerRef}
+        />
+        <textarea ref={ownerRef} aria-label="Owner" />
+      </>
+    );
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Owner" }), {
+      key: "Enter",
+      isComposing: true,
+      keyCode: 229
+    });
+
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

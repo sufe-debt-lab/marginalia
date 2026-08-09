@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ApiClient } from "@/api/client.js";
 import { useProviders } from "@/hooks/useProviders.js";
 import { useSkillCatalog } from "@/hooks/useSkillCatalog.js";
@@ -42,7 +42,15 @@ export function NewThreadView({ api }: { api: ApiClient }) {
   const setPermission = useAppStore((s) => s.setPermission);
   const setReasoning = useAppStore((s) => s.setReasoning);
   const submittingRef = useRef(false);
+  const submissionGenerationRef = useRef(0);
   const skillCatalog = useSkillCatalog(api, activeWorkspaceId);
+
+  useEffect(
+    () => () => {
+      submissionGenerationRef.current += 1;
+    },
+    []
+  );
 
   const enabledProviders = providers.enabled;
   // Honour the stored selection only while it's still enabled; otherwise fall back
@@ -69,12 +77,14 @@ export function NewThreadView({ api }: { api: ApiClient }) {
     if (!activeWorkspaceId || submittingRef.current) return;
     const submittedWorkspaceId = activeWorkspaceId;
     const submittedOwner = owner;
+    const generation = ++submissionGenerationRef.current;
     submittingRef.current = true;
     try {
       const session = await api.createSession({
         workspaceId: submittedWorkspaceId,
         title: turn.text.slice(0, 32)
       });
+      if (generation !== submissionGenerationRef.current) return;
       const moved = moveTurnDraft(submittedOwner, `session:${session.id}`, turn);
       setPendingTurn({ sessionId: session.id, turn: moved });
       setActiveWorkspace(submittedWorkspaceId);
@@ -82,9 +92,11 @@ export function NewThreadView({ api }: { api: ApiClient }) {
       setActiveSessionTitle(session.title);
       setView("chat");
     } catch (err) {
-      toast.error(`${t("newThread.createSessionFailed")}: ${(err as Error).message}`);
+      if (generation === submissionGenerationRef.current) {
+        toast.error(`${t("newThread.createSessionFailed")}: ${(err as Error).message}`);
+      }
     } finally {
-      submittingRef.current = false;
+      if (generation === submissionGenerationRef.current) submittingRef.current = false;
     }
   }
 

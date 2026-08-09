@@ -223,7 +223,7 @@ describe("prepareSkillTurn", () => {
     expect(plan.runtime.loadResult.skills[0]?.disableModelInvocation).toBe(true);
   });
 
-  it("escapes all XML 1.0 attribute entities and text entities", () => {
+  it("escapes wrapper values but preserves the Pi-native Skill body verbatim", () => {
     const special = candidate({
       name: `a&"<>'b`,
       canonicalPath: `/tmp/a&"<>'b/SKILL.md`,
@@ -235,7 +235,7 @@ describe("prepareSkillTurn", () => {
 
     expect(plan.blocks.join("\n\n")).toBe(
       '<skill name="a&amp;&quot;&lt;&gt;&apos;b" location="/tmp/a&amp;&quot;&lt;&gt;&apos;b/SKILL.md">\n' +
-        "References are relative to /tmp/a&amp;\"&lt;&gt;'b.\n\nBody &amp; &lt;tag&gt; &gt;\n</skill>"
+        "References are relative to /tmp/a&amp;\"&lt;&gt;'b.\n\nBody & <tag> >\n</skill>"
     );
   });
 
@@ -250,6 +250,23 @@ describe("prepareSkillTurn", () => {
         })
       );
     }
+  });
+
+  it("fails closed on line breaks in wrapper attributes while allowing them in the body", () => {
+    const badName = candidate({ name: "line-one\nline-two" });
+    const badPath = candidate({ name: "path", canonicalPath: "/tmp/line\nbreak/SKILL.md" });
+    const multilineBody = candidate({ name: "body", rawContent: "First line\nSecond line" });
+
+    for (const item of [badName, badPath]) {
+      expect(() => prepareSkillTurn(snapshot([item]), [selection(item)])).toThrowError(
+        expect.objectContaining({
+          invalidSelections: [{ ...selection(item), reason: "unsupported_identifier" }]
+        })
+      );
+    }
+    expect(
+      prepareSkillTurn(snapshot([multilineBody]), [selection(multilineBody)]).blocks[0]
+    ).toContain("First line\nSecond line");
   });
 
   it("accepts 16 canonical selections and rejects 17 before building a payload", () => {
@@ -285,22 +302,16 @@ describe("prepareSkillTurn", () => {
     }
   });
 
-  it("enforces 512 KiB per block using UTF-8 bytes", () => {
+  it("accepts a complete 512 KiB Skill file even when its wrapper exceeds that size", () => {
     const itemLimit = 512 * 1024;
     const location = "/tmp/bytes/SKILL.md";
-    const baseBytes = blockBytes("bytes", location, "");
     const exact = candidate({
       name: "bytes",
       canonicalPath: location,
-      rawContent: "x".repeat(itemLimit - baseBytes)
+      rawContent: "x".repeat(itemLimit)
     });
-    expect(blockBytes("bytes", location, exact.rawContent!)).toBe(itemLimit);
+    expect(blockBytes("bytes", location, exact.rawContent!)).toBeGreaterThan(itemLimit);
     expect(prepareSkillTurn(snapshot([exact]), [selection(exact)]).blocks).toHaveLength(1);
-
-    const over = { ...exact, rawContent: `${exact.rawContent}é` };
-    expect(() => prepareSkillTurn(snapshot([over]), [selection(over)])).toThrowError(
-      SkillPayloadTooLargeError
-    );
   });
 
   it("accepts exactly 2 MiB of serialized blocks and rejects separator overflow", () => {

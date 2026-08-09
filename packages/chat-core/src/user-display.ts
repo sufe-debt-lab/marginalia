@@ -23,7 +23,10 @@ const ATTACHMENT_XML_ENTITIES: Readonly<Record<string, string>> = {
   "&amp;": "&",
   "&quot;": '"',
   "&lt;": "<",
-  "&gt;": ">"
+  "&gt;": ">",
+  "&#9;": "\t",
+  "&#10;": "\n",
+  "&#13;": "\r"
 };
 
 function decodeSkillXmlAttribute(value: string): string | null {
@@ -32,8 +35,11 @@ function decodeSkillXmlAttribute(value: string): string | null {
 }
 
 function decodeAttachmentXmlAttribute(value: string): string | null {
-  if (/&(?!(?:amp|quot|lt|gt);)/.test(value)) return null;
-  return value.replace(/&(amp|quot|lt|gt);/g, (entity) => ATTACHMENT_XML_ENTITIES[entity]!);
+  if (/&(?!(?:amp|quot|lt|gt|#9|#10|#13);)/.test(value)) return null;
+  return value.replace(
+    /&(amp|quot|lt|gt|#9|#10|#13);/g,
+    (entity) => ATTACHMENT_XML_ENTITIES[entity]!
+  );
 }
 
 function parseLeadingSkills(raw: string): { names: string[]; rest: string } | null {

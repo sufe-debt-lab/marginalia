@@ -2,14 +2,16 @@
 record_id: AUDIT-PRODUCT-READINESS-2026-07-11
 status: open
 created: 2026-07-11
-updated: 2026-07-18
-verified_commit: 0c8add3
+updated: 2026-07-19
+verified_commit: 4d48da1
 owner: repository-maintainers
 ---
 
 # Product Readiness Audit - 2026-07-11
 
 本次审计覆盖 Electron runtime、renderer、pi-server、SQLite、agent tools、打包流程和正式文档。P0/P1 表示全产品范围的处理优先级，不等同于 CVSS 或公开漏洞评级；每项的 `Target` 单独决定是否属于 M0。
+Frontmatter 的 `verified_commit` 是本轮未提交修复所基于的 commit；标记为 2026-07-19 的 resolved 证据与
+最新测试数量对应其上的 current working tree，完整根级结果见产品状态验证基线。
 
 ## 历史初始审计基线
 
@@ -31,7 +33,7 @@ owner: repository-maintainers
 | P0-SEC-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/security/capability.ts`、`apps/pi-server/src/app.ts`、`apps/desktop/electron/pi-server-spawner.ts`                |
 | P0-SEC-002        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
 | P0-SEC-003        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
-| P0-SEC-004        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`                                                                                  |
+| P0-SEC-004        | P0       | resolved    | 2026-07-19    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`、`apps/pi-server/src/agent/pi-coding-agent-client.ts`                            |
 | P0-SEC-005        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`                                                               |
 | P0-SEC-006        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
 | P0-RUN-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
@@ -83,14 +85,22 @@ capability 都不是整套 API 的授权机制。
 
 ## P0-SEC-004: 缓存 session 保留旧配置
 
-`AgentSessionRegistry.acquire()` 已把 Skill `effectiveRevision` 纳入 resource cache identity；revision 变化
-会淘汰旧 handle，并以持久化 session path 重建，因此 Skill runtime 不再保留旧 loader。后续传入的
-model 和 tools 仍不会重新应用。Reasoning 有动态 setter，工具集没有同类更新路径，因此 full 切到
-readonly 后仍可能保留旧 session 的工具能力。
+状态：Resolved（2026-07-19）。
 
-修复目标：把影响能力边界的配置纳入缓存 key，或在不兼容变化时显式淘汰并重建 AgentSession。
+`AgentSessionRegistry.acquire()` 的 cache identity 现在同时包含 canonical workspace root、Skill
+`effectiveRevision` 和 runtime revision；runtime revision 覆盖 provider、model 与 readonly/default 工具
+profile。任一不兼容配置变化都会 dispose 旧 handle，并以持久化 session path 和当前 canonical cwd 重建。
+Ask/Full policy 与 reasoning 仍按轮动态应用。Registry 在 entry 发布与 LRU 之间原子建立 prepared
+reservation；20 项 soft cap 只淘汰 idle handle，正常 execution settled、未启动 preparation、run 创建/
+start 或 post-acquire reasoning 初始化失败都会幂等 release。
 
-验收：同一 session 在 provider、model、permission 和资源配置切换后使用新配置；full 到 readonly 的回归测试确认写入和 bash 不可用。
+修复方式：把影响能力边界的配置纳入 cache identity，并在不兼容变化时显式淘汰、dispose、重建
+AgentSession。
+
+验收证据：真实 registry 回归连续覆盖 Full → Read-only、model A → B、provider A → B、Read-only → Full，
+并断言每次不兼容变化都重建 session、dispose 旧 handle，且 Read-only 仅创建 read/grep/find/ls 工具集；
+Skill revision 和 canonical-root 重建、持久化 session cwd override、并发 create 的原子 reservation、active
+handle 不被 LRU 淘汰以及异常 release 另有 registry/client 回归测试。
 
 ## P0-SEC-005: Symlink parent 允许新文件逃逸
 

@@ -58,13 +58,17 @@ describe("PiCodingAgentClient", () => {
   it("pins the effective skill loader and registry revision for the prepared runtime", async () => {
     const session = fakeSession([]);
     const acquire = vi.fn(async () => ({
-      sessionId: "s1",
-      session,
-      sessionFile: "/tmp/fake.jsonl",
-      resourceRevision: "effective-1",
-      dispose() {}
+      handle: {
+        sessionId: "s1",
+        session,
+        sessionFile: "/tmp/fake.jsonl",
+        resourceRevision: "effective-1",
+        pin: () => () => {},
+        dispose() {}
+      },
+      release() {}
     }));
-    const registry = { acquire } as unknown as AgentSessionRegistry;
+    const registry = { acquirePinned: acquire } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
     const skill = (name: string, disableModelInvocation: boolean): Skill => ({
       name,
@@ -113,6 +117,63 @@ describe("PiCodingAgentClient", () => {
     const promptFixture = formatSkillsForPrompt(loader.getSkills().skills);
     expect(promptFixture).toContain("<name>visible</name>");
     expect(promptFixture).not.toContain("<name>manual</name>");
+  });
+
+  it("rebuilds a cached session when its model or tool profile changes", async () => {
+    const created: Array<ReturnType<typeof fakeSession>> = [];
+    const createSession = vi.fn(async () => {
+      const session = fakeSession([]);
+      created.push(session);
+      return { session: session as unknown as AgentSession };
+    });
+    const registry = new RealAgentSessionRegistry({
+      authStorage: {} as AuthStorage,
+      modelRegistry: {} as ModelRegistry,
+      createSession,
+      sessionManagerFor: () => SessionManager.inMemory("/workspace")
+    });
+    const client = new PiCodingAgentClient(
+      registry,
+      (provider, modelId) => ({ id: `${provider}/${modelId}` }),
+      new ApprovalGateway()
+    );
+    const prepare = (providerId: string, modelId: string, permission: "full" | "readonly") =>
+      client.prepare({
+        sessionId: "runtime-cache",
+        workspaceRoot: "/workspace",
+        piProviderId: providerId,
+        modelId,
+        permission,
+        runtimeSkills: emptyRuntimeSkills()
+      });
+
+    await prepare("openai", "model-a", "full");
+    await prepare("openai", "model-a", "readonly");
+    await prepare("openai", "model-b", "readonly");
+    await prepare("anthropic", "model-b", "readonly");
+    await prepare("anthropic", "model-b", "full");
+
+    expect(createSession).toHaveBeenCalledTimes(5);
+    expect(createSession.mock.calls.map(([options]) => options.tools)).toEqual([
+      undefined,
+      ["read", "grep", "find", "ls"],
+      ["read", "grep", "find", "ls"],
+      ["read", "grep", "find", "ls"],
+      undefined
+    ]);
+    expect(
+      createSession.mock.calls.map(([options]) => (options.model as { id: string }).id)
+    ).toEqual([
+      "openai/model-a",
+      "openai/model-a",
+      "openai/model-b",
+      "anthropic/model-b",
+      "anthropic/model-b"
+    ]);
+    expect(created.slice(0, -1).every((session) => session.dispose.mock.calls.length === 1)).toBe(
+      true
+    );
+    registry.disposeAll();
   });
 
   it("assembles the real AgentSession system prompt from pinned visible skills only", async () => {
@@ -171,13 +232,19 @@ describe("PiCodingAgentClient", () => {
 
   it("does not prompt during prepare", async () => {
     const session = fakeSession([]);
-    const registry = {
-      acquire: vi.fn(async () => ({
+    const releasePin = vi.fn();
+    const acquirePinned = vi.fn(async () => ({
+      handle: {
         sessionId: "s1",
         session,
         sessionFile: "/tmp/fake.jsonl",
+        pin: () => () => {},
         dispose() {}
-      }))
+      },
+      release: releasePin
+    }));
+    const registry = {
+      acquirePinned
     } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
 
@@ -190,19 +257,26 @@ describe("PiCodingAgentClient", () => {
     });
 
     expect(session.prompt).not.toHaveBeenCalled();
+    expect(acquirePinned).toHaveBeenCalledTimes(1);
+    expect(releasePin).not.toHaveBeenCalled();
     const execution = prepared.start("hello");
     expect(session.prompt).toHaveBeenCalledWith("hello", { expandPromptTemplates: false });
     await execution.settled;
+    expect(releasePin).toHaveBeenCalledTimes(1);
   });
 
   it("forces Pi native Skill and template expansion off while preserving prompt options", async () => {
     const session = fakeSession([]);
     const registry = {
-      acquire: vi.fn(async () => ({
-        sessionId: "s1",
-        session,
-        sessionFile: "/tmp/fake.jsonl",
-        dispose() {}
+      acquirePinned: vi.fn(async () => ({
+        handle: {
+          sessionId: "s1",
+          session,
+          sessionFile: "/tmp/fake.jsonl",
+          pin: () => () => {},
+          dispose() {}
+        },
+        release() {}
       }))
     } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
@@ -229,15 +303,20 @@ describe("PiCodingAgentClient", () => {
 
   it("settles after a synchronous prompt failure", async () => {
     const session = fakeSession([]);
+    const releasePin = vi.fn();
     session.prompt.mockImplementationOnce(() => {
       throw new Error("sync boom");
     });
     const registry = {
-      acquire: vi.fn(async () => ({
-        sessionId: "s1",
-        session,
-        sessionFile: "/tmp/fake.jsonl",
-        dispose() {}
+      acquirePinned: vi.fn(async () => ({
+        handle: {
+          sessionId: "s1",
+          session,
+          sessionFile: "/tmp/fake.jsonl",
+          pin: () => releasePin,
+          dispose() {}
+        },
+        release: releasePin
       }))
     } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
@@ -254,6 +333,7 @@ describe("PiCodingAgentClient", () => {
 
     await expect(execution.settled).resolves.toBeUndefined();
     await expect(collect(execution.events)).rejects.toThrow("sync boom");
+    expect(releasePin).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a pending event read after an asynchronous prompt failure", async () => {
@@ -271,11 +351,15 @@ describe("PiCodingAgentClient", () => {
       setThinkingLevel: vi.fn()
     };
     const registry = {
-      acquire: vi.fn(async () => ({
-        sessionId: "s1",
-        session,
-        sessionFile: "/tmp/fake.jsonl",
-        dispose() {}
+      acquirePinned: vi.fn(async () => ({
+        handle: {
+          sessionId: "s1",
+          session,
+          sessionFile: "/tmp/fake.jsonl",
+          pin: () => () => {},
+          dispose() {}
+        },
+        release() {}
       }))
     } as unknown as AgentSessionRegistry;
     const gateway = new ApprovalGateway();
@@ -305,11 +389,15 @@ describe("PiCodingAgentClient", () => {
   it("abort delegates to the prepared session", async () => {
     const session = fakeSession([]);
     const registry = {
-      acquire: vi.fn(async () => ({
-        sessionId: "s1",
-        session,
-        sessionFile: "/tmp/fake.jsonl",
-        dispose() {}
+      acquirePinned: vi.fn(async () => ({
+        handle: {
+          sessionId: "s1",
+          session,
+          sessionFile: "/tmp/fake.jsonl",
+          pin: () => () => {},
+          dispose() {}
+        },
+        release() {}
       }))
     } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
@@ -331,11 +419,15 @@ describe("PiCodingAgentClient", () => {
   it("starts a prepared run only once", async () => {
     const session = fakeSession([]);
     const registry = {
-      acquire: vi.fn(async () => ({
-        sessionId: "s1",
-        session,
-        sessionFile: "/tmp/fake.jsonl",
-        dispose() {}
+      acquirePinned: vi.fn(async () => ({
+        handle: {
+          sessionId: "s1",
+          session,
+          sessionFile: "/tmp/fake.jsonl",
+          pin: () => () => {},
+          dispose() {}
+        },
+        release() {}
       }))
     } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
@@ -365,14 +457,17 @@ describe("PiCodingAgentClient", () => {
     const session = fakeSession(events);
     const handle: SessionHandle = {
       sessionId: "s1",
+      workspaceRoot: "/tmp",
       resourceRevision: "empty-revision",
+      runtimeRevision: "",
       session: session as any,
       sessionFile: "/tmp/fake.jsonl",
+      pin: () => () => {},
       dispose: () => session.dispose()
     };
 
     const registry = {
-      acquire: vi.fn(async () => handle)
+      acquirePinned: vi.fn(async () => ({ handle, release() {} }))
     } as unknown as AgentSessionRegistry;
 
     const client = new PiCodingAgentClient(
@@ -402,13 +497,18 @@ describe("PiCodingAgentClient", () => {
     ]);
     const handle: SessionHandle = {
       sessionId: "s1",
+      workspaceRoot: "/tmp",
       resourceRevision: "empty-revision",
+      runtimeRevision: "",
       session: session as any,
       sessionFile: "/tmp/fake.jsonl",
+      pin: () => () => {},
       dispose: () => session.dispose()
     };
-    const acquire = vi.fn(async () => handle);
-    const registry = { acquire } as unknown as AgentSessionRegistry;
+    const acquirePinned = vi.fn(async () => ({ handle, release() {} }));
+    const registry = {
+      acquirePinned
+    } as unknown as AgentSessionRegistry;
 
     const client = new PiCodingAgentClient(
       registry,
@@ -427,10 +527,45 @@ describe("PiCodingAgentClient", () => {
     const execution = prepared.start("hello");
     for await (const _e of execution.events) void _e;
 
-    const config = acquire.mock.calls[0][0].config as Record<string, unknown>;
+    const config = acquirePinned.mock.calls[0][0].config as Record<string, unknown>;
     expect(config.tools).toEqual(["read", "grep", "find", "ls"]);
     expect(config.thinkingLevel).toBe("high");
     expect(session.setThinkingLevel).toHaveBeenCalledWith("high");
+  });
+
+  it("releases the reservation when post-acquire reasoning setup fails", async () => {
+    const session = fakeSession([]);
+    session.setThinkingLevel.mockImplementationOnce(() => {
+      throw new Error("settings write failed");
+    });
+    const release = vi.fn();
+    const handle: SessionHandle = {
+      sessionId: "s1",
+      workspaceRoot: "/tmp",
+      resourceRevision: "empty-revision",
+      runtimeRevision: "",
+      session: session as any,
+      sessionFile: "/tmp/fake.jsonl",
+      pin: () => () => {},
+      dispose: () => session.dispose()
+    };
+    const registry = {
+      acquirePinned: vi.fn(async () => ({ handle, release }))
+    } as unknown as AgentSessionRegistry;
+    const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
+
+    await expect(
+      client.prepare({
+        sessionId: "s1",
+        workspaceRoot: "/tmp",
+        piProviderId: "openai",
+        modelId: "m",
+        reasoning: "high",
+        runtimeSkills: emptyRuntimeSkills()
+      })
+    ).rejects.toThrow("settings write failed");
+
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("leaves tools unset for full permission", async () => {
@@ -439,13 +574,18 @@ describe("PiCodingAgentClient", () => {
     ]);
     const handle: SessionHandle = {
       sessionId: "s1",
+      workspaceRoot: "/tmp",
       resourceRevision: "empty-revision",
+      runtimeRevision: "",
       session: session as any,
       sessionFile: "/tmp/fake.jsonl",
+      pin: () => () => {},
       dispose: () => session.dispose()
     };
-    const acquire = vi.fn(async () => handle);
-    const registry = { acquire } as unknown as AgentSessionRegistry;
+    const acquirePinned = vi.fn(async () => ({ handle, release() {} }));
+    const registry = {
+      acquirePinned
+    } as unknown as AgentSessionRegistry;
     const client = new PiCodingAgentClient(registry, () => ({ id: "m" }), new ApprovalGateway());
     await client.prepare({
       sessionId: "s1",
@@ -455,7 +595,7 @@ describe("PiCodingAgentClient", () => {
       permission: "full",
       runtimeSkills: emptyRuntimeSkills()
     });
-    const config = acquire.mock.calls[0][0].config as Record<string, unknown>;
+    const config = acquirePinned.mock.calls[0][0].config as Record<string, unknown>;
     expect(config.tools).toBeUndefined();
   });
 

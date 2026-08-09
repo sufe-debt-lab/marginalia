@@ -151,6 +151,41 @@ describe("NewThreadView", () => {
     expect(useAppStore.getState().view).toBe("new-thread");
   });
 
+  it("ignores a stale session completion after leaving New chat", async () => {
+    const api = fakeApi();
+    let finishCreate: ((session: Awaited<ReturnType<ApiClient["createSession"]>>) => void) | null =
+      null;
+    (api.createSession as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishCreate = resolve;
+        })
+    );
+    useAppStore.getState().setTurnText("new:w1", "do not hijack navigation");
+    const view = render(<NewThreadView api={api} />);
+    await screen.findByRole("button", { name: /Minimax · M2.7/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+    view.unmount();
+    useAppStore.setState({ view: "settings", activeSessionId: "newer-session" });
+
+    await act(async () => {
+      finishCreate?.({
+        id: "stale-session",
+        workspaceId: "w1",
+        title: "stale",
+        origin: "ui",
+        model: null
+      });
+    });
+
+    expect(useAppStore.getState().view).toBe("settings");
+    expect(useAppStore.getState().activeSessionId).toBe("newer-session");
+    expect(useAppStore.getState().pendingTurn).toBeNull();
+    expect(useAppStore.getState().getTurnDraft("new:w1").text).toBe("do not hijack navigation");
+  });
+
   it("hands off only the clicked snapshot and preserves edits made while creating", async () => {
     const api = fakeApi();
     let finishCreate: ((session: Awaited<ReturnType<ApiClient["createSession"]>>) => void) | null =

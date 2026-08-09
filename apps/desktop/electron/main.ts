@@ -59,8 +59,11 @@ function devServerUrl() {
   if (app.isPackaged || !process.env.VITE_DEV_SERVER_URL) return null;
   try {
     const url = new URL(process.env.VITE_DEV_SERVER_URL);
-    const isLoopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
-    return isLoopback && ["http:", "https:"].includes(url.protocol) ? url : null;
+    const isLoopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    const hasNoCredentials = url.username === "" && url.password === "";
+    return isLoopback && hasNoCredentials && ["http:", "https:"].includes(url.protocol)
+      ? url
+      : null;
   } catch {
     return null;
   }

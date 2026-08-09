@@ -150,7 +150,9 @@ server-owned root；省略时传入 `{ workspaceId: null, workspaceRoot: null }`
 
 Invalid candidate 的 `name` / `description` 为 `null`。Candidate 与 aggregate diagnostic 只包含公开
 diagnostic 字段；响应不会返回 `workspaceRoot`、`rawContent`、`previewContent`、`contentHash`、Pi
-`Skill` object 或 `effectiveSkills`。
+`Skill` object 或 `effectiveSkills`。Pi 仍可能为带 warning 的 metadata 返回 Skill；若正文含 XML 1.0
+不支持的 control character，或 name/canonical path/base directory 含这类字符或 CR/LF，则该 candidate
+保留诊断与 preview，但 `explicitEligible` 为 false。
 
 ### `GET /skills/content?path=<canonical>&workspaceId=<optional>`
 
@@ -177,7 +179,8 @@ Catalog 按 refresh → current membership → preference upsert → refresh 的
 三个 Skills route 共用错误契约：缺失/错误 bearer 返回 `401`，不可信 Origin 返回 `403`，未知
 workspace 返回 `404 { "error": "workspace not found" }`，snapshot 不含该 path 返回
 `404 { "error": "skill not found" }`。`PATCH` JSON 或字段类型不符合上述 schema 时返回
-`400 { "error": "invalid request" }`。Catalog refresh 或内部错误统一返回
+`400 { "error": "invalid request" }`。Catalog build 的 service-wide 队列最多 20 项且 slot 等待最多 30 秒；
+队列满、等待超时、refresh 或内部错误统一返回
 `500 { "error": "skills unavailable" }`，不返回内部 path、bytes 或异常消息。
 
 ## Workspaces
@@ -266,6 +269,10 @@ agent preparation → `runs` insert → SSE/start。refresh、preflight、messag
 insert 都在 lease 内；request abort listener 保持到 execution `settled` 完成后才移除，因此事件已结束
 但 execution 仍在收尾时的 disconnect 仍会触发 abort 和审批取消。
 
+Agent preparation 通过 registry 原子取得 pinned reservation；idle LRU 不会 dispose 已 prepared 或 active
+handle。`runs` insert、SSE start 或 post-acquire 初始化在 prompt 前失败时幂等 release，正常 start 后则在
+execution `settled` 时释放。LRU 的 20 项容量因此是 idle soft cap，而不是 active run hard cap。
+
 请求 Body：
 
 ```jsonc
@@ -311,12 +318,15 @@ Skill 可以被显式选择，但 Pi 会把它从隐式 system prompt 的可用�
 `winnerPath` 是当前 effective winner 的 canonical path，只在 `reason: "shadowed"` 时返回；其他 reason
 必须省略该字段，不返回 `null`。
 
-Raw selections 超过 16、selection identity field 超限、单个 XML block 超过 512 KiB 或全部 block 按
-`blocks.join("\n\n")` 实际序列化后的 UTF-8 大小（包含 block 间分隔符）超过 2 MiB 时返回
+Raw selections 超过 16、selection identity field 超限、候选 `SKILL.md` 原始文件超过 512 KiB，或全部
+block 按 `blocks.join("\n\n")` 实际序列化后的 UTF-8 大小（包含 block 间分隔符）超过 2 MiB 时返回
 `413 { "error": "skill_payload_too_large" }`，同样发生在 preparation 和 run insert 之前。Block 只由
 immutable snapshot 中保存的 `rawContent` 构建，使用 Pi 0.75.5 的 newline/frontmatter body 规则；
-XML 1.0 不支持的 control character 会 fail closed。最终用户 prompt 顺序固定为：连续 Skill blocks →
-用户 `message` → trailing `<attached_files>` envelope（如果有附件）。Prompt start 强制关闭 Pi 的原生
+name/location 与 References baseDir 会转义，Skill body 与 Pi 原生显式展开一致地保留原文。非法 UTF-8
+候选为 `invalid`；正文中的 XML 1.0 非法 control character，以及 wrapper identity 中的非法字符或 CR/LF
+会 fail closed。附件 path/mime/error 中的 tab、LF、CR 分别编码为 `&#9;`、`&#10;`、`&#13;`，使实时和重开
+展示使用同一严格 grammar。最终用户 prompt 顺序固定为：连续 Skill blocks → 用户 `message` → trailing
+`<attached_files>` envelope（如果有附件）。Prompt start 强制关闭 Pi 的原生
 Skill/template expansion，因此用户文本 `/skill:name` 不会重新读磁盘或绕过上述 preflight。
 
 Catalog refresh、message build、agent preparation 或 run insert 的非 typed 内部失败统一返回

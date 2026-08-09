@@ -32,29 +32,42 @@ export type AcquireInput = {
   workspaceRoot: string;
   agentSessionPath: string | null;
   resourceRevision: string;
+  /** Model/provider/tool profile identity. Omitted only by legacy or isolated callers. */
+  runtimeRevision?: string;
   /** Extra config (model, tools, etc.). Forwarded to createSession. */
   config?: Record<string, unknown>;
 };
 
 export type SessionHandle = {
   sessionId: string;
+  workspaceRoot: string;
   resourceRevision: string;
+  runtimeRevision: string;
   session: AgentSession;
   sessionFile: string;
+  /** Protects this session from idle-LRU eviction until the returned release is called. */
+  pin(): () => void;
   dispose(): void;
 };
+
+export type SessionReservation = {
+  handle: SessionHandle;
+  release(): void;
+};
+
+type RegistryEntry = SessionHandle & { activePins: number };
 
 function defaultSessionManagerFor(workspaceRoot: string, existing: string | null): SessionManager {
   if (!existing) return PiSessionManager.create(workspaceRoot);
   try {
-    return PiSessionManager.open(existing);
+    return PiSessionManager.open(existing, undefined, workspaceRoot);
   } catch {
     return PiSessionManager.create(workspaceRoot);
   }
 }
 
 export class AgentSessionRegistry {
-  private readonly entries = new Map<string, SessionHandle>();
+  private readonly entries = new Map<string, RegistryEntry>();
   private readonly maxEntries: number;
   private readonly sessionManagerFor: (
     workspaceRoot: string,
@@ -67,11 +80,28 @@ export class AgentSessionRegistry {
   }
 
   async acquire(input: AcquireInput): Promise<SessionHandle> {
+    return (await this.acquireEntry(input, false)).handle;
+  }
+
+  async acquirePinned(input: AcquireInput): Promise<SessionReservation> {
+    const reservation = await this.acquireEntry(input, true);
+    return { handle: reservation.handle, release: reservation.release! };
+  }
+
+  private async acquireEntry(
+    input: AcquireInput,
+    pinned: boolean
+  ): Promise<{ handle: SessionHandle; release?: () => void }> {
     const hit = this.entries.get(input.sessionId);
-    if (hit && hit.resourceRevision === input.resourceRevision) {
+    if (
+      hit &&
+      hit.workspaceRoot === input.workspaceRoot &&
+      hit.resourceRevision === input.resourceRevision &&
+      hit.runtimeRevision === (input.runtimeRevision ?? "")
+    ) {
       this.entries.delete(input.sessionId); // move to MRU
       this.entries.set(input.sessionId, hit);
-      return hit;
+      return { handle: hit, ...(pinned ? { release: hit.pin() } : {}) };
     }
     if (hit) this.evict(input.sessionId);
 
@@ -87,16 +117,30 @@ export class AgentSessionRegistry {
       sessionManager
     });
 
-    const handle: SessionHandle = {
+    const handle: RegistryEntry = {
       sessionId: input.sessionId,
+      workspaceRoot: input.workspaceRoot,
       resourceRevision: input.resourceRevision,
+      runtimeRevision: input.runtimeRevision ?? "",
       session,
       sessionFile: session.sessionFile ?? "",
+      activePins: 0,
+      pin: () => {
+        handle.activePins += 1;
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          handle.activePins -= 1;
+          this.maybeEvict();
+        };
+      },
       dispose: () => session.dispose()
     };
     this.entries.set(input.sessionId, handle);
-    this.maybeEvict();
-    return handle;
+    const release = pinned ? handle.pin() : undefined;
+    this.maybeEvict(input.sessionId);
+    return { handle, ...(release ? { release } : {}) };
   }
 
   evict(sessionId: string): void {
@@ -111,9 +155,11 @@ export class AgentSessionRegistry {
     this.entries.clear();
   }
 
-  private maybeEvict(): void {
+  private maybeEvict(protectedSessionId?: string): void {
     while (this.entries.size > this.maxEntries) {
-      const oldestKey = this.entries.keys().next().value as string | undefined;
+      const oldestKey = [...this.entries].find(
+        ([sessionId, handle]) => sessionId !== protectedSessionId && handle.activePins === 0
+      )?.[0];
       if (!oldestKey) break;
       this.evict(oldestKey);
     }

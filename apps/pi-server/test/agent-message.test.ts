@@ -45,4 +45,22 @@ describe("buildAgentMessage", () => {
     expect(message).toContain('error="');
     expect(message.endsWith("</attached_files>")).toBe(true);
   });
+
+  it("encodes attachment attribute line breaks without changing the generated grammar", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-message-"));
+    tempDirs.push(root);
+    const fileName = "line\nbreak.md";
+    fs.writeFileSync(path.join(root, fileName), "context", "utf8");
+
+    const message = await buildAgentMessage({
+      workspaceRoot: root,
+      text: "inspect",
+      contextFiles: [fileName]
+    });
+
+    expect(message).toContain(
+      '<attached_file path="line&#10;break.md" mime="text/markdown">\ncontext\n</attached_file>'
+    );
+    expect(message).not.toContain('path="line\nbreak.md"');
+  });
 });

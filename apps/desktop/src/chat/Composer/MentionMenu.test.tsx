@@ -31,7 +31,9 @@ describe("MentionMenu", () => {
       <MentionMenu suggestions={[{ path: "src/App.tsx" }]} onSelect={() => {}} onClose={() => {}} />
     );
 
-    expect(screen.getByRole("listbox")).toHaveClass("w-80", "rounded-card");
+    const listbox = screen.getByRole("listbox", { name: "File suggestions" });
+    expect(listbox).toHaveClass("w-80", "rounded-card");
+    expect(screen.getByRole("option", { name: "src/App.tsx" })).toHaveAttribute("tabindex", "-1");
   });
 
   it("selects suggestions with arrow keys and Enter", async () => {

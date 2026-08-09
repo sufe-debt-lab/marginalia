@@ -1,4 +1,12 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode
+} from "react";
 import { ArrowUp, Plus, Square, X } from "lucide-react";
 import type { ApiClient, Provider, SkillCandidate, SkillSelection } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
@@ -124,7 +132,15 @@ export function Composer(props: Props) {
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   // Which UI opened the file menu: an inline `@` mention vs the `+` attachment picker.
   const [pickerMode, setPickerMode] = useState<"mention" | "attach">("mention");
+  const [activeMenuOptionId, setActiveMenuOptionId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileSearchGenerationRef = useRef(0);
+  const workspaceIdRef = useRef(props.workspaceId);
+  workspaceIdRef.current = props.workspaceId;
+  const composerId = useId().replaceAll(":", "");
+  const slashMenuId = `${composerId}-slash-menu`;
+  const skillMenuId = `${composerId}-skill-menu`;
+  const mentionMenuId = `${composerId}-mention-menu`;
   const skillCatalog = props.skillCatalog;
   const pickerItems = useMemo(
     () => skillCatalog.snapshot?.candidates.filter(isEligibleSkill).map(toPickerItem) ?? [],
@@ -145,6 +161,14 @@ export function Composer(props: Props) {
   const canSubmit =
     !props.disabled &&
     (props.text.trim().length > 0 || props.contextFiles.length > 0 || props.skills.length > 0);
+  const activeMenuId =
+    slashQuery !== null
+      ? slashMenuId
+      : skillQuery !== null
+        ? skillMenuId
+        : mentionSuggestions.length > 0
+          ? mentionMenuId
+          : null;
 
   function autoSize() {
     const el = textareaRef.current;
@@ -154,13 +178,23 @@ export function Composer(props: Props) {
   }
 
   function closeMenus() {
+    fileSearchGenerationRef.current += 1;
     setTrigger(null);
     setSlashQuery(null);
     setSkillQuery(null);
     setMentionSuggestions([]);
   }
 
+  useEffect(() => {
+    fileSearchGenerationRef.current += 1;
+    setTrigger(null);
+    setSlashQuery(null);
+    setSkillQuery(null);
+    setMentionSuggestions([]);
+  }, [props.workspaceId]);
+
   async function handleChange(value: string, caret: number) {
+    const searchGeneration = ++fileSearchGenerationRef.current;
     props.onTextChange(value);
     requestAnimationFrame(autoSize);
     const next = detectTrigger(value, caret);
@@ -185,9 +219,17 @@ export function Composer(props: Props) {
       setSlashQuery(null);
       setSkillQuery(null);
       setPickerMode("mention");
-      if (props.workspaceId) {
-        const items = await props.api.searchFiles(props.workspaceId, next.query);
-        setMentionSuggestions(Array.isArray(items) ? items : []);
+      setMentionSuggestions([]);
+      const workspaceId = props.workspaceId;
+      if (workspaceId) {
+        const items = await props.api.searchFiles(workspaceId, next.query);
+        if (
+          searchGeneration === fileSearchGenerationRef.current &&
+          workspaceId === workspaceIdRef.current &&
+          document.activeElement === textareaRef.current
+        ) {
+          setMentionSuggestions(Array.isArray(items) ? items : []);
+        }
       }
     }
   }
@@ -202,8 +244,14 @@ export function Composer(props: Props) {
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeMenus();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
+      if (activeMenuId) return;
       submit();
     }
   }
@@ -237,6 +285,7 @@ export function Composer(props: Props) {
 
   /** A file was chosen from the menu — `@` keeps an inline reference, `+` makes an attachment card. */
   function pickFile(path: string) {
+    fileSearchGenerationRef.current += 1;
     if (pickerMode === "mention") {
       // Keep an inline `@path` token in the message; it is resolved to file
       // content on send (see ChatView/extractMentions). No attachment card.
@@ -250,12 +299,23 @@ export function Composer(props: Props) {
   }
 
   async function openAttachPicker() {
-    if (!props.workspaceId) return;
+    const workspaceId = props.workspaceId;
+    if (!workspaceId) return;
+    const searchGeneration = ++fileSearchGenerationRef.current;
     setPickerMode("attach");
-    const items = await props.api.searchFiles(props.workspaceId, "");
     setTrigger(null);
     setSlashQuery(null);
     setSkillQuery(null);
+    setMentionSuggestions([]);
+    textareaRef.current?.focus();
+    const items = await props.api.searchFiles(workspaceId, "");
+    if (
+      searchGeneration !== fileSearchGenerationRef.current ||
+      workspaceId !== workspaceIdRef.current ||
+      document.activeElement !== textareaRef.current
+    ) {
+      return;
+    }
     setMentionSuggestions(Array.isArray(items) ? items : []);
   }
 
@@ -270,6 +330,9 @@ export function Composer(props: Props) {
           onSelect={pickSlash}
           onRetrySkills={() => void skillCatalog.refresh()}
           onClose={closeMenus}
+          id={slashMenuId}
+          ownerRef={textareaRef}
+          onActiveOptionChange={setActiveMenuOptionId}
         />
       )}
       {skillQuery !== null && (
@@ -281,13 +344,19 @@ export function Composer(props: Props) {
           onSelect={pickSkill}
           onRetry={() => void skillCatalog.refresh()}
           onClose={closeMenus}
+          id={skillMenuId}
+          ownerRef={textareaRef}
+          onActiveOptionChange={setActiveMenuOptionId}
         />
       )}
       {mentionSuggestions.length > 0 && (
         <MentionMenu
           suggestions={mentionSuggestions}
           onSelect={pickFile}
-          onClose={() => setMentionSuggestions([])}
+          onClose={closeMenus}
+          id={mentionMenuId}
+          ownerRef={textareaRef}
+          onActiveOptionChange={setActiveMenuOptionId}
         />
       )}
       <div className="rounded-[14px] border border-border bg-surface px-3.5 pt-3 pb-2 shadow-composer transition-[border-color,box-shadow] motion-standard focus-within:border-border-strong focus-within:shadow-composer-focus">
@@ -348,6 +417,10 @@ export function Composer(props: Props) {
           ref={textareaRef}
           autoFocus={props.autoFocus}
           aria-label={t("composer.message")}
+          aria-haspopup="listbox"
+          aria-expanded={activeMenuId !== null}
+          aria-controls={activeMenuId ?? undefined}
+          aria-activedescendant={activeMenuId ? (activeMenuOptionId ?? undefined) : undefined}
           value={props.text}
           onChange={(e) =>
             void handleChange(e.target.value, e.target.selectionStart ?? e.target.value.length)

@@ -26,14 +26,18 @@ docs_impact:
 
 截至 2026-07-11（验证提交 `1199645`）：
 
-- 第 1 节审批骨架已交付并归档为 `PLAN-P1-APPROVAL-BACKBONE-001`。审批事件、持久化、桌面端卡片和恢复链路均已实现，但默认权限、缓存 session 的权限切换、命令判定和 workspace 边界仍有 readiness P0，不能视为可发布安全边界。
+- 第 1 节审批骨架已交付并归档为 `PLAN-P1-APPROVAL-BACKBONE-001`。审批事件、持久化、桌面端卡片和恢复
+  链路均已实现；2026-07-19 又完成 provider/model/tool-profile cache invalidation，关闭 `P0-SEC-004`。
+  默认权限、命令判定和 workspace 边界仍有 readiness P0，不能视为可发布安全边界。
 - 第 2 节对应的 `PLAN-P1-MESSAGE-STREAM-001` 已完成 Task 1–11，包括工具进度、可展开工具卡、thinking、长文排版、目录、复制/导出和存入 workspace；Task 12–15（可暂停滚动、文件变更事件、回合摘要、完整截图与文档同步）未完成，计划以部分交付关闭并转入 `P1-MESSAGE-001`。
 - 第 3 节 Composer 与第 4 节会话管理/错误恢复尚未完成，因此本 spec 继续保持 `active`。
 - 当前发布决定仍为 NO-GO；完成的交互能力与产品发布门槛分别评估，不能用已有 UI 或测试数量替代安全、恢复和文档准确性验收。
 
 ## Deviation
 
-- 第 1 节中的“Ask 是空操作”和“尚未传 resourceLoader”是 2026-07-08 的设计时基线，审批 extension、事件、持久化和 UI 已经交付。默认权限仍是 Full，缓存 AgentSession 也不会重新应用工具配置，对应 `P0-SEC-003`、`P0-SEC-004`。
+- 第 1 节中的“Ask 是空操作”和“尚未传 resourceLoader”是 2026-07-08 的设计时基线，审批 extension、事件、
+  持久化和 UI 已经交付。默认权限仍是 Full；AgentSession cache 现已按 provider/model/tool profile 失效并
+  重建，`P0-SEC-004` 于 2026-07-19 关闭。Ask shell 语义问题仍由 `P0-SEC-003` 跟踪。
 - 最终审批 REST body 为 `{ approved, reason?, alwaysAllowPrefix? }`，不是初稿中的 `{ decision, reason? }`；审批表用 `status` 保存 `pending/approved/denied/expired`。
 - diff 预览无法复用未导出的 pi 内部 helper，实际使用现有 `diff` 包；精确预览失败时降级为近似 patch。
 - 消息代码高亮保留 highlight.js。目录只解析助手消息的第一个 text part。滚动暂停、`file_changed`、TurnSummary、重开还原和专项视觉场景未完成，由 `P1-MESSAGE-001` 跟踪。

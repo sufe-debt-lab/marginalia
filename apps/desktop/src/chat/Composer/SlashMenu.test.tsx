@@ -1,12 +1,33 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRef } from "react";
 import type { SkillPickerItem } from "@/hooks/useSkillCatalog.js";
 import { SlashMenu } from "./SlashMenu.js";
 
 afterEach(() => cleanup());
 
 describe("SlashMenu", () => {
+  it("announces asynchronous Skill loading and empty states", () => {
+    const props = {
+      query: "",
+      skills: [],
+      skillsError: null,
+      onSelect: vi.fn(),
+      onRetrySkills: vi.fn(),
+      onClose: vi.fn()
+    };
+    const { rerender } = render(<SlashMenu {...props} skillsLoading />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading...");
+    expect(screen.getByRole("listbox", { name: "Commands and Skills" })).toHaveAttribute(
+      "aria-busy",
+      "true"
+    );
+
+    rerender(<SlashMenu {...props} skillsLoading={false} />);
+    expect(screen.getByRole("status")).toHaveTextContent("No Skills available");
+  });
+
   const skills: SkillPickerItem[] = [
     {
       name: "skills",
@@ -30,9 +51,10 @@ describe("SlashMenu", () => {
         onClose={vi.fn()}
       />
     );
-    expect(screen.getByRole("listbox", { name: "Commands and Skills" })).toHaveClass(
+    expect(screen.getByRole("listbox", { name: "Commands and Skills" }).parentElement).toHaveClass(
       "max-h-[190px]"
     );
+    expect(screen.getByRole("option", { name: /\/clear/i })).toHaveAttribute("tabindex", "-1");
   });
 
   it("filters by query and selects with click", async () => {
@@ -102,21 +124,38 @@ describe("SlashMenu", () => {
 
   it("keeps commands available but hides stale Skill rows after refresh failure", async () => {
     const onRetry = vi.fn();
+    const onClose = vi.fn();
+    const ownerRef = createRef<HTMLTextAreaElement>();
     render(
-      <SlashMenu
-        query=""
-        skills={skills}
-        skillsLoading={false}
-        skillsError={new Error("offline")}
-        onSelect={vi.fn()}
-        onRetrySkills={onRetry}
-        onClose={() => {}}
-      />
+      <>
+        <SlashMenu
+          query=""
+          skills={skills}
+          skillsLoading={false}
+          skillsError={new Error("offline")}
+          onSelect={vi.fn()}
+          onRetrySkills={onRetry}
+          onClose={onClose}
+          ownerRef={ownerRef}
+        />
+        <textarea ref={ownerRef} aria-label="Owner" />
+      </>
     );
 
     expect(screen.getByText("/clear")).toBeInTheDocument();
     expect(screen.queryByText("$skills")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Skills could not be refreshed");
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(screen.getByRole("listbox", { name: "Commands and Skills" })).not.toContainElement(
+      retry
+    );
+    await userEvent.click(retry);
     expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("textbox", { name: "Owner" })).toHaveFocus();
+
+    retry.focus();
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("textbox", { name: "Owner" })).toHaveFocus();
   });
 });

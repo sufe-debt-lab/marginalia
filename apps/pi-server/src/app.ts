@@ -465,7 +465,7 @@ export function createApp(options: AppOptions = {}) {
     if (!lease) return c.json({ error: "session_busy" }, 409);
 
     let agentMessage: string;
-    let prepared: Awaited<ReturnType<AgentClient["prepare"]>>;
+    let prepared: Awaited<ReturnType<AgentClient["prepare"]>> | null = null;
     let run: ReturnType<typeof createRun>;
     let catalogRevision: string | null = null;
     try {
@@ -486,17 +486,18 @@ export function createApp(options: AppOptions = {}) {
         workspaceId: workspace.id,
         workspaceRoot: workspace.rootDir
       });
+      const runtimeWorkspaceRoot = snapshot.workspaceRoot ?? workspace.rootDir;
       catalogRevision = snapshot.catalogRevision;
       const skillTurn = prepareSkillTurn(snapshot, body.skills ?? []);
       agentMessage = await buildAgentMessage({
-        workspaceRoot: workspace.rootDir,
+        workspaceRoot: runtimeWorkspaceRoot,
         text: body.message,
         contextFiles: body.contextFiles ?? [],
         skillBlocks: skillTurn.blocks
       });
       prepared = await agentClient.prepare({
         sessionId,
-        workspaceRoot: workspace.rootDir,
+        workspaceRoot: runtimeWorkspaceRoot,
         piProviderId: piProviderId(provider.name),
         modelId,
         agentSessionPath: session.agentSessionPath ?? null,
@@ -507,6 +508,7 @@ export function createApp(options: AppOptions = {}) {
       if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
       run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
     } catch (error) {
+      prepared?.release();
       lease.release();
       if (error instanceof SkillPreconditionError && catalogRevision !== null) {
         return c.json(
@@ -524,6 +526,12 @@ export function createApp(options: AppOptions = {}) {
       return c.json({ error: "run_preparation_failed" }, 500);
     }
 
+    if (!prepared) {
+      lease.release();
+      return c.json({ error: "run_preparation_failed" }, 500);
+    }
+    const preparedRun = prepared;
+
     return streamSSE(c, async (sse) => {
       const emit = async (type: string, payload: Record<string, unknown> = {}) => {
         await sse.writeSSE({
@@ -540,7 +548,7 @@ export function createApp(options: AppOptions = {}) {
       let execution: AgentRunExecution | null = null;
       try {
         await emit("run_started", { model: modelId });
-        execution = prepared.start(agentMessage);
+        execution = preparedRun.start(agentMessage);
 
         let abortRequested = false;
         const onAbort = () => {
@@ -617,6 +625,7 @@ export function createApp(options: AppOptions = {}) {
         completeRun(db, run.id, "failed", msg);
       } finally {
         try {
+          if (execution === null) preparedRun.release();
           agentClient.cancelPending(sessionId);
           expirePendingApprovals(db, run.id);
         } finally {

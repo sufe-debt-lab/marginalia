@@ -9,6 +9,7 @@ import {
   SKILL_PREVIEW_BYTES,
   hasUnsupportedXmlChar,
   loadSkillCandidate,
+  parseCapturedSkillContent,
   type CandidateLoaderDeps
 } from "../src/skills/candidate-loader.js";
 import type { DiscoveredSkillFile } from "../src/skills/types.js";
@@ -130,6 +131,24 @@ describe("loadSkillCandidate", () => {
       `realpath:${discoveredPath}`,
       `read:${canonicalPath}`
     ]);
+  });
+
+  it("binds Pi metadata parsing to the bytes captured by the stable read", async () => {
+    const content = Buffer.from(V2);
+    const parse = vi.fn((_inputPath: string, capturedContent?: Buffer) =>
+      capturedContent?.equals(content)
+        ? result(skill({ name: "demo-v2" }))
+        : result(skill({ name: "stale-path-version" }))
+    );
+
+    const candidate = await loadSkillCandidate(descriptor, {
+      ...fakeDeps({ reads: [content, content] }),
+      parse
+    });
+
+    expect(candidate.rawContent).toBe(V2);
+    expect(candidate.skill?.name).toBe("demo-v2");
+    expect(parse).toHaveBeenCalledWith(canonicalPath, content);
   });
 
   it("publishes unstable_file after exactly three attempts", async () => {
@@ -320,7 +339,7 @@ describe("loadSkillCandidate", () => {
     expect(Buffer.byteLength(candidate.rawContent ?? "", "utf8")).toBe(content.byteLength);
   });
 
-  it("keeps malformed UTF-8 replacement output within preview and raw byte budgets", async () => {
+  it("marks malformed UTF-8 invalid instead of silently changing its explicit body", async () => {
     const content = Buffer.alloc(SKILL_EXPLICIT_BYTES, 0xff);
 
     const candidate = await loadSkillCandidate(
@@ -328,17 +347,12 @@ describe("loadSkillCandidate", () => {
       fakeDeps({ reads: [content, content], parseResults: [result()] })
     );
 
-    const previewReplacementCount = Math.floor(SKILL_PREVIEW_BYTES / 3);
-    const rawReplacementCount = Math.floor(SKILL_EXPLICIT_BYTES / 3);
-    expect(candidate.explicitEligible).toBe(true);
-    expect(candidate.previewContent).toHaveLength(previewReplacementCount);
-    expect(new Set(candidate.previewContent)).toEqual(new Set(["\ufffd"]));
-    expect(Buffer.byteLength(candidate.previewContent, "utf8")).toBe(previewReplacementCount * 3);
-    expect(candidate.previewTruncated).toBe(true);
-    expect(candidate.rawContent).toHaveLength(rawReplacementCount);
-    expect(new Set(candidate.rawContent ?? "")).toEqual(new Set(["\ufffd"]));
-    expect(Buffer.byteLength(candidate.rawContent ?? "", "utf8")).toBe(rawReplacementCount * 3);
-    expect(candidate.rawContent?.startsWith(candidate.previewContent)).toBe(true);
+    expect(candidate.skill).toBeNull();
+    expect(candidate.explicitEligible).toBe(false);
+    expect(candidate.rawContent).toBeNull();
+    expect(candidate.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "invalid_utf8", level: "error" })
+    );
   });
 
   it("uses Buffer bytes rather than JavaScript string length for size decisions", async () => {
@@ -366,6 +380,21 @@ describe("loadSkillCandidate", () => {
     expect(candidate.explicitEligible).toBe(true);
   });
 
+  it("keeps an XML 1.0 control character in the body out of explicit selection", async () => {
+    const content = Buffer.from(`${V1}unsafe\u0001body`);
+    const candidate = await loadSkillCandidate(
+      descriptor,
+      fakeDeps({ reads: [content, content], parseResults: [result()] })
+    );
+
+    expect(candidate.skill).not.toBeNull();
+    expect(candidate.explicitEligible).toBe(false);
+    expect(candidate.rawContent).toBeNull();
+    expect(candidate.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "unsupported_identifier", level: "error" })
+    );
+  });
+
   it("retries when the canonical realpath changes and accepts the later stable path", async () => {
     const pathA = "/canonical-a/demo/SKILL.md";
     const pathB = "/canonical-b/demo/SKILL.md";
@@ -381,8 +410,8 @@ describe("loadSkillCandidate", () => {
 
     const candidate = await loadSkillCandidate(descriptor, deps);
 
-    expect(deps.parse).toHaveBeenNthCalledWith(1, pathA);
-    expect(deps.parse).toHaveBeenNthCalledWith(2, pathB);
+    expect(deps.parse).toHaveBeenNthCalledWith(1, pathA, content);
+    expect(deps.parse).toHaveBeenNthCalledWith(2, pathB, content);
     expect(candidate.canonicalPath).toBe(pathB);
     expect(candidate.canonicalBaseDir).toBe(path.dirname(pathB));
     expect(candidate.skill?.filePath).toBe(pathB);
@@ -429,9 +458,63 @@ describe("loadSkillCandidate", () => {
       );
     }
   );
+
+  it.each([
+    {
+      label: "name",
+      stablePath: canonicalPath,
+      parsedSkill: skill({ name: "line-one\nline-two" })
+    },
+    {
+      label: "path",
+      stablePath: "/canonical/demo/line\nbreak.md",
+      parsedSkill: skill({
+        filePath: "/canonical/demo/line\nbreak.md",
+        baseDir: "/canonical/demo"
+      })
+    },
+    {
+      label: "baseDir",
+      stablePath: "/canonical/line\nbreak/SKILL.md",
+      parsedSkill: skill({
+        filePath: "/canonical/line\nbreak/SKILL.md",
+        baseDir: "/canonical/line\nbreak"
+      })
+    }
+  ])(
+    "keeps a line break in the Skill $label out of explicit selection",
+    async ({ stablePath, parsedSkill }) => {
+      const candidate = await loadSkillCandidate(
+        descriptor,
+        fakeDeps({
+          realpaths: [stablePath, stablePath],
+          parseResults: [result(parsedSkill)]
+        })
+      );
+
+      expect(candidate.skill).not.toBeNull();
+      expect(candidate.explicitEligible).toBe(false);
+      expect(candidate.rawContent).toBeNull();
+      expect(candidate.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "unsupported_identifier", level: "error" })
+      );
+    }
+  );
 });
 
 describe("default Pi parser adapter", () => {
+  it("parses captured bytes instead of the current source-path contents", () => {
+    const live = writeTempSkill(V1);
+
+    const parsed = parseCapturedSkillContent(live.discoveredPath, Buffer.from(V2));
+
+    expect(parsed.skills[0]).toMatchObject({
+      name: "demo-v2",
+      filePath: live.discoveredPath,
+      baseDir: path.dirname(live.discoveredPath)
+    });
+  });
+
   it("returns no Skill when Pi rejects a missing description", async () => {
     const candidate = await loadSkillCandidate(
       writeTempSkill("---\nname: missing-description\n---\n\n# Missing\n")
@@ -454,6 +537,24 @@ describe("default Pi parser adapter", () => {
     expect(candidate.diagnostics).toEqual([
       expect.objectContaining({ code: "pi_warning", level: "warning" })
     ]);
+  });
+
+  it("keeps Pi's multiline-name warning visible but blocks explicit serialization", async () => {
+    const candidate = await loadSkillCandidate(
+      writeTempSkill(
+        "---\nname: |-\n  line-one\n  line-two\ndescription: Multiline name\n---\n\n# Warning\n"
+      )
+    );
+
+    expect(candidate.skill?.name).toBe("line-one\nline-two");
+    expect(candidate.explicitEligible).toBe(false);
+    expect(candidate.rawContent).toBeNull();
+    expect(candidate.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "pi_warning", level: "warning" }),
+        expect.objectContaining({ code: "unsupported_identifier", level: "error" })
+      ])
+    );
   });
 
   it("maps Pi disable-model-invocation metadata to explicitOnly", async () => {
