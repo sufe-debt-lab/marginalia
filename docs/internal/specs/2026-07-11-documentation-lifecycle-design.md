@@ -264,7 +264,7 @@ pnpm verify
 
 同一变更中新建并完成的短任务允许直接归档，但必须显式设置 `same_change: true`，outcome 只能是 `completed`，`implementation_refs` 必须包含精确机器值 `same_change`，并提供完整 `Implementation Outcome`。Plan 的 `source_spec_id` 必须解析到同一变更中归档的 spec；base 中不得存在相同 `record_id` 或相同路径。该例外只解决新记录无法出现在 PR base 的事实，不适用于任何已有 active 文档。
 
-首轮迁移是唯一例外：`docs/contracts/superpowers-migration-baseline.json` 保存当前 legacy 文件的精确 source path、SHA-256、分配后的 `record_id` 和审计确认的 `assumedStatus`。转换检查仅在 base blob 与登记哈希完全一致时接受该前态。baseline 合并后保持只读；由于后续 merge base 已不再包含这些 source path，记录不能被重复使用。未采用新 front matter 的其他 legacy internal 正文不进入 ID 或转换检查。
+首轮迁移是唯一例外：`docs/contracts/superpowers-migration-baseline.json` 保存当前 legacy 文件的精确 source path、SHA-256、分配后的 `record_id` 和审计确认的 `assumedStatus`。转换检查通常仅在 base blob 与登记哈希完全一致时接受该前态；若 legacy source 在同一分支中晚于 merge base、早于治理迁移创建，baseline 额外固定完整 `sourceRevision`，且该 commit 必须位于 merge base 与 HEAD 之间，检查器再读取该 revision 的 source blob 核对哈希。baseline 合并后保持只读；由于后续 merge base 已不再包含这些 source path，记录不能被重复使用。未采用新 front matter 的其他 legacy internal 正文不进入 ID 或转换检查。
 
 ### API 契约检查
 

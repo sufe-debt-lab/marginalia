@@ -1493,6 +1493,9 @@ function validateBaseline(baseline) {
     if (
       !record ||
       typeof record.sourcePath !== "string" ||
+      (record.sourceRevision !== undefined &&
+        (typeof record.sourceRevision !== "string" ||
+          !/^[0-9a-f]{7,40}$/.test(record.sourceRevision))) ||
       typeof record.sha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(record.sha256) ||
       typeof record.recordId !== "string" ||
@@ -1659,10 +1662,39 @@ export function checkSuperpowerTransitions(repoRoot, base) {
     if (migration) {
       if (record.data.same_change === true)
         errors.push(`${record.path}: legacy migration cannot use same_change`);
-      const source = gitFileBuffer(repoRoot, mergeBase, migration.sourcePath);
+      let sourceRevision = mergeBase;
+      if (migration.sourceRevision) {
+        const resolvedRevision = execGit(
+          repoRoot,
+          ["rev-parse", "--verify", `${migration.sourceRevision}^{commit}`],
+          { allowFailure: true }
+        )?.trim();
+        if (!resolvedRevision) {
+          errors.push(
+            `${record.path}: migration source revision does not resolve: ${migration.sourceRevision}`
+          );
+          continue;
+        }
+        const followsBase =
+          execGit(repoRoot, ["merge-base", "--is-ancestor", mergeBase, resolvedRevision], {
+            allowFailure: true
+          }) !== null;
+        const precedesHead =
+          execGit(repoRoot, ["merge-base", "--is-ancestor", resolvedRevision, "HEAD"], {
+            allowFailure: true
+          }) !== null;
+        if (!followsBase || !precedesHead) {
+          errors.push(
+            `${record.path}: migration source revision is outside the current branch history: ${migration.sourceRevision}`
+          );
+          continue;
+        }
+        sourceRevision = resolvedRevision;
+      }
+      const source = gitFileBuffer(repoRoot, sourceRevision, migration.sourcePath);
       if (source === null) {
         errors.push(
-          `${record.path}: migration source is absent from base: ${migration.sourcePath}`
+          `${record.path}: migration source is absent from ${sourceRevision}: ${migration.sourcePath}`
         );
       } else {
         const hash = createHash("sha256").update(source).digest("hex");

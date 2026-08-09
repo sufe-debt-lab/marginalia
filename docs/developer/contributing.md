@@ -71,6 +71,8 @@ pnpm docs:check -- --base <base-sha> --declaration <json-file>
 
 diff 检查对二进制变更（如截图基线 PNG）安全：changed-line 提取使用有损 UTF-8 解码，二进制不会让检查崩溃，其中的 ASCII 内容仍会被 `changedLinePattern` 规则匹配到。
 
+首轮 Superpowers legacy 迁移必须把 source path 与 SHA-256 固定在 migration baseline。只有源文件在当前 PR 历史中晚于 merge base 创建时，才额外填写完整 `sourceRevision`；它必须位于 merge base 与 HEAD 之间，不能用任意外部分支提交代替可信前态。
+
 当前树检查在干净 CI 的构建步骤之前运行。正式文档可以描述 `dist`、`release`、`resources`、`output` 等生成目录；源码引用守卫会跳过这些目录，不依赖本地是否已经生成构建产物。修改这套识别规则时必须同步 `scripts/docs-check.test.mjs` 的干净工作区回归。
 
 ## Docs impact

@@ -855,6 +855,60 @@ test("legacy transitions require the exact migration baseline hash", () => {
   });
 });
 
+test("initial migration may pin a legacy source commit from the current branch", () => {
+  fixture((root) => {
+    initGit(root);
+    write(root, "docs/superpowers/specs/source.md", activeSpec("SPEC-LEGACY-001"));
+    const base = commitAll(root, "base before branch-local legacy plan");
+
+    const legacy = "# Branch-local legacy plan\n";
+    write(root, "docs/superpowers/plans/legacy.md", legacy);
+    const sourceRevision = commitAll(root, "add branch-local legacy plan");
+    const sha256 = createHash("sha256").update(legacy).digest("hex");
+
+    rmSync(path.join(root, "docs/superpowers/plans/legacy.md"));
+    write(
+      root,
+      "docs/internal/plans/legacy.md",
+      archivedRecord({
+        type: "plan",
+        id: "PLAN-LEGACY-001",
+        sourceSpecId: "SPEC-LEGACY-001",
+        outcome: "cancelled"
+      })
+    );
+    write(
+      root,
+      "docs/contracts/superpowers-migration-baseline.json",
+      JSON.stringify({
+        version: 1,
+        lockedAt: "2026-07-11",
+        records: [
+          {
+            sourcePath: "docs/superpowers/plans/legacy.md",
+            sourceRevision,
+            sha256,
+            recordId: "PLAN-LEGACY-001",
+            assumedStatus: "active"
+          }
+        ]
+      })
+    );
+    commitAll(root, "archive branch-local legacy plan");
+
+    assert.deepEqual(checkSuperpowerTransitions(root, base), []);
+
+    const baselinePath = path.join(root, "docs/contracts/superpowers-migration-baseline.json");
+    const bad = JSON.parse(readFileSync(baselinePath, "utf8"));
+    bad.records[0].sourceRevision = "deadbeef";
+    writeFileSync(baselinePath, JSON.stringify(bad));
+    assert.match(
+      checkSuperpowerTransitions(root, base).join("\n"),
+      /source revision does not resolve/
+    );
+  });
+});
+
 test("a merged migration baseline is immutable and cannot be deleted", () => {
   fixture((root) => {
     initGit(root);

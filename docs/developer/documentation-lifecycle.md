@@ -112,6 +112,8 @@ same_change: true
 
 普通 `implementation_refs` 使用 7–40 位小写 Git commit SHA、`#123`/`PR#123`，或 GitHub commit/PR URL；`same_change` 引用必须同时设置 `same_change: true` 并满足上面的受限规则。`completed` 只允许从 `active` 关闭；`cancelled` 和 `superseded` 可从 `draft`、`approved` 或 `active` 关闭。`superseded` 必须填写可解析的 `superseded_by_id`。
 
+首轮 legacy 迁移通常从 PR merge base 读取 baseline `sourcePath` 并核对 SHA-256。若 legacy 文档在同一分支中早于治理门禁创建、但晚于 merge base，baseline 可以额外固定完整 `sourceRevision`；检查器只接受位于 merge base 之后且为当前 HEAD 祖先的 commit，并从该 commit 读取同一路径后核对哈希。这个字段只用于一次性首轮迁移，baseline 合入后仍按字节锁定，不是普通 closeout 的替代方案。
+
 归档记录一旦进入目标分支即按字节不可变。后续发现事实错误时，不直接改写历史正文或元数据；应在当前正式文档、issue 或新的 spec/plan 中更正，并保留原记录作为当时执行证据。
 
 ## 自动文档检查
