@@ -240,10 +240,7 @@ describe("POST /sessions/:id/runs with a disabled provider", () => {
   it("rejects the run instead of failing on missing credentials", async () => {
     const db = memoryDb();
     migrate(db);
-    const app = createApp({
-      db,
-      capability: { token: "test-token", allowedOrigins: new Set<string>() }
-    });
+    const app = createApp({ db });
     const workspace = createWorkspace(db, { name: "W", rootDir: "/tmp/w-run" });
     const session = createSession(db, {
       workspaceId: workspace.id,
@@ -259,10 +256,7 @@ describe("POST /sessions/:id/runs with a disabled provider", () => {
 
     const res = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
-      headers: {
-        authorization: "Bearer test-token",
-        "content-type": "application/json"
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ providerId: created.id, message: "hi" })
     });
     expect(res.status).toBe(409);

@@ -122,27 +122,26 @@ pnpm --filter @marginalia/pi-server run ensure:native
 打包命令通过不等于应用能在客户机器上启动。发布前至少做一次非破坏性 smoke test：
 
 1. 运行 `pnpm --filter @marginalia/desktop package`。
-2. 启动 `apps/desktop/release/` 下的 packaged 应用。
-3. 确认窗口不白屏，pi-server 状态变为 ready。
-4. 确认存在 Electron `utilityProcess.fork` 启动的 Node utility process。
-5. 找到本机监听端口并访问 `/health`，确认返回 `status: "ok"`。
-6. 打开 Settings → Skills，确认受 capability 保护的列表能加载；未带 bearer 直接请求同一路由应返回
-   `401`。
+2. 运行 `pnpm --filter @marginalia/desktop smoke:packaged`；也可把 unpacked executable path 作为额外参数。
+3. smoke 启动隔离数据库和 packaged 应用，等待 pi-server ready，并验证公开 `/health` 返回 200。
+4. smoke 通过 renderer 的受限 preload transport 读取 `/workspaces`，验证 IPC sender/request 校验与 main 注入 bearer 的成功路径。
+5. smoke 从 main 对实际 loopback `/workspaces` 发起不带 bearer 的请求，必须得到 401；结果只返回状态码，
+   不暴露 URL 或 bearer。
 
 真实 provider 对话会写入用户数据库并可能消耗外部模型额度，不属于默认 smoke test。
 
-### Packaged capability 启动契约
+### Packaged Loopback Access 启动契约
 
-Electron main 为每次 packaged pi-server utility process 生成 token，并通过 child environment 传入。
+Electron main 为每次 packaged pi-server utility process 生成 bearer，并通过 child environment 传入。
 pi-server 入口必须在 fake/real agent、Pi loader 或工具初始化前读取
-`MARGINALIA_CAPABILITY_TOKEN`/`MARGINALIA_ALLOWED_ORIGIN`，把值保留在 capability policy 后立即从
-`process.env` 删除。这样后续 Pi Bash 工具启动的真实子进程不会继承 token 或 Origin，同时 bearer
-授权仍使用已捕获的 policy 正常工作。token 不得写入 ready stdout、日志、manifest、SQLite 或截图；
-Electron 当前会在 main 状态中持有 token，并通过 preload status bridge 交给 renderer 发起受保护请求。
+`MARGINALIA_LOOPBACK_BEARER`/`MARGINALIA_ALLOWED_ORIGIN`，把值保留在 Loopback Access policy 后立即从
+`process.env` 删除。这样后续 Pi Bash 工具启动的真实子进程不会继承 bearer 或 Origin。bearer 不得写入
+ready stdout、普通日志、错误详情、manifest、SQLite、截图或 renderer state；Electron main 通过私有
+protocol 代理 JSON、SSE 和 raw/Range 请求，并在代理层注入 bearer 与 exact Origin。
 
 环境删除不是 secret 擦除保证：Linux `/proc/<pid>/environ` 可能仍保留 exec 时的原始环境字节，Node
 进程内也仍有用于授权的 policy 值。该措施只收紧后续子进程继承边界；发布威胁模型仍把本机同用户进程
-读取和整体 loopback 未认证路由记为 open risk。
+读取同用户进程内存记为剩余风险；整体 loopback 未认证路由风险已由统一 policy 关闭。
 
 ## 已知限制与待办
 
@@ -150,7 +149,7 @@ Electron 当前会在 main 状态中持有 token，并通过 preload status brid
 - **Windows 未签名**：NSIS 可以生成，但客户机没有可验证的发布者身份。
 - **没有自动更新与回滚**：当前安装包需要手工分发和升级。
 - **没有 LICENSE**：公开发布前需要明确代码许可证。
-- **Smoke test 未自动化**：构建成功不能替代干净客户机上的安装、启动、健康检查和卸载验证。
+- **Smoke 覆盖仍有限**：自动 smoke 覆盖 unpacked packaged 启动、健康和本机访问边界；签名安装、卸载和干净客户机验证仍需发布流程完成。
 - **打包不可与 dev/test 并行**：见上文 ABI 处理。
 
 ## 相关文档

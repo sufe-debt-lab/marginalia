@@ -27,7 +27,12 @@ export const en = {
     cancel: "Cancel",
     copy: "Copy",
     copied: "Copied",
-    copyFailed: "Copy failed"
+    copyFailed: "Copy failed",
+    invalidPiServerStatus: "The local service returned an invalid status.",
+    invalidPiServerTransportUrl: "The local service request URL is invalid.",
+    invalidPiServerRequest: "The local service request is invalid.",
+    piServerTransportUnavailable: "The local service connection is unavailable.",
+    unsupportedPiServerRequestBody: "The local service cannot send this request body."
   },
   newThread: {
     title: "What should we build?",
@@ -305,7 +310,12 @@ export const zh = {
     cancel: "取消",
     copy: "复制",
     copied: "已复制",
-    copyFailed: "复制失败"
+    copyFailed: "复制失败",
+    invalidPiServerStatus: "本地服务返回了无效状态。",
+    invalidPiServerTransportUrl: "本地服务请求地址无效。",
+    invalidPiServerRequest: "本地服务请求无效。",
+    piServerTransportUnavailable: "本地服务连接不可用。",
+    unsupportedPiServerRequestBody: "本地服务无法发送此请求内容。"
   },
   newThread: {
     title: "我们要做点什么？",

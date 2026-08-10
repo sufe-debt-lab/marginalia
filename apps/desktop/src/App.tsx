@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/app/AppShell.js";
 import { LoadingSplash } from "@/app/LoadingSplash.js";
 import { Button } from "@/components/ui/button.js";
+import { desktopPiServerFetch } from "@/api/desktop-transport.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 
 type Health = {
@@ -11,43 +12,21 @@ type Health = {
 type UiStatus = PiServerStatus & { health?: Health };
 
 function getBridge() {
-  if (window.marginalia) return window.marginalia;
   const params = new URLSearchParams(window.location.search);
   const fragment = new URLSearchParams(window.location.hash.slice(1));
-  const serverUrl = params.get("serverUrl");
-  const capabilityToken = fragment.get("capabilityToken");
-  const hasLegacyQueryToken = params.has("capabilityToken");
+  const hadLegacyCredentials = params.has("capabilityToken") || fragment.has("capabilityToken");
   params.delete("capabilityToken");
-  if (import.meta.env.DEV && serverUrl && capabilityToken) {
-    params.delete("serverUrl");
+  fragment.delete("capabilityToken");
+  if (hadLegacyCredentials) {
     const remainingQuery = params.toString();
+    const remainingFragment = fragment.toString();
     window.history.replaceState(
       window.history.state,
       "",
-      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}`
-    );
-    return {
-      getPiServerStatus: async () => ({
-        status: "ready" as const,
-        url: serverUrl,
-        capabilityToken
-      }),
-      restartPiServer: async () => ({
-        status: "ready" as const,
-        url: serverUrl,
-        capabilityToken
-      })
-    };
-  }
-  if (hasLegacyQueryToken || capabilityToken) {
-    const remainingQuery = params.toString();
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${capabilityToken ? "" : window.location.hash}`
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${remainingFragment ? `#${remainingFragment}` : ""}`
     );
   }
-  return null;
+  return window.marginalia ?? null;
 }
 
 export function App() {
@@ -65,7 +44,7 @@ export function App() {
       return;
     }
     try {
-      const response = await fetch(`${status.url}/health`);
+      const response = await desktopPiServerFetch(`${status.url}/health`);
       if (!response.ok) throw new Error(`health check failed: ${response.status}`);
       const health = (await response.json()) as Health;
       setServer({ ...status, health });
@@ -114,11 +93,15 @@ export function App() {
   if (server.status === "failed") {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm">
-        <p className="text-destructive">{server.error}</p>
+        <p className="text-destructive">
+          {server.error === "invalid_pi_server_status"
+            ? t("common.invalidPiServerStatus")
+            : server.error}
+        </p>
         <Button onClick={retry}>{t("common.retry")}</Button>
       </div>
     );
   }
 
-  return <AppShell serverUrl={server.url} capabilityToken={server.capabilityToken} />;
+  return <AppShell serverUrl={server.url} />;
 }

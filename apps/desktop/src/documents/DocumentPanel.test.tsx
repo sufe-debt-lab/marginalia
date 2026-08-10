@@ -19,7 +19,7 @@ function fakeApi(): ApiClient {
       text: "# Hi",
       truncated: false
     })),
-    rawDocumentUrl: vi.fn((_w, p) => `http://127.0.0.1:3000/raw/${encodeURIComponent(p)}`)
+    readRawDocument: vi.fn(async () => new Blob())
   } as unknown as ApiClient;
 }
 

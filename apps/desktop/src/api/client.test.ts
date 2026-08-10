@@ -15,7 +15,7 @@ describe("ApiClient.runChat", () => {
         )
     ) as typeof fetch;
 
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("marginalia://pi-server");
     const events: unknown[] = [];
     const stream = await api.runChat("s1", {
       providerId: "p1",
@@ -29,24 +29,22 @@ describe("ApiClient.runChat", () => {
       { type: "run_completed", payload: {} }
     ]);
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://server/sessions/s1/runs",
+      "marginalia://pi-server/sessions/s1/runs",
       expect.objectContaining({
         headers: {
-          authorization: "Bearer secret-token",
           "content-type": "application/json"
         }
       })
     );
   });
 
-  it("does not send the capability token to ordinary APIs", async () => {
-    const fetchMock = vi.fn(async () => Response.json([]));
-    vi.stubGlobal("fetch", fetchMock);
-    const api = new ApiClient("http://server", "secret-token");
+  it("uses the desktop transport for ordinary APIs without authorization state", async () => {
+    const transport = vi.fn(async () => Response.json([]));
+    const api = new ApiClient("marginalia://pi-server", transport);
 
     await api.listWorkspaces();
 
-    expect(fetchMock).toHaveBeenCalledWith("http://server/workspaces", {
+    expect(transport).toHaveBeenCalledWith("marginalia://pi-server/workspaces", {
       headers: { "content-type": "application/json" }
     });
   });
@@ -61,7 +59,7 @@ describe("ApiClient.runChat", () => {
       "fetch",
       vi.fn(async () => Response.json(body, { status: 401 }))
     );
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await expect(api.listWorkspaces()).rejects.toMatchObject({
       name: "ApiError",
@@ -77,7 +75,7 @@ describe("ApiClient.runChat", () => {
       "fetch",
       vi.fn(async () => new Response("upstream failed", { status: 502 }))
     );
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await expect(api.listWorkspaces()).rejects.toMatchObject({
       name: "ApiError",
@@ -90,7 +88,7 @@ describe("ApiClient.runChat", () => {
 
   it("getBranch returns null on non-200", async () => {
     global.fetch = vi.fn(async () => new Response("not found", { status: 404 }));
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     await expect(api.getBranch("w")).resolves.toBeNull();
   });
 
@@ -101,13 +99,13 @@ describe("ApiClient.runChat", () => {
           headers: { "content-type": "application/json" }
         })
     );
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     await expect(api.getBranch("w")).resolves.toBe("main");
   });
 
   it("deleteWorkspace returns void on 204", async () => {
     global.fetch = vi.fn(async () => new Response(null, { status: 204 }));
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     await expect(api.deleteWorkspace("w")).resolves.toBeUndefined();
   });
 
@@ -120,7 +118,7 @@ describe("ApiClient.runChat", () => {
           headers: { "content-type": "application/json" }
         })
     );
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     await expect(api.deleteWorkspace("w")).rejects.toMatchObject({
       name: "ApiError",
       message: "workspace_conflict",

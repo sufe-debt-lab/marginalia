@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FolderOpen, FolderTree, Paperclip, Pencil, RotateCw, Search } from "lucide-react";
 import type { ApiClient } from "@/api/client.js";
 import { ResizeHandle } from "@/components/ResizeHandle.js";
@@ -52,7 +52,33 @@ export function DocumentPanel({
   // No tab open → file tree fills the panel. A tab open → split (narrow tree + viewer).
   const hasTab = activeTab !== null;
   const treeVisible = !hasTab || treeOpen;
-  const activeFileUrl = activeTab ? api.rawDocumentUrl(workspaceId, activeTab) : undefined;
+  const [activeFileUrl, setActiveFileUrl] = useState<string>();
+  useEffect(() => {
+    setActiveFileUrl(undefined);
+    if (!activeTab || !doc.content) return;
+    const mime = doc.content.mime;
+    const needsRawPreview =
+      mime === "application/pdf" ||
+      mime.startsWith("image/") ||
+      mime.startsWith("audio/") ||
+      mime.startsWith("video/");
+    if (!needsRawPreview) return;
+
+    let disposed = false;
+    let objectUrl: string | undefined;
+    void api
+      .readRawDocument(workspaceId, activeTab)
+      .then((blob) => {
+        if (disposed) return;
+        objectUrl = URL.createObjectURL(blob);
+        setActiveFileUrl(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [activeTab, api, doc.content, workspaceId]);
 
   // Directory paths implied by the tree. Folder rows only expand/collapse
   // (handled by @pierre/trees) — never open a tab — so opening guards against them.
