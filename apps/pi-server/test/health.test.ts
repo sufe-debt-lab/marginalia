@@ -20,8 +20,8 @@ describe("GET /health", () => {
   it("allows the desktop renderer origin to call health", async () => {
     const app = createApp({
       startedAt: new Date("2026-05-25T00:00:00.000Z"),
-      capability: {
-        token: null,
+      loopbackAccess: {
+        bearer: null,
         allowedOrigins: new Set(["http://127.0.0.1:5173"])
       }
     });

@@ -12,14 +12,8 @@ import { DocumentPanel } from "@/documents/DocumentPanel.js";
 import { SettingsView } from "@/settings/SettingsView.js";
 import { Topbar } from "./Topbar.js";
 
-export function AppShell({
-  serverUrl,
-  capabilityToken
-}: {
-  serverUrl: string;
-  capabilityToken: string;
-}) {
-  const api = useApi(serverUrl, capabilityToken);
+export function AppShell({ serverUrl }: { serverUrl: string }) {
+  const api = useApi(serverUrl);
   const { t } = useTranslation();
   const view = useAppStore((s) => s.view);
   const activeSessionId = useAppStore((s) => s.activeSessionId);

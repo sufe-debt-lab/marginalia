@@ -249,23 +249,53 @@ async function apiJson(baseUrl, endpoint, init = {}) {
   return response.json();
 }
 
-export async function skillsApiJson(server, endpoint, init = {}, request = globalThis.fetch) {
-  const signal = init.signal ?? AbortSignal.timeout(15000);
-  const response = await request(`${server.url}${endpoint}`, {
-    ...init,
-    signal,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${server.capabilityToken}`,
-      ...(init.headers ?? {})
+async function pageApiJson(page, baseUrl, endpoint, init = {}) {
+  return page.evaluate(
+    async ({ url, requestInit }) => {
+      const target = new URL(url);
+      return new Promise((resolve, reject) => {
+        let status = 0;
+        const chunks = [];
+        window.marginalia.requestPiServer(
+          {
+            path: `${target.pathname}${target.search}`,
+            method: requestInit.method ?? "GET",
+            headers: Object.entries(requestInit.headers ?? {}),
+            ...(requestInit.body == null ? {} : { body: requestInit.body })
+          },
+          (event) => {
+            if (event.type === "start") status = event.status;
+            if (event.type === "data") chunks.push(event.chunk);
+            if (event.type === "error") reject(new Error(event.code));
+            if (event.type !== "end") return;
+            void new Blob(chunks)
+              .text()
+              .then((text) => {
+                if (status < 200 || status >= 300) {
+                  reject(new Error(`${target.pathname}: ${status} ${text}`));
+                } else if (status === 204) {
+                  resolve(null);
+                } else {
+                  resolve(JSON.parse(text));
+                }
+              })
+              .catch(reject);
+          }
+        );
+      });
+    },
+    {
+      url: `${baseUrl}${endpoint}`,
+      requestInit: {
+        method: init.method,
+        body: init.body,
+        headers: {
+          "content-type": "application/json",
+          ...(init.headers ?? {})
+        }
+      }
     }
-  });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => response.statusText);
-    throw new Error(`${endpoint}: ${response.status} ${detail}`);
-  }
-  if (response.status === 204) return null;
-  return response.json();
+  );
 }
 
 // The one provider fixture every local scenario renders: its name/defaultModel
@@ -317,7 +347,7 @@ async function waitForPiServerUrl(page) {
   while (Date.now() - start < 30000) {
     const status = await page.evaluate(() => window.marginalia?.getPiServerStatus?.());
     if (status?.status === "ready") {
-      return { url: status.url, capabilityToken: status.capabilityToken };
+      return { url: status.url };
     }
     if (status?.status === "failed") {
       const logs = Array.isArray(status.logs) ? `\n${status.logs.join("\n")}` : "";
@@ -391,9 +421,10 @@ async function startHarness(extraEnv = {}) {
     await assertScreenshotMotionOff(page);
     const server = await waitForPiServerUrl(page);
     apiBase = server.url;
-    const skillsApi = (endpoint, init) => skillsApiJson(server, endpoint, init);
+    const browserApiJson = (baseUrl, endpoint, init) => pageApiJson(page, baseUrl, endpoint, init);
+    const skillsApi = (endpoint, init) => browserApiJson(server.url, endpoint, init);
     await waitForMain(page);
-    return { app, page, vite, viteUrl, apiBase, skillsApi };
+    return { app, page, vite, viteUrl, apiBase, apiJson: browserApiJson, skillsApi };
   } catch (error) {
     await mkdir(outRoot, { recursive: true });
     const page = app ? await app.firstWindow().catch(() => null) : null;
@@ -695,21 +726,21 @@ async function ensureSeededWorkspace(ctx) {
   // Isolated passes run with clean=false and inherit the shared pass's
   // database, so the fixture must be create-or-reuse — a second
   // "screenshot-fixture" workspace would double the sidebar in captures.
-  const existing = (await apiJson(ctx.apiBase, "/workspaces")).find(
+  const existing = (await ctx.apiJson(ctx.apiBase, "/workspaces")).find(
     (workspace) => workspace?.name === "screenshot-fixture"
   );
   if (existing) {
-    await apiJson(ctx.apiBase, `/workspaces/${existing.id}/open`, { method: "PATCH" });
+    await ctx.apiJson(ctx.apiBase, `/workspaces/${existing.id}/open`, { method: "PATCH" });
     ctx.seed = { workspace: existing, sessions: [] };
     return ctx.seed;
   }
 
   const seedRoot = await writeSeedWorkspace();
-  const workspace = await apiJson(ctx.apiBase, "/workspaces", {
+  const workspace = await ctx.apiJson(ctx.apiBase, "/workspaces", {
     method: "POST",
     body: JSON.stringify({ name: "screenshot-fixture", rootDir: seedRoot })
   });
-  await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/open`, { method: "PATCH" });
+  await ctx.apiJson(ctx.apiBase, `/workspaces/${workspace.id}/open`, { method: "PATCH" });
 
   // Seven sessions so the sidebar's five-row fold ("Show more") is exercised.
   const titles = [
@@ -723,11 +754,11 @@ async function ensureSeededWorkspace(ctx) {
   ];
   const sessions = [];
   for (const title of titles) {
-    const session = await apiJson(ctx.apiBase, "/sessions", {
+    const session = await ctx.apiJson(ctx.apiBase, "/sessions", {
       method: "POST",
       body: JSON.stringify({ workspaceId: workspace.id, title })
     });
-    await apiJson(ctx.apiBase, `/sessions/${session.id}`, {
+    await ctx.apiJson(ctx.apiBase, `/sessions/${session.id}`, {
       method: "PATCH",
       body: JSON.stringify({ model: "visual-fixture" })
     });
@@ -735,14 +766,14 @@ async function ensureSeededWorkspace(ctx) {
   }
 
   const first = sessions[0];
-  await apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
+  await ctx.apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
     method: "POST",
     body: JSON.stringify({
       role: "user",
       content: "Rewrite the PR schedule as a weekly checklist."
     })
   });
-  await apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
+  await ctx.apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
     method: "POST",
     body: JSON.stringify({
       role: "assistant",
@@ -933,7 +964,7 @@ async function scenarioSeededWorkspace(ctx) {
   await ensureSeededWorkspace(ctx);
   // Solo runs and the shared default pass must render the same composer state
   // (provider chip + assistant model label) — never piggyback on core-ui's.
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
@@ -1041,7 +1072,7 @@ async function scenarioApprovalFlow(ctx) {
   // never used since the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never
   // calls a real model. Create-or-reuse also keeps this isolated pass from
   // stacking a duplicate when it inherits the shared pass's database.
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
@@ -1117,7 +1148,7 @@ async function scenarioSkillsFlow(ctx) {
     workspace: seedRoot
   });
   const { workspace } = await ensureSeededWorkspace(ctx);
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await ctx.skillsApi(`/skills?workspaceId=${encodeURIComponent(workspace.id)}`);
 
   await resetUiState(ctx.page);
@@ -1222,7 +1253,7 @@ async function scenarioSkillsFlow(ctx) {
 
 async function scenarioMinimaxLive(ctx) {
   await ensureSeededWorkspace(ctx);
-  await apiJson(ctx.apiBase, "/providers", {
+  await ctx.apiJson(ctx.apiBase, "/providers", {
     method: "POST",
     body: JSON.stringify({
       name: "MiniMax",

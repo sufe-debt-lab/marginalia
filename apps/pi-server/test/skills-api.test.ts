@@ -12,11 +12,14 @@ import type {
 } from "../src/skills/types.js";
 
 const dbs: Database.Database[] = [];
-const capability = {
-  token: "secret",
-  allowedOrigins: new Set(["http://127.0.0.1:5173"])
+const loopbackAccess = {
+  bearer: "secret",
+  allowedOrigins: new Set(["null", "http://127.0.0.1:5173"])
 };
-const authorizedHeaders = { authorization: "Bearer secret" };
+const authorizedHeaders = {
+  authorization: "Bearer secret",
+  origin: "http://127.0.0.1:5173"
+};
 
 function candidate(canonicalPath: string, overrides: Partial<SkillCandidate> = {}): SkillCandidate {
   return {
@@ -102,7 +105,7 @@ function setup(initial = snapshot([candidate("/canonical/demo/SKILL.md")])) {
   const app = createApp({
     db,
     agentClient: new FakeAgentClient(),
-    capability,
+    loopbackAccess,
     skillCatalog: catalog
   });
   return { app, catalog, db };
@@ -112,20 +115,24 @@ afterEach(() => {
   for (const db of dbs.splice(0)) db.close();
 });
 
-describe("Skills capability", () => {
+describe("Skills loopback access", () => {
   const requests = [
-    { name: "snapshot", path: "/skills", init: {} },
+    {
+      name: "snapshot",
+      path: "/skills",
+      init: { headers: { origin: "http://127.0.0.1:5173" } }
+    },
     {
       name: "content",
       path: "/skills/content?path=%2Fcanonical%2Fdemo%2FSKILL.md",
-      init: {}
+      init: { headers: { origin: "http://127.0.0.1:5173" } }
     },
     {
       name: "state",
       path: "/skills/state",
       init: {
         method: "PATCH",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173" },
         body: "{"
       }
     }
@@ -149,7 +156,7 @@ describe("Skills capability", () => {
     const { app, catalog } = setup();
 
     const response = await app.request("/skills", {
-      headers: { authorization: "Bearer wrong" }
+      headers: { authorization: "Bearer wrong", origin: "http://127.0.0.1:5173" }
     });
 
     expect(response.status).toBe(401);
@@ -168,13 +175,13 @@ describe("Skills capability", () => {
     expect(catalog.refresh).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, "null", "http://127.0.0.1:5173"])(
+  it.each(["null", "http://127.0.0.1:5173"])(
     "accepts bearer authorization from allowed Origin %s",
     async (origin) => {
       const { app } = setup();
 
       const response = await app.request("/skills", {
-        headers: { ...authorizedHeaders, ...(origin === undefined ? {} : { origin }) }
+        headers: { ...authorizedHeaders, origin }
       });
 
       expect(response.status).toBe(200);

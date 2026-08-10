@@ -10,7 +10,6 @@ import {
   ensureFixtureProvider,
   parseArgs,
   SCENARIOS,
-  skillsApiJson,
   writeSkillsFixture
 } from "./verify-screenshots.mjs";
 
@@ -203,7 +202,7 @@ describe("scenario hermeticity (source contracts)", () => {
   it("seeded-workspace provisions its own provider before its first capture", () => {
     // Solo runs and the shared default pass must render the same composer state;
     // piggybacking on core-ui's provider made baselines depend on run grouping.
-    const provision = source.indexOf("ensureFixtureProvider(ctx.apiBase)");
+    const provision = source.indexOf("ensureFixtureProvider(ctx.apiBase, ctx.apiJson)");
     expect(provision).toBeGreaterThan(-1);
     expect(provision).toBeLessThan(
       source.indexOf('capture(ctx, "seeded-workspace", "recent-threads")')
@@ -214,7 +213,7 @@ describe("scenario hermeticity (source contracts)", () => {
     const scenarioStart = source.indexOf("async function scenarioApprovalFlow");
     const scenarioEnd = source.indexOf("async function scenarioMinimaxLive");
     const body = source.slice(scenarioStart, scenarioEnd);
-    expect(body).toContain("ensureFixtureProvider(ctx.apiBase)");
+    expect(body).toContain("ensureFixtureProvider(ctx.apiBase, ctx.apiJson)");
   });
 
   it("capture stability uses the tolerant frame comparison, not raw byte equality", () => {
@@ -275,26 +274,8 @@ describe("scenario hermeticity (source contracts)", () => {
     }
   });
 
-  it("uses bearer authentication only in the Skills harness API helper", async () => {
-    const request = vi.fn(
-      async (_url: string, _init: RequestInit) =>
-        new Response(JSON.stringify({ catalogRevision: "catalog-1" }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
-    );
-    await skillsApiJson(
-      { url: "http://127.0.0.1:3456", capabilityToken: "fixture-secret" },
-      "/skills",
-      {},
-      request
-    );
-    expect(request).toHaveBeenCalledWith(
-      "http://127.0.0.1:3456/skills",
-      expect.objectContaining({
-        headers: expect.objectContaining({ authorization: "Bearer fixture-secret" })
-      })
-    );
+  it("keeps bearer authentication out of the renderer harness", () => {
+    expect(source).toContain("window.marginalia.requestPiServer");
     expect(source).not.toMatch(/manifest\.(?:capabilityToken|token)|capabilityToken.*summary/);
   });
 });

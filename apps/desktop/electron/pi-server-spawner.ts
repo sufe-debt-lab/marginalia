@@ -11,7 +11,7 @@ export type PiServerProcess = {
 
 export type PiServerStatus =
   | { status: "starting" }
-  | { status: "ready"; url: string; capabilityToken: string; process: PiServerProcess }
+  | { status: "ready"; url: string; bearer: string; process: PiServerProcess }
   | { status: "failed"; error: string; logs: string[] };
 
 export type ReadyMessage = { type: "ready"; port: number };
@@ -78,7 +78,7 @@ export function createLaunchEnvironment(
   additions: Readonly<Record<string, string>>
 ): NodeJS.ProcessEnv {
   const inherited = { ...process.env };
-  delete inherited.MARGINALIA_CAPABILITY_TOKEN;
+  delete inherited.MARGINALIA_LOOPBACK_BEARER;
   delete inherited.MARGINALIA_ALLOWED_ORIGIN;
   return { ...inherited, ...additions };
 }
@@ -114,7 +114,7 @@ type StartOptions = {
   scriptPath?: string;
   isPackaged?: boolean;
   timeoutMs?: number;
-  capabilityToken?: string;
+  bearer?: string;
   allowedOrigin?: string;
 };
 
@@ -128,9 +128,9 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
   const scriptPath = options.scriptPath ?? resolvePiServerScriptPath({ isPackaged });
   const cwd = resolvePiServerCwd(scriptPath);
   const launch = options.launch ?? (await defaultLaunch(isPackaged));
-  const capabilityToken = options.capabilityToken ?? randomBytes(32).toString("base64url");
+  const bearer = options.bearer ?? randomBytes(32).toString("base64url");
   const childEnv = {
-    MARGINALIA_CAPABILITY_TOKEN: capabilityToken,
+    MARGINALIA_LOOPBACK_BEARER: bearer,
     ...(options.allowedOrigin ? { MARGINALIA_ALLOWED_ORIGIN: options.allowedOrigin } : {})
   };
   const child = launch(scriptPath, cwd, childEnv);
@@ -156,7 +156,7 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
         resolve({
           status: "ready",
           url: `http://127.0.0.1:${ready.port}`,
-          capabilityToken,
+          bearer,
           process: child
         });
       }
