@@ -4,12 +4,12 @@
 Stage: Alpha
 Release decision: NO-GO
 Snapshot date: 2026-08-13
-Verified commit: de9812c
+Verified commit: 71fa529
 Next milestone: M0 - Trustworthy Local Alpha
 ```
 
-这是一份经过验证的快照，不是逐提交更新的开发日志。commit 字段记录本轮修复所基于的 base；
-下方验证基线明确记录基于该 commit 的 current working tree 结果。源码和测试提供行为证据；问题的复现、
+这是一份经过验证的快照，不是逐提交更新的开发日志。commit 字段记录本轮已验证的修复提交；
+下方验证基线明确记录该提交的验证结果。源码和测试提供行为证据；问题的复现、
 影响和验收条件见[产品就绪审计](../developer/issues/2026-07-11-product-readiness-audit.md)。
 
 ## 能力快照
@@ -66,7 +66,7 @@ Next milestone: M0 - Trustworthy Local Alpha
 
 ## 验证基线
 
-在基于 `de9812c` 的 current working tree 上完成的当前根级验证：
+在 `71fa529` 上完成的当前根级验证：
 
 | Check                | Result                                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
