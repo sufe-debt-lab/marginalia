@@ -126,7 +126,8 @@ describe("MessageStream", () => {
       />
     );
     expect(screen.getByText(/boom/)).toBeInTheDocument();
-    expect(screen.getByText("run_failed")).toBeInTheDocument();
+    expect(screen.getByText("Run failed")).toBeInTheDocument();
+    expect(screen.queryByText("run_failed")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(onRetry).toHaveBeenCalled();
   });

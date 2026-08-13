@@ -375,7 +375,9 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - run 和后续 Skills API 有每进程 capability 与 exact-Origin 检查，CORS 不再反射任意来源；但其他既有 loopback 路由仍未认证。这个局部边界不关闭 `P0-SEC-001`，随机 loopback 端口也不是授权边界。
 - BrowserWindow 使用 context isolation 和 `nodeIntegration: false`，但 `sandbox: false`。
 - Full 和 Ask 使用 pi 默认 coding tools。Workspace 只作为 cwd，工具可接收绝对路径，bash 使用宿主用户权限。
-- HTTP 文件接口检查 lexical path 和已存在目标 realpath，但新目标的 symlink parent 仍可逃逸。
+- HTTP 文件接口检查 lexical path、已存在目标 realpath，以及新目标最近存在祖先的 realpath；预先存在或
+  断裂的 symlink component 会被拒绝。检查与最终 open/write 之间仍存在 TOCTOU，Agent coding tools 也未
+  复用该边界。
 - Skill discovery 沿用 Pi symlink 语义，不要求 canonical target 留在 source root。持有 capability 的调用方
   只有在外部 target 已通过预先存在、可发现的 Skill symlink 成为当前 snapshot member 时才能取得其
   snapshot preview；单独提交任意 path 不会触发读取，content route 也不重读 target。

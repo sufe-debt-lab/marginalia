@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -51,5 +51,16 @@ describe("PUT /workspaces/:id/files/content", () => {
     const { app, ws } = setup();
     expect((await put(app, ws.id, { path: "../out.md", content: "x" })).status).toBe(403);
     expect((await put(app, "nope", { path: "a.md", content: "x" })).status).toBe(404);
+  });
+
+  it("blocks new files beneath a symlinked parent outside the workspace", async () => {
+    const { app, ws, root } = setup();
+    const outside = mkdtempSync(path.join(os.tmpdir(), "files-write-outside-"));
+    symlinkSync(outside, path.join(root, "linked"), "dir");
+
+    const res = await put(app, ws.id, { path: "linked/new.md", content: "outside" });
+
+    expect(res.status).toBe(403);
+    expect(existsSync(path.join(outside, "new.md"))).toBe(false);
   });
 });

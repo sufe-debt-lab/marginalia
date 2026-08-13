@@ -34,7 +34,7 @@ Frontmatter 的 `verified_commit` 是本轮未提交修复所基于的 commit；
 | P0-SEC-002        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
 | P0-SEC-003        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
 | P0-SEC-004        | P0       | resolved    | 2026-07-19    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`、`apps/pi-server/src/agent/pi-coding-agent-client.ts`                            |
-| P0-SEC-005        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`                                                               |
+| P0-SEC-005        | P0       | open        | 2026-08-13    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`、`apps/pi-server/test/files-write.test.ts`                    |
 | P0-SEC-006        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
 | P0-RUN-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
 | P1-PROVIDER-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts`                                    |
@@ -104,7 +104,13 @@ handle 不被 LRU 淘汰以及异常 release 另有 registry/client 回归测试
 
 ## P0-SEC-005: Symlink parent 允许新文件逃逸
 
-`resolveWorkspacePath()` 会检查已存在目标的 realpath；目标不存在时遇到 `ENOENT` 直接返回 lexical candidate，没有检查最近存在父目录。`PUT /workspaces/:id/files/content` 随后创建父目录并写文件。审计用 `workspace/linked -> outside` 复现，写入 `linked/new.md` 后文件出现在 workspace 外。
+最初的 `resolveWorkspacePath()` 只检查已存在目标的 realpath；目标不存在时遇到 `ENOENT` 直接返回
+lexical candidate，没有检查最近存在父目录。审计用 `workspace/linked -> outside` 复现，写入
+`linked/new.md` 后文件出现在 workspace 外。
+
+2026-08-13 进展：HTTP 文件接口现在从新目标向上查找最近一个词法上存在的祖先，解析其 realpath，并
+拒绝指向 workspace 外或已经断裂的 symlink component；路由回归同时断言返回 403 且 workspace 外没有
+生成文件。P0 继续 open：检查到 `writeFile` 之间仍有 TOCTOU，Agent coding tools 也尚未复用统一边界。
 
 修复目标：创建文件前解析最近存在父目录的 realpath，并在打开文件时防止检查到使用之间被替换；agent 写工具复用同一边界。
 

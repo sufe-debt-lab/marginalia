@@ -196,7 +196,10 @@ workspace 返回 `404 { "error": "workspace not found" }`，snapshot 不含该 p
 
 ## 文件 / 文档
 
-文件接口通过 `files/path-sandbox.ts` 做 lexical path 和已存在目标 realpath 检查。当前新文件写入没有校验最近存在父目录的 realpath，可通过 workspace 内的 symlink parent 写到目录外，见[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。Agent 默认 coding tools 不复用这层检查。
+文件接口通过 `files/path-sandbox.ts` 做 lexical path、已存在目标 realpath，以及新目标最近存在祖先的
+realpath 检查；预先存在、指向 workspace 外或已经断裂的 symlink component 会被拒绝。当前检查与
+`writeFile` 之间仍不是 race-free open，Agent 默认 coding tools 也不复用这层检查，剩余边界见
+[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。
 
 | 方法 | 路径                                       | 说明                                                                      |
 | ---- | ------------------------------------------ | ------------------------------------------------------------------------- |
@@ -425,6 +428,9 @@ retry snapshot 的失败显示 Retry，pre-start 401/409/413/EOF 不会复用更
 | ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | POST | `/sessions/:sessionId/approvals/:approvalId` | 提交决策。Body `{ approved, reason?, alwaysAllowPrefix? }`；未知或已处理的 `approvalId` 返回 `404`。 |
 | GET  | `/sessions/:sessionId/approvals`             | 列出该 session 的全部审批记录（含终态），用于重开会话还原 UI。                                       |
+
+Desktop 在第一次提交 Allow 或 Confirm deny 时立即锁定该卡片的全部决策控件，避免同一个 pending
+approval 被重复提交；请求失败时恢复控件，成功时等待对应 `approval_resolved` 更新卡片终态。
 
 `Approval` 形状（`apps/pi-server/src/db/repositories.ts#ApprovalRow`）：`{ id, sessionId, runId, toolCallId, toolName, kind, payload, status, reason, createdAt, decidedAt }`；`status` 为 `"pending" | "approved" | "denied" | "expired"`。客户端断连或 run 结束时仍处于 `pending` 的审批会被标记为 `expired`（`apps/pi-server/src/app.ts#expirePendingApprovals`）。
 

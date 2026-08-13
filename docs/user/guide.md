@@ -25,7 +25,10 @@ workspace、session 或 Settings 不会串用或立即清空正文与附件。Ne
 
 Workspace 是一个本地目录及其会话集合。删除 workspace 会删除 Marginalia 数据库中的 workspace、session、消息和 run 记录，不会删除磁盘上的原始文件。
 
-Workspace 目前不能视为 agent 沙箱。Full 和 Ask 下的 pi 工具可以使用绝对路径，bash 也在宿主机运行；HTTP 文件写入还存在 symlink parent 逃逸问题。不要把包含敏感资料的上级目录作为 workspace，也不要在没有备份的目录中测试写入工具。
+Workspace 目前不能视为 agent 沙箱。Full 和 Ask 下的 pi 工具可以使用绝对路径，bash 也在宿主机运行；
+HTTP 文件写入会拒绝预先存在、指向 workspace 外或已经断裂的 symlink component，但检查与最终写入之间
+仍非 race-free，Agent coding tools 也不复用该边界。不要把包含敏感资料的上级目录作为 workspace，也
+不要在没有备份的目录中测试写入工具。
 
 当前 UI 的 New chat 会在所选 workspace 下创建普通 session。后端已有 `quick_chat` 来源和 `/quick-chat` API，桌面端没有单独的 Quick chat 入口。
 
@@ -71,6 +74,7 @@ Ask 档下，需要审批的工具调用会暂停并显示卡片：
 - 命令卡展示 shell 命令和工作目录。勾选“本次会话总是允许此前缀”后，系统只保存命令首 token，不理解完整 shell 语义。
 - 文件卡展示 unified diff、增删行数和预览是否精确。预览失败时会显示近似 diff 或错误说明。
 - Allow 继续工具调用；Deny 可以附带理由，模型收到理由后继续当前 run。
+- 提交 Allow 或确认 Deny 后，卡片会立即锁定全部决策控件；请求失败时恢复，成功时等待审批结果更新。
 - SSE 断开或 run 结束时，仍挂起的审批会被标记为 expired。
 
 当前策略按字符串前缀识别一部分只读命令，没有完整解析命令替换、变量展开等 shell 语义；新建文件也默认不弹审批卡。审批链路便于协作和审计，不能当作防止恶意命令的安全边界。
@@ -83,7 +87,8 @@ Ask 档下，需要审批的工具调用会暂停并显示卡片：
 - Export：通过系统保存对话框导出 `.md`。
 - Save to workspace：填写相对路径后写入当前 workspace；目标存在时会再次确认覆盖。
 
-Save to workspace 是用户直接触发的写入，不经过 agent 审批卡。当前 HTTP 写入的 symlink 边界仍有已知问题，保存到含 symlink 的目录前应自行确认目标位置。
+Save to workspace 是用户直接触发的写入，不经过 agent 审批卡。HTTP 写入会拒绝预先存在的越界或断裂
+symlink component，但仍存在检查到写入之间的竞态边界；保存到含 symlink 的目录前应自行确认目标位置。
 
 ## 本地数据与网络边界
 

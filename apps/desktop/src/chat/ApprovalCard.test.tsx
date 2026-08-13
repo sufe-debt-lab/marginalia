@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalCard } from "./ApprovalCard.js";
@@ -44,6 +44,29 @@ describe("ApprovalCard", () => {
     expect(onDecide).toHaveBeenCalledWith({ approved: true, alwaysAllowPrefix: true });
   });
 
+  it("submits an approval only once and disables decisions immediately", async () => {
+    const onDecide = vi.fn(() => new Promise<void>(() => {}));
+    render(<ApprovalCard approval={commandApproval} onDecide={onDecide} />);
+    const allow = screen.getByRole("button", { name: /allow|允许/i });
+
+    await userEvent.dblClick(allow);
+
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(allow).toBeDisabled();
+    expect(screen.getByRole("button", { name: /deny|拒绝/i })).toBeDisabled();
+  });
+
+  it("re-enables decisions when submission fails", async () => {
+    const onDecide = vi.fn().mockRejectedValue(new Error("request failed"));
+    render(<ApprovalCard approval={commandApproval} onDecide={onDecide} />);
+    const allow = screen.getByRole("button", { name: /allow|允许/i });
+
+    await userEvent.click(allow);
+
+    await waitFor(() => expect(allow).toBeEnabled());
+    expect(screen.getByRole("button", { name: /deny|拒绝/i })).toBeEnabled();
+  });
+
   it("denies with an optional reason after a two-step flow", async () => {
     const onDecide = vi.fn();
     render(<ApprovalCard approval={commandApproval} onDecide={onDecide} />);
@@ -51,6 +74,20 @@ describe("ApprovalCard", () => {
     await userEvent.type(screen.getByRole("textbox"), "改用只读方式");
     await userEvent.click(screen.getByRole("button", { name: /confirm|确认/i }));
     expect(onDecide).toHaveBeenCalledWith({ approved: false, reason: "改用只读方式" });
+  });
+
+  it("submits a denial only once and disables the form immediately", async () => {
+    const onDecide = vi.fn(() => new Promise<void>(() => {}));
+    render(<ApprovalCard approval={commandApproval} onDecide={onDecide} />);
+    await userEvent.click(screen.getByRole("button", { name: /deny|拒绝/i }));
+    const confirm = screen.getByRole("button", { name: /confirm|确认/i });
+
+    await userEvent.dblClick(confirm);
+
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole("button", { name: /cancel|取消/i })).toBeDisabled();
+    expect(screen.getByRole("textbox")).toBeDisabled();
   });
 
   it("renders the diff and the approximate badge for file edits", () => {

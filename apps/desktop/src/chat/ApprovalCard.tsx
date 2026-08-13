@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { Approval } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
@@ -12,13 +12,32 @@ export function ApprovalCard({
   onDecide
 }: {
   approval: Approval;
-  onDecide(decision: Decision): void;
+  onDecide(decision: Decision): Promise<void> | void;
 }) {
   const { t } = useTranslation();
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState("");
   const [allowPrefix, setAllowPrefix] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const payload = approval.payload;
+
+  function resetSubmission() {
+    submittingRef.current = false;
+    setSubmitting(false);
+  }
+
+  function submitDecision(decision: Decision) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      void Promise.resolve(onDecide(decision)).catch(resetSubmission);
+    } catch (error) {
+      resetSubmission();
+      throw error;
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-warn bg-warn-soft px-3 py-2.5 text-sm">
@@ -39,6 +58,7 @@ export function ApprovalCard({
             <input
               type="checkbox"
               checked={allowPrefix}
+              disabled={submitting}
               onChange={(e) => setAllowPrefix(e.target.checked)}
             />
             {t("approval.alwaysAllowPrefix")}
@@ -68,6 +88,7 @@ export function ApprovalCard({
         <div className="flex flex-col gap-2">
           <textarea
             value={reason}
+            disabled={submitting}
             onChange={(e) => setReason(e.target.value)}
             placeholder={t("approval.denyReasonPlaceholder")}
             rows={2}
@@ -77,11 +98,19 @@ export function ApprovalCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onDecide({ approved: false, reason: reason.trim() || undefined })}
+              disabled={submitting}
+              onClick={() =>
+                submitDecision({ approved: false, reason: reason.trim() || undefined })
+              }
             >
               {t("approval.confirmDeny")}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDenying(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={submitting}
+              onClick={() => setDenying(false)}
+            >
               {t("common.cancel")}
             </Button>
           </div>
@@ -90,8 +119,9 @@ export function ApprovalCard({
         <div className="flex gap-2">
           <Button
             size="sm"
+            disabled={submitting}
             onClick={() =>
-              onDecide({
+              submitDecision({
                 approved: true,
                 ...(payload.kind === "command" ? { alwaysAllowPrefix: allowPrefix } : {})
               })
@@ -99,7 +129,12 @@ export function ApprovalCard({
           >
             {t("approval.allow")}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setDenying(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={submitting}
+            onClick={() => setDenying(true)}
+          >
             {t("approval.deny")}
           </Button>
         </div>

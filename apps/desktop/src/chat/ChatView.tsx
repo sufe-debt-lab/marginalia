@@ -308,6 +308,7 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
       } catch (err) {
         setError(null);
         setPreStartError((err as Error).message);
+        throw err;
       }
     },
     [api, sessionId]
