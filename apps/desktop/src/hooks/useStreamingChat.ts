@@ -1,5 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import { emptyUsage, resultText } from "@marginalia/chat-core";
+import {
+  emptyUsage,
+  formatUserDisplayText,
+  fullResultText,
+  resultText
+} from "@marginalia/chat-core";
 import type {
   ChatAssistantMessage,
   ChatEntry,
@@ -7,9 +12,15 @@ import type {
   ChatToolExecutionResult,
   ChatToolResult
 } from "@marginalia/chat-core";
-import type { ApiClient } from "@/api/client.js";
+import type { ApiClient, ApiError, ApprovalPayload } from "@/api/client.js";
+import type { TurnDraft } from "@/store/app-store.js";
 
-interface Options {
+export type SendCallbacks = {
+  onAccepted(turn: TurnDraft, optimisticEntry: ChatEntry): void;
+  onError(error: ApiError | Error, accepted: boolean): void;
+};
+
+interface Options extends SendCallbacks {
   api: ApiClient;
   sessionId: string | null;
   providerId: string;
@@ -21,9 +32,22 @@ interface Options {
   onAssistantReplace: (m: ChatEntry) => void;
   onAssistantDelta: (delta: string) => void;
   onToolCallUpsert?: (tool: ChatToolCall) => void;
+  onToolProgress?: (toolCallId: string, output: string) => void;
   onToolResultUpsert?: (entry: ChatEntry & { message: ChatToolResult }) => void;
+  onApprovalRequested?: (approval: {
+    approvalId: string;
+    toolCallId: string;
+    toolName: string;
+    payload: ApprovalPayload;
+  }) => void;
+  onApprovalResolved?: (update: {
+    approvalId: string;
+    toolCallId: string;
+    approved: boolean;
+    reason?: string;
+    expired?: boolean;
+  }) => void;
   onComplete: () => void;
-  onError?: (msg: string) => void;
 }
 
 /** The subset of a raw pi `AgentSessionEvent` the chat UI derives state from. */
@@ -43,6 +67,14 @@ function isAbortError(err: unknown): boolean {
   return err instanceof DOMException
     ? err.name === "AbortError"
     : err instanceof Error && err.name === "AbortError";
+}
+
+function cloneTurnDraft(turn: TurnDraft): TurnDraft {
+  return {
+    text: turn.text,
+    contextFiles: [...turn.contextFiles],
+    skills: turn.skills.map((skill) => ({ ...skill }))
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,8 +155,11 @@ function toolResultEntryFromMessage(
 
 export function useStreamingChat(opts: Options) {
   const [sending, setSending] = useState(false);
-  const [reasoning, setReasoning] = useState("");
   const bufferRef = useRef("");
+  // Latest cumulative live-output snapshot per running toolCallId. Sharing the
+  // rAF flush with text deltas caps tool progress at one state update per
+  // frame — high-frequency bash output must not re-render the stream per event.
+  const progressRef = useRef(new Map<string, string>());
   const rafRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -135,6 +170,11 @@ export function useStreamingChat(opts: Options) {
       bufferRef.current = "";
       opts.onAssistantDelta(text);
     }
+    if (progressRef.current.size > 0) {
+      const snapshots = progressRef.current;
+      progressRef.current = new Map();
+      for (const [toolCallId, output] of snapshots) opts.onToolProgress?.(toolCallId, output);
+    }
     rafRef.current = null;
   }, [opts]);
 
@@ -144,18 +184,42 @@ export function useStreamingChat(opts: Options) {
   }, [flush]);
 
   const send = useCallback(
-    async (text: string, contextFiles: string[]) => {
+    async (input: TurnDraft) => {
       if (!opts.sessionId || sendingRef.current) return;
-      if (!text.trim() && contextFiles.length === 0) return;
+      const sentTurn = cloneTurnDraft(input);
+      if (
+        !sentTurn.text.trim() &&
+        sentTurn.contextFiles.length === 0 &&
+        sentTurn.skills.length === 0
+      )
+        return;
       const controller = new AbortController();
       abortRef.current = controller;
       sendingRef.current = true;
       setSending(true);
-      setReasoning("");
+      progressRef.current = new Map();
       const stamp = Date.now();
       let turn = 0;
       let currentAssistantId: string | null = null;
       let needNewAssistant = true;
+      let accepted = false;
+      let completed = false;
+      let completionNotified = false;
+      let rawFailure: Error | null = null;
+      let terminalFailure: Error | null = null;
+      let failureNotified = false;
+
+      function notifyComplete() {
+        if (completionNotified) return;
+        completionNotified = true;
+        opts.onComplete();
+      }
+
+      function notifyFailure(error: Error) {
+        if (failureNotified) return;
+        failureNotified = true;
+        opts.onError(error, accepted);
+      }
 
       function startAssistant(message?: ChatAssistantMessage): string {
         turn += 1;
@@ -181,6 +245,7 @@ export function useStreamingChat(opts: Options) {
               needNewAssistant = true;
               startAssistant(isAssistantMessage(pi.message) ? pi.message : undefined);
             } else if (isToolResultMessage(pi.message)) {
+              progressRef.current.delete(pi.message.toolCallId);
               opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
             }
             break;
@@ -191,30 +256,25 @@ export function useStreamingChat(opts: Options) {
               ensureAssistant(pi.message);
             } else if (ev?.type === "text_delta" && ev.delta) {
               ensureAssistant();
-              setReasoning("");
               bufferRef.current += ev.delta;
               schedule();
-            }
-            if (ev?.type === "thinking_delta" && ev.delta) {
-              setReasoning((r) => r + ev.delta);
             }
             break;
           }
           case "message_end": {
             flush();
-            setReasoning("");
             if (isAssistantMessage(pi.message)) ensureAssistant(pi.message);
             if (isToolResultMessage(pi.message)) {
+              progressRef.current.delete(pi.message.toolCallId);
               opts.onToolResultUpsert?.(toolResultEntryFromMessage(pi.message, stamp));
             }
             if (isRecord(pi.message) && pi.message.stopReason === "error") {
               const detail = pi.message.errorMessage;
-              throw new Error(typeof detail === "string" ? detail : "agent failed");
+              rawFailure ??= new Error(typeof detail === "string" ? detail : "agent failed");
             }
             break;
           }
-          case "tool_execution_start":
-          case "tool_execution_update": {
+          case "tool_execution_start": {
             const tool = toolCallFromEvent(pi);
             if (tool) {
               ensureAssistant();
@@ -222,26 +282,44 @@ export function useStreamingChat(opts: Options) {
             }
             break;
           }
+          case "tool_execution_update": {
+            const tool = toolCallFromEvent(pi);
+            if (tool) {
+              ensureAssistant();
+              opts.onToolCallUpsert?.(tool);
+            }
+            if (pi.toolCallId) {
+              const output = fullResultText(pi.partialResult as never);
+              if (output !== undefined) {
+                progressRef.current.set(pi.toolCallId, output);
+                schedule();
+              }
+            }
+            break;
+          }
           case "tool_execution_end": {
             const entry = toolResultEntryFromEvent(pi, stamp);
-            if (entry) opts.onToolResultUpsert?.(entry);
+            if (entry) {
+              // The final result supersedes any buffered snapshot; dropping it
+              // here keeps a late flush from resurrecting a finished call's
+              // live-output area.
+              progressRef.current.delete(entry.message.toolCallId);
+              opts.onToolResultUpsert?.(entry);
+            }
             break;
           }
         }
       }
 
       try {
-        opts.onUserAppend({
-          id: `local-user-${stamp}`,
-          message: { role: "user", content: text, timestamp: stamp }
-        });
         const events = await opts.api.runChat(
           opts.sessionId,
           {
             providerId: opts.providerId,
             model: opts.model,
-            message: text,
-            contextFiles,
+            message: sentTurn.text,
+            contextFiles: sentTurn.contextFiles,
+            skills: sentTurn.skills,
             permission: opts.permission,
             reasoning: opts.reasoning
           },
@@ -249,20 +327,89 @@ export function useStreamingChat(opts: Options) {
         );
         for await (const event of events) {
           if (controller.signal.aborted) break;
+          if (completed || terminalFailure) continue;
+          if (event.type === "run_started") {
+            if (accepted) continue;
+            accepted = true;
+            const optimisticEntry: ChatEntry = {
+              id: `local-user-${stamp}`,
+              message: {
+                role: "user",
+                content: formatUserDisplayText(
+                  sentTurn.text,
+                  sentTurn.skills.map((skill) => skill.name)
+                ),
+                timestamp: stamp
+              }
+            };
+            opts.onUserAppend(optimisticEntry);
+            opts.onAccepted(cloneTurnDraft(sentTurn), optimisticEntry);
+            continue;
+          }
           if (event.type === "run_failed") {
-            throw new Error(
+            terminalFailure = new Error(
               (event.payload as { error?: string } | undefined)?.error ?? "run failed"
             );
+            continue;
+          }
+          if (!accepted) continue;
+          if (event.type === "run_completed") {
+            completed = true;
+            continue;
+          }
+          if (rawFailure) continue;
+          if (event.type === "approval_requested") {
+            const approval = (
+              event.payload as
+                | {
+                    approval?: {
+                      approvalId: string;
+                      toolCallId: string;
+                      toolName: string;
+                      payload: ApprovalPayload;
+                    };
+                  }
+                | undefined
+            )?.approval;
+            if (approval) opts.onApprovalRequested?.(approval);
+            continue;
+          }
+          if (event.type === "approval_resolved") {
+            const approval = (
+              event.payload as
+                | {
+                    approval?: {
+                      approvalId: string;
+                      toolCallId: string;
+                      approved: boolean;
+                      reason?: string;
+                      expired?: boolean;
+                    };
+                  }
+                | undefined
+            )?.approval;
+            if (approval) opts.onApprovalResolved?.(approval);
+            continue;
           }
           if (event.type !== "agent_event") continue;
           const pi = (event.payload as { event?: PiEvent } | undefined)?.event;
           if (pi) handlePiEvent(pi);
         }
         flush();
-        opts.onComplete();
+        if (!controller.signal.aborted) {
+          const failure = terminalFailure ?? rawFailure;
+          if (failure) notifyFailure(failure);
+          else if (!accepted) notifyFailure(new Error("run ended before starting"));
+          else if (!completed) notifyFailure(new Error("run ended before completion"));
+          else notifyComplete();
+        }
       } catch (err) {
         flush();
-        if (!isAbortError(err)) opts.onError?.((err as Error).message);
+        const failure = terminalFailure ?? rawFailure;
+        if (failure) notifyFailure(failure);
+        else if (completed) notifyComplete();
+        else if (!isAbortError(err))
+          notifyFailure(err instanceof Error ? err : new Error(String(err)));
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         sendingRef.current = false;
@@ -276,5 +423,5 @@ export function useStreamingChat(opts: Options) {
     abortRef.current?.abort();
   }, []);
 
-  return { send, stop, sending, reasoning };
+  return { send, stop, sending };
 }

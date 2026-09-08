@@ -2,21 +2,35 @@ import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 import { stringifyContent } from "@marginalia/chat-core";
 import type { ChatEntry, ChatToolResult } from "@marginalia/chat-core";
+import type { Approval } from "@/api/client.js";
 import { Button } from "@/components/ui/button.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
 import { MessageItem } from "./MessageItem.js";
+import type { ApprovalDecision } from "./ToolCard.js";
 
 interface Props {
   messages: readonly ChatEntry[];
-  error: string | null;
+  error: { message: string; accepted: boolean; retryable: boolean } | null;
   onRetry: () => void;
   model?: string;
   streaming?: boolean;
-  /** Transient reasoning text for the in-flight turn; shown while the model thinks. */
-  reasoning?: string;
+  approvalsByToolCallId?: ReadonlyMap<string, Approval>;
+  toolProgressByCallId?: ReadonlyMap<string, string>;
+  onDecideApproval?: (approvalId: string, decision: ApprovalDecision) => void;
+  onSaveMessage?: (markdown: string, defaultName: string) => void;
 }
 
-export function MessageStream({ messages, error, onRetry, model, streaming, reasoning }: Props) {
+export function MessageStream({
+  messages,
+  error,
+  onRetry,
+  model,
+  streaming,
+  approvalsByToolCallId,
+  toolProgressByCallId,
+  onDecideApproval,
+  onSaveMessage
+}: Props) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement | null>(null);
   // One pass splits toolResults out (they attach to their tool call, not their own bubble) and
@@ -41,7 +55,17 @@ export function MessageStream({ messages, error, onRetry, model, streaming, reas
     last?.message.role === "user" || last?.message.role === "assistant"
       ? stringifyContent(last.message.content)
       : "";
-  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${reasoning?.length ?? 0}`;
+  // Live tool output grows in place (same toolCallId, longer string) without
+  // changing any of the other tail inputs, so its total length must be part
+  // of the tail too or the follow-scroll stalls while a command is running.
+  const progressLength = useMemo(
+    () => [...(toolProgressByCallId?.values() ?? [])].reduce((n, s) => n + s.length, 0),
+    [toolProgressByCallId]
+  );
+  // Approval cards need user action, so their appearance must pull the view
+  // down just like new content does (a bare tool call has no result yet, so
+  // none of the other tail inputs change when the card shows up).
+  const tail = `${messages.length}:${lastText.length}:${toolResultsByCallId.size}:${approvalsByToolCallId?.size ?? 0}:${progressLength}`;
   useEffect(() => {
     if (typeof bottomRef.current?.scrollIntoView === "function") {
       // data-motion="off" covers both screenshot mode and the OS reduced-motion
@@ -69,36 +93,31 @@ export function MessageStream({ messages, error, onRetry, model, streaming, reas
           key={entry.id}
           entry={entry}
           toolResultsByCallId={toolResultsByCallId}
+          approvalsByToolCallId={approvalsByToolCallId}
+          toolProgressByCallId={toolProgressByCallId}
+          onDecideApproval={onDecideApproval}
+          onSaveMessage={onSaveMessage}
           model={entry.message.role === "assistant" ? model : undefined}
           streaming={Boolean(streaming) && i === lastIndex && entry.message.role === "assistant"}
         />
       ))}
-      {streaming && reasoning && (
-        <div className="flex flex-col gap-1 rounded-lg border border-soft bg-surface px-3 py-2">
-          <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-faint">
-            <span className="dot ok pulse" />
-            {t("chat.thinking")}
-          </span>
-          <div className="max-h-32 overflow-auto whitespace-pre-wrap text-[12.5px] italic text-text-muted">
-            {reasoning}
-          </div>
-        </div>
-      )}
       {error && (
         <div className="flex items-center gap-2.5 rounded-lg border border-danger bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="flex-1">
-            <strong>run_failed</strong> · {error}
+            <strong>{t("chat.runFailed")}</strong> · {error.message}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRetry}
-            className="border-danger bg-surface text-danger hover:bg-danger-soft"
-          >
-            <RotateCw className="mr-1 h-3 w-3" />
-            {t("common.retry")}
-          </Button>
+          {error.retryable && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRetry}
+              className="border-danger bg-surface text-danger hover:bg-danger-soft"
+            >
+              <RotateCw className="mr-1 h-3 w-3" />
+              {t("common.retry")}
+            </Button>
+          )}
         </div>
       )}
       <div ref={bottomRef} />

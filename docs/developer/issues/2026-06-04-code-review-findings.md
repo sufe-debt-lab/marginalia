@@ -1,5 +1,7 @@
 # Code Review Findings - 2026-06-04
 
+> Status: historical. 这是 2026-06-04 的代码快照，部分问题已经修复或重新分类。当前状态以[2026-07-11 产品就绪审计](./2026-07-11-product-readiness-audit.md)和[产品状态](../../product/status.md)为准。
+
 Scope: current working tree review of `apps/desktop`, `apps/pi-server`, and `packages/chat-core`.
 Method: static review plus parallel subagent review for Electron runtime, pi-server/chat-core contracts, and React renderer behavior.
 

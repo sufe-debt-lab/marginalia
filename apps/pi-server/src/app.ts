@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -10,7 +11,13 @@ import { AuthStorage, ModelRegistry, createAgentSession } from "@earendil-works/
 import { getModel } from "@earendil-works/pi-ai";
 import { emptyUsage } from "@marginalia/chat-core";
 import type { ChatEntry } from "@marginalia/chat-core";
-import type { AgentClient } from "./agent/agent-client.js";
+import type {
+  AgentClient,
+  AgentRunExecution,
+  ApprovalRequestedEvent,
+  ApprovalResolvedEvent
+} from "./agent/agent-client.js";
+import { buildAgentMessage } from "./agent/agent-message.js";
 import { AgentSessionRegistry } from "./agent/agent-session-registry.js";
 import { ApprovalGateway } from "./agent/approval-gateway.js";
 import { PiCodingAgentClient } from "./agent/pi-coding-agent-client.js";
@@ -20,18 +27,22 @@ import { migrate } from "./db/migrations.js";
 import { openDatabase } from "./db/connection.js";
 import {
   completeRun,
+  createApproval,
   createMessage,
   createProvider,
   createRun,
   createSession,
   createWorkspace,
+  decideApproval,
   deleteProvider,
   deleteWorkspace,
+  expirePendingApprovals,
   getMessages,
   getSession,
   getWorkspace,
   getProvider,
   getRecentWorkspace,
+  listApprovals,
   listProviders,
   listSessions,
   listWorkspaces,
@@ -41,6 +52,7 @@ import {
   updateProvider,
   updateSession
 } from "./db/repositories.js";
+import { createSkillPreferenceStore } from "./db/skill-preferences.js";
 import {
   DocumentPreviewError,
   mimeFromPath,
@@ -52,6 +64,25 @@ import { listWorkspaceFiles, searchWorkspaceFiles } from "./files/file-tree.js";
 import { resolveWorkspacePath } from "./files/path-sandbox.js";
 import { createHealthInfo } from "./health.js";
 import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
+import { SessionRunLeases } from "./run/session-run-leases.js";
+import { RequestBodyTooLargeError, readJsonBodyWithinLimit } from "./run/request-body.js";
+import {
+  authorizeCapability,
+  isAllowedOrigin,
+  type CapabilityPolicy
+} from "./security/capability.js";
+import {
+  SkillCandidateNotFoundError,
+  createSkillCatalogService,
+  toPublicSkillCatalogSnapshot
+} from "./skills/catalog.js";
+import type { SkillCatalogService } from "./skills/types.js";
+import {
+  SkillPayloadTooLargeError,
+  SkillPreconditionError,
+  prepareSkillTurn,
+  type SkillSelection
+} from "./skills/turn-preflight.js";
 
 export type AppOptions = {
   startedAt?: Date;
@@ -61,6 +92,8 @@ export type AppOptions = {
   modelRegistry?: ModelRegistry;
   availabilityChecker?: ModelAvailabilityChecker;
   documentReader?: (rootDir: string, relativePath: string) => Promise<DocumentContent>;
+  capability?: CapabilityPolicy;
+  skillCatalog?: SkillCatalogService;
 };
 
 const DEFAULT_AUTH_PATH = path.join(homedir(), ".marginalia", "auth.json");
@@ -96,13 +129,117 @@ export function createApp(options: AppOptions = {}) {
     );
   const availabilityChecker =
     options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
+  const capability = options.capability ?? { token: null, allowedOrigins: new Set<string>() };
+  const runLeases = new SessionRunLeases();
 
   migrate(db);
   syncProviderKeys(db, authStorage);
+  const skillCatalog =
+    options.skillCatalog ??
+    createSkillCatalogService({
+      homeDir: homedir(),
+      preferences: createSkillPreferenceStore(db)
+    });
 
   const app = new Hono();
-  app.use("*", cors({ origin: (origin) => origin }));
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => (isAllowedOrigin(origin || null, capability) ? origin : null),
+      allowHeaders: ["Authorization", "Content-Type"]
+    })
+  );
   app.get("/health", (c) => c.json(createHealthInfo(startedAt)));
+  app.get("/skills", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
+    const workspaceId = c.req.query("workspaceId");
+    const workspace = workspaceId === undefined ? null : getWorkspace(db, workspaceId);
+    if (workspaceId !== undefined && !workspace) {
+      return c.json({ error: "workspace not found" }, 404);
+    }
+    try {
+      const snapshot = await skillCatalog.refresh({
+        workspaceId: workspace?.id ?? null,
+        workspaceRoot: workspace?.rootDir ?? null
+      });
+      return c.json(toPublicSkillCatalogSnapshot(snapshot));
+    } catch {
+      return c.json({ error: "skills unavailable" }, 500);
+    }
+  });
+  app.patch("/skills/state", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid request" }, 400);
+    }
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      typeof (body as { path?: unknown }).path !== "string" ||
+      typeof (body as { enabled?: unknown }).enabled !== "boolean" ||
+      ((body as { workspaceId?: unknown }).workspaceId !== undefined &&
+        typeof (body as { workspaceId?: unknown }).workspaceId !== "string")
+    ) {
+      return c.json({ error: "invalid request" }, 400);
+    }
+    const input = body as { path: string; enabled: boolean; workspaceId?: string };
+    const workspace = input.workspaceId === undefined ? null : getWorkspace(db, input.workspaceId);
+    if (input.workspaceId !== undefined && !workspace) {
+      return c.json({ error: "workspace not found" }, 404);
+    }
+    try {
+      const snapshot = await skillCatalog.setEnabled({
+        workspaceId: workspace?.id ?? null,
+        workspaceRoot: workspace?.rootDir ?? null,
+        path: input.path,
+        enabled: input.enabled
+      });
+      return c.json(toPublicSkillCatalogSnapshot(snapshot));
+    } catch (error) {
+      if (error instanceof SkillCandidateNotFoundError) {
+        return c.json({ error: "skill not found" }, 404);
+      }
+      return c.json({ error: "skills unavailable" }, 500);
+    }
+  });
+  app.get("/skills/content", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
+    const workspaceId = c.req.query("workspaceId");
+    const workspace = workspaceId === undefined ? null : getWorkspace(db, workspaceId);
+    if (workspaceId !== undefined && !workspace) {
+      return c.json({ error: "workspace not found" }, 404);
+    }
+    try {
+      const snapshot = await skillCatalog.refresh({
+        workspaceId: workspace?.id ?? null,
+        workspaceRoot: workspace?.rootDir ?? null
+      });
+      const requestedPath = c.req.query("path");
+      const candidate = snapshot.candidates.find((item) => item.canonicalPath === requestedPath);
+      if (!candidate) return c.json({ error: "skill not found" }, 404);
+      return c.json({
+        path: candidate.canonicalPath,
+        content: candidate.previewContent,
+        truncated: candidate.previewTruncated,
+        bytesTotal: candidate.bytesTotal
+      });
+    } catch {
+      return c.json({ error: "skills unavailable" }, 500);
+    }
+  });
   app.get("/workspaces", (c) => c.json(listWorkspaces(db)));
   app.post("/workspaces", async (c) => {
     const body = await c.req.json<{ name: string; rootDir: string }>();
@@ -167,6 +304,23 @@ export function createApp(options: AppOptions = {}) {
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
     return c.json(await searchWorkspaceFiles(workspace.rootDir, c.req.query("q") ?? ""));
   });
+  app.put("/workspaces/:id/files/content", async (c) => {
+    const workspace = getWorkspace(db, c.req.param("id"));
+    if (!workspace) return c.json({ error: "workspace not found" }, 404);
+    const body = await c.req.json<{ path: string; content: string; overwrite?: boolean }>();
+    try {
+      const absolute = resolveWorkspacePath(workspace.rootDir, body.path ?? "");
+      const exists = existsSync(absolute);
+      if (exists && !body.overwrite) return c.json({ error: "file exists" }, 409);
+      await mkdir(path.dirname(absolute), { recursive: true });
+      await writeFile(absolute, body.content ?? "", "utf8");
+      return c.json({ path: body.path }, exists ? 200 : 201);
+    } catch (error) {
+      if ((error as Error).message === "Path escapes workspace")
+        return c.json({ error: "Path escapes workspace" }, 403);
+      return c.json({ error: (error as Error).message }, 500);
+    }
+  });
   app.post("/sessions", async (c) => {
     const body = await c.req.json<{ workspaceId: string; title: string; origin?: string }>();
     return c.json(createSession(db, body), 201);
@@ -191,6 +345,21 @@ export function createApp(options: AppOptions = {}) {
       201
     );
   });
+  app.post("/sessions/:sessionId/approvals/:approvalId", async (c) => {
+    const body = await c.req.json<{
+      approved: boolean;
+      reason?: string;
+      alwaysAllowPrefix?: boolean;
+    }>();
+    const approvalId = c.req.param("approvalId");
+    const ok = agentClient.resolveApproval(c.req.param("sessionId"), approvalId, body);
+    if (!ok) return c.json({ error: "approval not found or already resolved" }, 404);
+    decideApproval(db, approvalId, body.approved ? "approved" : "denied", body.reason);
+    return c.json({ ok: true });
+  });
+  app.get("/sessions/:sessionId/approvals", (c) =>
+    c.json(listApprovals(db, c.req.param("sessionId")))
+  );
   app.post("/quick-chat", (c) => {
     const workspace = getRecentWorkspace(db);
     if (!workspace) return c.json({ error: "workspace required" }, 409);
@@ -260,26 +429,108 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post("/sessions/:sessionId/runs", async (c) => {
+    const capabilityFailure = authorizeCapability(c.req.raw, capability);
+    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
+    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+
     const sessionId = c.req.param("sessionId");
     const session = getSession(db, sessionId);
     if (!session) return c.json({ error: "session not found" }, 404);
     const workspace = getWorkspace(db, session.workspaceId);
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
 
-    const body = await c.req.json<{
+    let body: {
       providerId: string;
       message: string;
       model?: string;
       contextFiles?: string[];
+      skills?: SkillSelection[];
       permission?: "full" | "ask" | "readonly";
       reasoning?: "low" | "medium" | "high" | "xhigh" | null;
-    }>();
+    };
+    try {
+      body = await readJsonBodyWithinLimit(c.req.raw);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return c.json({ error: "skill_payload_too_large" }, 413);
+      }
+      throw error;
+    }
     const provider = getProvider(db, body.providerId);
     if (!provider) return c.json({ error: "provider not found" }, 404);
     if (!provider.enabled) return c.json({ error: "provider disabled" }, 409);
 
     const modelId = body.model ?? provider.defaultModel;
-    const run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
+    const lease = runLeases.tryAcquire(sessionId);
+    if (!lease) return c.json({ error: "session_busy" }, 409);
+
+    let agentMessage: string;
+    let prepared: Awaited<ReturnType<AgentClient["prepare"]>> | null = null;
+    let run: ReturnType<typeof createRun>;
+    let catalogRevision: string | null = null;
+    try {
+      if (
+        body.skills !== undefined &&
+        (!Array.isArray(body.skills) ||
+          body.skills.some(
+            (selection) =>
+              !selection ||
+              typeof selection !== "object" ||
+              typeof selection.name !== "string" ||
+              typeof selection.path !== "string"
+          ))
+      ) {
+        throw new Error("invalid skills");
+      }
+      const snapshot = await skillCatalog.refresh({
+        workspaceId: workspace.id,
+        workspaceRoot: workspace.rootDir
+      });
+      const runtimeWorkspaceRoot = snapshot.workspaceRoot ?? workspace.rootDir;
+      catalogRevision = snapshot.catalogRevision;
+      const skillTurn = prepareSkillTurn(snapshot, body.skills ?? []);
+      agentMessage = await buildAgentMessage({
+        workspaceRoot: runtimeWorkspaceRoot,
+        text: body.message,
+        contextFiles: body.contextFiles ?? [],
+        skillBlocks: skillTurn.blocks
+      });
+      prepared = await agentClient.prepare({
+        sessionId,
+        workspaceRoot: runtimeWorkspaceRoot,
+        piProviderId: piProviderId(provider.name),
+        modelId,
+        agentSessionPath: session.agentSessionPath ?? null,
+        permission: body.permission,
+        reasoning: body.reasoning ?? null,
+        runtimeSkills: skillTurn.runtime
+      });
+      if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
+      run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
+    } catch (error) {
+      prepared?.release();
+      lease.release();
+      if (error instanceof SkillPreconditionError && catalogRevision !== null) {
+        return c.json(
+          {
+            error: "skill_precondition_failed",
+            catalogRevision,
+            invalidSelections: error.invalidSelections
+          },
+          409
+        );
+      }
+      if (error instanceof SkillPayloadTooLargeError) {
+        return c.json({ error: "skill_payload_too_large" }, 413);
+      }
+      return c.json({ error: "run_preparation_failed" }, 500);
+    }
+
+    if (!prepared) {
+      lease.release();
+      return c.json({ error: "run_preparation_failed" }, 500);
+    }
+    const preparedRun = prepared;
 
     return streamSSE(c, async (sse) => {
       const emit = async (type: string, payload: Record<string, unknown> = {}) => {
@@ -293,42 +544,70 @@ export function createApp(options: AppOptions = {}) {
           })
         });
       };
-      await emit("run_started", { model: modelId });
-
       let failed = false;
+      let execution: AgentRunExecution | null = null;
       try {
-        const result = await agentClient.run({
-          sessionId,
-          workspaceRoot: workspace.rootDir,
-          piProviderId: piProviderId(provider.name),
-          modelId,
-          message: await buildAgentMessage(
-            workspace.rootDir,
-            body.message,
-            body.contextFiles ?? []
-          ),
-          agentSessionPath: session.agentSessionPath ?? null,
-          permission: body.permission,
-          reasoning: body.reasoning ?? null,
-          abortSignal: c.req.raw.signal
-        });
-        if (result.sessionFile) setAgentSessionPath(db, sessionId, result.sessionFile);
+        await emit("run_started", { model: modelId });
+        execution = preparedRun.start(agentMessage);
 
-        // Single source of truth: forward raw pi events; the client derives all
-        // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
-        // envelope (started/failed/completed) is added on top.
-        for await (const event of result.events) {
-          await emit("agent_event", { event });
-          const e = event as {
-            type?: string;
-            message?: { stopReason?: string; errorMessage?: string };
-          };
-          if (e?.type === "message_end" && e.message?.stopReason === "error") {
-            const msg = e.message.errorMessage ?? "agent failed";
-            await emit("run_failed", { error: msg });
-            completeRun(db, run.id, "failed", msg);
-            failed = true;
-            return;
+        let abortRequested = false;
+        const onAbort = () => {
+          if (abortRequested) return;
+          abortRequested = true;
+          execution?.abort();
+          agentClient.cancelPending(sessionId);
+        };
+        c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
+        if (c.req.raw.signal.aborted) onAbort();
+
+        try {
+          // Single source of truth: forward raw pi events; the client derives all
+          // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
+          // envelope (started/failed/completed) is added on top.
+          for await (const event of execution.events) {
+            const type = (event as { type?: string }).type;
+            if (type === "approval_requested") {
+              const approval = event as ApprovalRequestedEvent;
+              createApproval(db, {
+                id: approval.approvalId,
+                sessionId,
+                runId: run.id,
+                toolCallId: approval.toolCallId,
+                toolName: approval.toolName,
+                kind: approval.payload.kind,
+                payload: approval.payload
+              });
+              await emit("approval_requested", { approval });
+              continue;
+            }
+            if (type === "approval_resolved") {
+              const approval = event as ApprovalResolvedEvent;
+              if (approval.expired) decideApproval(db, approval.approvalId, "expired");
+              await emit("approval_resolved", { approval });
+              continue;
+            }
+            await emit("agent_event", { event });
+            const e = event as {
+              type?: string;
+              message?: { stopReason?: string; errorMessage?: string };
+            };
+            if (e?.type === "message_end" && e.message?.stopReason === "error") {
+              const msg = e.message.errorMessage ?? "agent failed";
+              await emit("run_failed", { error: msg });
+              completeRun(db, run.id, "failed", msg);
+              failed = true;
+              break;
+            }
+          }
+        } catch (failure) {
+          onAbort();
+          throw failure;
+        } finally {
+          if (c.req.raw.signal.aborted) onAbort();
+          try {
+            await execution.settled;
+          } finally {
+            c.req.raw.signal.removeEventListener("abort", onAbort);
           }
         }
 
@@ -338,8 +617,20 @@ export function createApp(options: AppOptions = {}) {
         }
       } catch (error) {
         const msg = (error as Error).message;
-        await emit("run_failed", { error: msg });
+        try {
+          await emit("run_failed", { error: msg });
+        } catch {
+          // The client may already be disconnected; DB completion still matters.
+        }
         completeRun(db, run.id, "failed", msg);
+      } finally {
+        try {
+          if (execution === null) preparedRun.release();
+          agentClient.cancelPending(sessionId);
+          expirePendingApprovals(db, run.id);
+        } finally {
+          lease.release();
+        }
       }
     });
   });
@@ -379,41 +670,4 @@ function syncProviderKeys(db: Database.Database, authStorage: AuthStorage) {
     const piId = piProviderId(row.name);
     if (piId && row.api_key) authStorage.setRuntimeApiKey(piId, row.api_key);
   }
-}
-
-function escapeAttr(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-async function buildAgentMessage(
-  workspaceRoot: string,
-  message: string,
-  contextFiles: readonly string[]
-): Promise<string> {
-  const unique = [...new Set(contextFiles.map((p) => p.trim()).filter(Boolean))];
-  if (unique.length === 0) return message;
-
-  const attachments: string[] = [];
-  for (const filePath of unique) {
-    try {
-      const doc = await readDocument(workspaceRoot, filePath);
-      const text = doc.rawOnly
-        ? `[${doc.mime} attachment; content preview unavailable. Use file tools if you need to inspect it.]`
-        : doc.text;
-      attachments.push(
-        `<attached_file path="${escapeAttr(filePath)}" mime="${escapeAttr(doc.mime)}">\n${text}\n</attached_file>`
-      );
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unavailable";
-      attachments.push(
-        `<attached_file path="${escapeAttr(filePath)}" error="${escapeAttr(reason)}">\n</attached_file>`
-      );
-    }
-  }
-
-  return `${message}\n\n<attached_files>\n${attachments.join("\n")}\n</attached_files>`;
 }

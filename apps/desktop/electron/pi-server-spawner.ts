@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 
 /** The subset of ChildProcess / Electron's UtilityProcess that the spawner uses. */
 export type PiServerProcess = {
@@ -10,13 +11,17 @@ export type PiServerProcess = {
 
 export type PiServerStatus =
   | { status: "starting" }
-  | { status: "ready"; url: string; process: PiServerProcess }
+  | { status: "ready"; url: string; capabilityToken: string; process: PiServerProcess }
   | { status: "failed"; error: string; logs: string[] };
 
 export type ReadyMessage = { type: "ready"; port: number };
 
 /** Creates the pi-server child process; the strategy differs dev vs packaged. */
-type LaunchFn = (scriptPath: string, cwd: string) => PiServerProcess;
+type LaunchFn = (
+  scriptPath: string,
+  cwd: string,
+  env: Readonly<Record<string, string>>
+) => PiServerProcess;
 
 type ResolveScriptOptions = {
   isPackaged: boolean;
@@ -69,21 +74,38 @@ export function createReadyLineParser() {
   };
 }
 
+export function createLaunchEnvironment(
+  additions: Readonly<Record<string, string>>
+): NodeJS.ProcessEnv {
+  const inherited = { ...process.env };
+  delete inherited.MARGINALIA_CAPABILITY_TOKEN;
+  delete inherited.MARGINALIA_ALLOWED_ORIGIN;
+  return { ...inherited, ...additions };
+}
+
 async function defaultLaunch(isPackaged: boolean): Promise<LaunchFn> {
   if (isPackaged) {
     // Packaged: run on Electron's bundled Node so the client needs no Node install, and
     // better-sqlite3 only has to match Electron's ABI (rebuilt at packaging time).
     const { utilityProcess } = await import("electron");
-    return (scriptPath, cwd) =>
-      utilityProcess.fork(scriptPath, [], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    return (scriptPath, cwd, env) =>
+      utilityProcess.fork(scriptPath, [], {
+        cwd,
+        env: createLaunchEnvironment(env),
+        stdio: ["ignore", "pipe", "pipe"]
+      });
   }
   // Development: run on the system Node from PATH. Its ABI matches the better-sqlite3
   // that `pnpm install` built; forking under Electron's different ABI would crash on
   // boot. MARGINALIA_NODE_PATH overrides which node binary to use.
   const { spawn } = await import("node:child_process");
   const nodePath = process.env.MARGINALIA_NODE_PATH ?? "node";
-  return (scriptPath, cwd) =>
-    spawn(nodePath, [scriptPath], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+  return (scriptPath, cwd, env) =>
+    spawn(nodePath, [scriptPath], {
+      cwd,
+      env: createLaunchEnvironment(env),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
 }
 
 type StartOptions = {
@@ -92,6 +114,8 @@ type StartOptions = {
   scriptPath?: string;
   isPackaged?: boolean;
   timeoutMs?: number;
+  capabilityToken?: string;
+  allowedOrigin?: string;
 };
 
 /**
@@ -104,7 +128,12 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
   const scriptPath = options.scriptPath ?? resolvePiServerScriptPath({ isPackaged });
   const cwd = resolvePiServerCwd(scriptPath);
   const launch = options.launch ?? (await defaultLaunch(isPackaged));
-  const child = launch(scriptPath, cwd);
+  const capabilityToken = options.capabilityToken ?? randomBytes(32).toString("base64url");
+  const childEnv = {
+    MARGINALIA_CAPABILITY_TOKEN: capabilityToken,
+    ...(options.allowedOrigin ? { MARGINALIA_ALLOWED_ORIGIN: options.allowedOrigin } : {})
+  };
+  const child = launch(scriptPath, cwd, childEnv);
   const parser = createReadyLineParser();
   const logs: string[] = [];
   const pushLog = (source: "stdout" | "stderr", chunk: Buffer) => {
@@ -124,7 +153,12 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
       const ready = parser.push(chunk.toString());
       if (ready) {
         clearTimeout(timeout);
-        resolve({ status: "ready", url: `http://127.0.0.1:${ready.port}`, process: child });
+        resolve({
+          status: "ready",
+          url: `http://127.0.0.1:${ready.port}`,
+          capabilityToken,
+          process: child
+        });
       }
     });
 

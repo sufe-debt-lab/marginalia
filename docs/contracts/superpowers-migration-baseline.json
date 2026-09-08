@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "lockedAt": "2026-07-11",
+  "records": [
+    {
+      "sourcePath": "docs/superpowers/specs/2026-07-08-p1-chat-core-experience-design.md",
+      "sha256": "db6fd6ac34418bfbb560f48866d10c060bb760433a82b16220ba4dae763a818e",
+      "recordId": "SPEC-P1-CHAT-CORE-001",
+      "assumedStatus": "active"
+    },
+    {
+      "sourcePath": "docs/superpowers/plans/2026-07-08-approval-backbone.md",
+      "sha256": "87948664c5a58378e978bccde22a433f4618557d174883768d1ac15c672c9501",
+      "recordId": "PLAN-P1-APPROVAL-BACKBONE-001",
+      "assumedStatus": "active"
+    },
+    {
+      "sourcePath": "docs/superpowers/plans/2026-07-10-message-stream.md",
+      "sourceRevision": "f311bb4b3942b4eee31a335df468d9024d133846",
+      "sha256": "03750bf698cc8b097bc411a8ecceac94f04cd8d3a65e96fe7291260ad10ecbe3",
+      "recordId": "PLAN-P1-MESSAGE-STREAM-001",
+      "assumedStatus": "active"
+    }
+  ]
+}

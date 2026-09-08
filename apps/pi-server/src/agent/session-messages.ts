@@ -4,7 +4,11 @@ import {
   type FileEntry,
   type SessionMessageEntry
 } from "@earendil-works/pi-coding-agent";
-import type { ChatEntry, PiMessageCore } from "@marginalia/chat-core";
+import {
+  normalizeAgentPromptForDisplay,
+  type ChatEntry,
+  type PiMessageCore
+} from "@marginalia/chat-core";
 
 export type { ChatEntry } from "@marginalia/chat-core";
 
@@ -27,7 +31,17 @@ export function readMessagesFromSessionFile(filePath: string): ChatEntry[] {
     if (!isSessionMessageEntry(entry)) continue;
     const { id, message: sessionMessage } = entry;
     if (!isPiMessageCore(sessionMessage)) continue;
-    result.push({ id, message: sessionMessage });
+    const message =
+      sessionMessage.role === "user"
+        ? {
+            ...sessionMessage,
+            content:
+              typeof sessionMessage.content === "string"
+                ? normalizeAgentPromptForDisplay(sessionMessage.content).text
+                : sessionMessage.content
+          }
+        : sessionMessage;
+    result.push({ id, message });
   }
   return result;
 }

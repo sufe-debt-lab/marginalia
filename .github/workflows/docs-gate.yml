@@ -1,0 +1,110 @@
+name: Trusted documentation gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: trusted-docs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  trusted-docs-runner:
+    name: trusted-docs-runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Mark trusted status pending on the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          gh api --method POST
+          "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA"
+          -f state=pending
+          -f context=trusted-docs
+          -f description="Trusted documentation checks are running"
+          -f target_url="$TARGET_URL"
+
+      - name: Check out the exact pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify checked-out head
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Load trusted checker from the target branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          trusted="$RUNNER_TEMP/marginalia-docs-check"
+          mkdir -p "$trusted"
+          git show "$BASE_SHA:scripts/docs-check.mjs" > "$trusted/docs-check.mjs"
+          git show "$BASE_SHA:scripts/docs-check-lib.mjs" > "$trusted/docs-check-lib.mjs"
+          git show "$BASE_SHA:docs/contracts/docs-impact.json" > "$trusted/docs-impact.json"
+
+      - name: Verify the approval actor has write access
+        if: github.event.action == 'labeled' && github.event.label.name == 'docs-impact-approved'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          permission="$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" --jq .permission)"
+          case "$permission" in
+            admin|maintain|write) ;;
+            *) echo "docs-impact approval requires write access; got $permission" >&2; exit 1 ;;
+          esac
+
+      - name: Check documentation with trusted policy
+        id: docs_check
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DOCS_CHECK_REPO_ROOT: ${{ github.workspace }}
+          DOCS_CHECK_IMPACT_CONFIG: ${{ runner.temp }}/marginalia-docs-check/docs-impact.json
+          DOCS_CHECK_REQUIRE_FRESH_APPROVAL: "1"
+        run: >-
+          node "$RUNNER_TEMP/marginalia-docs-check/docs-check.mjs"
+          --base "$BASE_SHA"
+          --github-event "$GITHUB_EVENT_PATH"
+
+      - name: Publish trusted status on the exact PR head
+        if: always()
+        env:
+          CHECK_OUTCOME: ${{ steps.docs_check.outcome }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$CHECK_OUTCOME" = "success" ]; then
+            state=success
+            description="Trusted documentation checks passed"
+          else
+            state=failure
+            description="Trusted documentation checks failed"
+          fi
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context=trusted-docs \
+            -f description="$description" \
+            -f target_url="$TARGET_URL"
+
+      - name: Enforce trusted documentation result
+        if: always() && steps.docs_check.outcome != 'success'
+        run: exit 1

@@ -8,6 +8,7 @@ describe("App", () => {
     cleanup();
     vi.useRealTimers();
     window.marginalia = undefined;
+    window.history.replaceState({}, "", "/");
     global.fetch = vi.fn(async (input) => {
       const body = String(input).endsWith("/workspaces") ? [] : { status: "ok" };
       return new Response(JSON.stringify(body), {
@@ -24,7 +25,8 @@ describe("App", () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312"
+        url: "http://127.0.0.1:4312",
+        capabilityToken: "secret-token"
       })),
       restartPiServer: vi.fn()
     };
@@ -47,7 +49,11 @@ describe("App", () => {
       getPiServerStatus: vi
         .fn()
         .mockResolvedValueOnce({ status: "starting" as const })
-        .mockResolvedValueOnce({ status: "ready" as const, url: "http://127.0.0.1:4312" }),
+        .mockResolvedValueOnce({
+          status: "ready" as const,
+          url: "http://127.0.0.1:4312",
+          capabilityToken: "secret-token"
+        }),
       restartPiServer: vi.fn()
     };
 
@@ -70,7 +76,8 @@ describe("App", () => {
       })),
       restartPiServer: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312"
+        url: "http://127.0.0.1:4312",
+        capabilityToken: "secret-token"
       }))
     };
 
@@ -87,7 +94,8 @@ describe("App", () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312"
+        url: "http://127.0.0.1:4312",
+        capabilityToken: "secret-token"
       })),
       restartPiServer: vi.fn()
     };
@@ -97,5 +105,43 @@ describe("App", () => {
 
     await screen.findByText(/health check failed/i);
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("does not accept a browser debug bearer from the query string", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/?serverUrl=http://127.0.0.1:4312&capabilityToken=query-token"
+    );
+
+    render(<App />);
+
+    expect(screen.getByText("desktop bridge unavailable")).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).has("capabilityToken")).toBe(false);
+  });
+
+  it("requires both the browser debug server query and token fragment", async () => {
+    window.history.replaceState({}, "", "/?serverUrl=http://127.0.0.1:4312");
+
+    render(<App />);
+
+    expect(screen.getByText("desktop bridge unavailable")).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses the browser debug token fragment and clears it immediately", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/?serverUrl=http://127.0.0.1:4312#capabilityToken=debug-token"
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument());
+    expect(global.fetch).toHaveBeenCalledWith("http://127.0.0.1:4312/health");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
   });
 });

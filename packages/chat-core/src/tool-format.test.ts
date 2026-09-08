@@ -11,9 +11,11 @@ import {
   assistantText,
   collectToolResults,
   findToolResult,
+  fullResultText,
   resultText,
   stringifyContent,
-  toolSubtitle
+  toolSubtitle,
+  toolSummary
 } from "./tool-format.js";
 
 const usage = {
@@ -134,5 +136,51 @@ describe("resultText", () => {
 
   it("returns undefined for empty input", () => {
     expect(resultText(undefined)).toBeUndefined();
+  });
+});
+
+describe("toolSummary", () => {
+  it("summarises per tool name", () => {
+    expect(
+      toolSummary({
+        type: "toolCall",
+        id: "1",
+        name: "bash",
+        arguments: { command: "python x.py" }
+      })
+    ).toEqual({ title: "bash", detail: "python x.py" });
+    expect(
+      toolSummary({ type: "toolCall", id: "2", name: "read", arguments: { path: "a.md" } })
+    ).toEqual({ title: "read", detail: "a.md" });
+    expect(
+      toolSummary({ type: "toolCall", id: "3", name: "grep", arguments: { pattern: "foo" } })
+    ).toEqual({ title: "grep", detail: "foo" });
+  });
+
+  it("falls back to toolSubtitle for unknown tools", () => {
+    expect(
+      toolSummary({ type: "toolCall", id: "4", name: "mystery", arguments: { query: "q" } })
+    ).toEqual({ title: "mystery", detail: "q" });
+    expect(toolSummary({ type: "toolCall", id: "5", name: "mystery", arguments: {} })).toEqual({
+      title: "mystery",
+      detail: undefined
+    });
+  });
+});
+
+describe("fullResultText", () => {
+  it("does not truncate long outputs", () => {
+    const long = "x".repeat(1000);
+    expect(fullResultText(long)).toHaveLength(1000);
+    expect(
+      fullResultText({
+        role: "toolResult",
+        toolCallId: "t",
+        toolName: "bash",
+        content: [{ type: "text", text: long }],
+        isError: false,
+        timestamp: 1
+      })
+    ).toHaveLength(1000);
   });
 });

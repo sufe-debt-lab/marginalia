@@ -73,9 +73,16 @@ loop is codified in the `design-loop` skill.
 - `core-ui`: first run, new thread, composer controls, settings, locale switch,
   and sidebar collapse.
 - `seeded-workspace`: seeded workspace/session state, recent threads, sidebar
-  session timestamps, chat rendering, attachment picker, and mention flow. Uses a
+  session timestamps, chat rendering, the save-to-workspace dialog (file name
+  input and overwrite-confirm steps), attachment picker, and mention flow. Uses a
   fixed, content-controlled seed directory (not the real repo) so file-listing
   shots stay deterministic as the repo changes.
+- `approval-flow`: isolated scripted fake-agent states for command and edit
+  approval decisions.
+- `skills-flow`: isolated scripted fake-agent Skills fixtures covering Settings
+  search/detail/toggle, `$` and `/` pickers, ordered chips, global-only context,
+  diagnostics, and a real preflight-blocked send. Its fixture writes only beneath
+  the run's isolated HOME and seed workspace, never the developer's HOME.
 - `minimax-live`: real MiniMax prompt/stream/result capture. This is not part of
   the default gate and requires `MINIMAX_CN_API_KEY`.
 

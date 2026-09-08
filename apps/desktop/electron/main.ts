@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  shell,
+  type OpenDialogOptions,
+  type SaveDialogOptions
+} from "electron";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isExternalUrl } from "./external-url.js";
 import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
@@ -18,7 +27,10 @@ let serverStatus: PiServerStatus = { status: "starting" };
 
 async function bootServer() {
   serverStatus = { status: "starting" };
-  serverStatus = await startPiServer({ isPackaged: app.isPackaged });
+  serverStatus = await startPiServer({
+    isPackaged: app.isPackaged,
+    allowedOrigin: devServerUrl()?.origin
+  });
   return serializeStatus(serverStatus);
 }
 
@@ -33,7 +45,13 @@ function bootServerInBackground() {
 }
 
 function serializeStatus(status: PiServerStatus) {
-  if (status.status === "ready") return { status: "ready", url: status.url };
+  if (status.status === "ready") {
+    return {
+      status: "ready",
+      url: status.url,
+      capabilityToken: status.capabilityToken
+    };
+  }
   return status;
 }
 
@@ -41,8 +59,11 @@ function devServerUrl() {
   if (app.isPackaged || !process.env.VITE_DEV_SERVER_URL) return null;
   try {
     const url = new URL(process.env.VITE_DEV_SERVER_URL);
-    const isLoopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
-    return isLoopback && ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+    const isLoopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    const hasNoCredentials = url.username === "" && url.password === "";
+    return isLoopback && hasNoCredentials && ["http:", "https:"].includes(url.protocol)
+      ? url
+      : null;
   } catch {
     return null;
   }
@@ -96,7 +117,7 @@ async function createWindow() {
 
   const rendererUrl = devServerUrl();
   if (rendererUrl) {
-    await windowRef.loadURL(rendererUrl);
+    await windowRef.loadURL(rendererUrl.toString());
   } else {
     await windowRef.loadFile(path.resolve(import.meta.dirname, "../dist/index.html"));
   }
@@ -118,6 +139,26 @@ ipcMain.handle("workspace:pick-directory", async () => {
 });
 ipcMain.handle("marginalia:open-external", async (_event, url: unknown) => {
   if (typeof url === "string" && isExternalUrl(url)) await shell.openExternal(url);
+});
+ipcMain.handle("marginalia:save-text-file", async (_event, input: unknown) => {
+  const { defaultName, content } = input as { defaultName: string; content: string };
+  const options: SaveDialogOptions = {
+    defaultPath: defaultName,
+    filters: [{ name: "Markdown", extensions: ["md"] }]
+  };
+  // windowRef is the module-level ref (same as workspace:pick-directory).
+  const result = windowRef
+    ? await dialog.showSaveDialog(windowRef, options)
+    : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) return { saved: false };
+  try {
+    await writeFile(result.filePath, content, "utf8");
+    return { saved: true, path: result.filePath };
+  } catch (error) {
+    // Failure must come back as a result, not an IPC rejection, so the
+    // renderer can flash feedback instead of hitting an unhandled rejection.
+    return { saved: false, error: (error as Error).message };
+  }
 });
 
 app.on("before-quit", () => {

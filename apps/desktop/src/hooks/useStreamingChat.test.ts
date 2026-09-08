@@ -1,13 +1,18 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatAssistantMessage, ChatToolResult } from "@marginalia/chat-core";
-import type { ApiClient, RunEvent } from "@/api/client.js";
+import { ApiError, type ApiClient, type RunEvent } from "@/api/client.js";
 import { useStreamingChat } from "./useStreamingChat.js";
 
 async function* makeEvents(events: RunEvent[]) {
+  yield { type: "run_started", payload: {} };
   for (const e of events) {
     yield e;
   }
+}
+
+async function* makePreStartEvents(events: RunEvent[]) {
+  for (const e of events) yield e;
 }
 
 /** Wrap a raw pi event in the SSE `agent_event` envelope the server now emits. */
@@ -17,8 +22,7 @@ const textDelta = (delta: string) =>
 const messageStart = () => agentEvent({ type: "message_start", message: { role: "assistant" } });
 const messageEnd = (stopReason = "stop") =>
   agentEvent({ type: "message_end", message: { stopReason } });
-const thinkingDelta = (delta: string) =>
-  agentEvent({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta } });
+const runCompleted = (): RunEvent => ({ type: "run_completed", payload: {} });
 
 const usage = {
   input: 0,
@@ -63,6 +67,8 @@ function makeHook(api: ApiClient, overrides: Record<string, unknown> = {}) {
       sessionId: "s",
       providerId: "p",
       model: "m",
+      onAccepted: vi.fn(),
+      onError: vi.fn(),
       onUserAppend: vi.fn(),
       onAssistantStart: vi.fn(),
       onAssistantDelta: vi.fn(),
@@ -84,7 +90,7 @@ describe("useStreamingChat", () => {
     const onAssistantStart = vi.fn();
     const onComplete = vi.fn();
     const api = {
-      runChat: vi.fn(async () => makeEvents([textDelta("hel"), textDelta("lo")]))
+      runChat: vi.fn(async () => makeEvents([textDelta("hel"), textDelta("lo"), runCompleted()]))
     } as unknown as ApiClient;
     const { result } = makeHook(api, {
       onAssistantDelta,
@@ -94,7 +100,7 @@ describe("useStreamingChat", () => {
     });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
@@ -115,14 +121,15 @@ describe("useStreamingChat", () => {
           messageEnd("toolUse"),
           messageStart(),
           textDelta("b"),
-          messageEnd("stop")
+          messageEnd("stop"),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onAssistantDelta });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     expect(onAssistantStart).toHaveBeenCalledTimes(2);
@@ -149,14 +156,15 @@ describe("useStreamingChat", () => {
           toolStart("bash1", "bash"),
           messageStart(),
           textDelta("answer"),
-          messageEnd("stop")
+          messageEnd("stop"),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onToolCallUpsert });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     // read tool opened bubble #1, bash tool opened bubble #2, answer opened bubble #3.
@@ -167,33 +175,11 @@ describe("useStreamingChat", () => {
     expect(onAssistantStart).toHaveBeenCalledTimes(3);
   });
 
-  it("accumulates reasoning text from thinking deltas", async () => {
-    const api = {
-      runChat: vi.fn(async () => makeEvents([thinkingDelta("ab"), thinkingDelta("cd")]))
-    } as unknown as ApiClient;
-    const { result } = makeHook(api);
-    await act(async () => {
-      await result.current.send("hi", []);
-    });
-    await waitFor(() => expect(result.current.reasoning).toBe("abcd"));
-  });
-
-  it("clears reasoning once the answer starts streaming", async () => {
-    const api = {
-      runChat: vi.fn(async () => makeEvents([thinkingDelta("x"), textDelta("y")]))
-    } as unknown as ApiClient;
-    const { result } = makeHook(api);
-    await act(async () => {
-      await result.current.send("hi", []);
-    });
-    await waitFor(() => expect(result.current.reasoning).toBe(""));
-  });
-
   it("sends when text is empty but context files are attached", async () => {
-    const runChat = vi.fn(async () => makeEvents([textDelta("ok")]));
+    const runChat = vi.fn(async () => makeEvents([textDelta("ok"), runCompleted()]));
     const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
-      await result.current.send("", ["a.ts"]);
+      await result.current.send({ text: "", contextFiles: ["a.ts"], skills: [] });
     });
     expect(runChat).toHaveBeenCalled();
   });
@@ -202,7 +188,7 @@ describe("useStreamingChat", () => {
     const runChat = vi.fn();
     const { result } = makeHook({ runChat } as unknown as ApiClient);
     await act(async () => {
-      await result.current.send("   ", []);
+      await result.current.send({ text: "   ", contextFiles: [], skills: [] });
     });
     expect(runChat).not.toHaveBeenCalled();
   });
@@ -214,9 +200,289 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onError });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
-    await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.any(Error), true));
+  });
+
+  it("keeps sending and defers run_failed reporting until the stream reaches EOF", async () => {
+    let finishTail!: () => void;
+    let terminalYielded!: () => void;
+    const tail = new Promise<void>((resolve) => {
+      finishTail = resolve;
+    });
+    const terminal = new Promise<void>((resolve) => {
+      terminalYielded = resolve;
+    });
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          terminalYielded();
+          yield { type: "run_failed", payload: { error: "stable failure" } } as RunEvent;
+          await tail;
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError });
+
+    let sendPromise: Promise<void> | undefined;
+    act(() => {
+      sendPromise = result.current.send({ text: "hi", contextFiles: [], skills: [] });
+    });
+    await terminal;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result.current.sending).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    finishTail();
+    await act(async () => {
+      await sendPromise;
+    });
+    expect(result.current.sending).toBe(false);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "stable failure" }),
+      true
+    );
+  });
+
+  it("drains the real message_end error then run_failed sequence and uses the envelope error", async () => {
+    let consumedTail = false;
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield agentEvent({
+            type: "message_end",
+            message: { stopReason: "error", errorMessage: "raw pi failure" }
+          });
+          yield { type: "run_failed", payload: { error: "stable run failure" } } as RunEvent;
+          consumedTail = true;
+          yield agentEvent({
+            type: "message_update",
+            assistantMessageEvent: { type: "text_delta", delta: "ignored" }
+          });
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError, onAssistantDelta: vi.fn() });
+
+    await act(async () => {
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
+    });
+
+    expect(consumedTail).toBe(true);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "stable run failure" }),
+      true
+    );
+  });
+
+  it("preserves the run_failed error when transport draining throws", async () => {
+    let drainAttempted = false;
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield { type: "run_failed", payload: { error: "stable failure" } } as RunEvent;
+          drainAttempted = true;
+          throw new Error("transport reset");
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError });
+
+    await act(async () => {
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
+    });
+
+    expect(drainAttempted).toBe(true);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "stable failure" }),
+      true
+    );
+  });
+
+  it("surfaces a typed API error message without creating an assistant bubble", async () => {
+    const onError = vi.fn();
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onAssistantStart = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => {
+        throw new ApiError("Selections changed", 409, "skill_precondition_failed", {
+          invalidSelections: [{ name: "pdf", path: "/old", reason: "missing" }]
+        });
+      })
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onError, onAccepted, onUserAppend, onAssistantStart });
+
+    await act(async () => {
+      await result.current.send({
+        text: "hi",
+        contextFiles: [],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      });
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.any(ApiError), false);
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(onUserAppend).not.toHaveBeenCalled();
+    expect(onAssistantStart).not.toHaveBeenCalled();
+  });
+
+  it("accepts exactly once at run_started and preserves the full turn snapshot after failure", async () => {
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([{ type: "run_failed", payload: { error: "boom" } }]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onUserAppend, onError });
+    const turn = {
+      text: "Review",
+      contextFiles: ["/docs/a.pdf"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    };
+
+    await act(async () => {
+      await result.current.send(turn);
+    });
+
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onAccepted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Review",
+        contextFiles: ["/docs/a.pdf"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }),
+      expect.objectContaining({
+        message: expect.objectContaining({ content: "$pdf\n\nReview" })
+      })
+    );
+    expect(onUserAppend).toHaveBeenCalledTimes(1);
+    expect(onUserAppend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({ content: "$pdf\n\nReview" })
+      })
+    );
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), true);
+    expect(api.runChat).toHaveBeenCalledWith(
+      "s",
+      expect.objectContaining({
+        message: "Review",
+        contextFiles: ["/docs/a.pdf"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }),
+      expect.anything()
+    );
+  });
+
+  it("reports an accepted error when the stream ends after run_started without run_completed", async () => {
+    const onAccepted = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onComplete, onError });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), true);
+  });
+
+  it("accepts and appends once when duplicate run_started precedes completion", async () => {
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onComplete = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makeEvents([{ type: "run_started", payload: {} }, runCompleted()]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onUserAppend, onComplete });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(onUserAppend).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains the event iterator after run_completed without processing late events", async () => {
+    let drained = false;
+    const onAssistantDelta = vi.fn();
+    const onComplete = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield runCompleted();
+          drained = true;
+          yield textDelta("late");
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAssistantDelta, onComplete });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(drained).toBe(true);
+    expect(onAssistantDelta).not.toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps run_completed authoritative when the iterator throws while draining", async () => {
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () =>
+        (async function* () {
+          yield { type: "run_started", payload: {} } as RunEvent;
+          yield runCompleted();
+          throw new Error("transport reset while draining");
+        })()
+      )
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onComplete, onError });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stream that ends before run_started without accepting or appending", async () => {
+    const onAccepted = vi.fn();
+    const onUserAppend = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const api = {
+      runChat: vi.fn(async () => makePreStartEvents([]))
+    } as unknown as ApiClient;
+    const { result } = makeHook(api, { onAccepted, onUserAppend, onComplete, onError });
+
+    await act(async () => {
+      await result.current.send({ text: "Review", contextFiles: [], skills: [] });
+    });
+
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(onUserAppend).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), false);
   });
 
   it("appends a toolResult entry matched by toolCallId", async () => {
@@ -236,13 +502,14 @@ describe("useStreamingChat", () => {
             toolName: "read",
             result: "done-result",
             isError: false
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onToolResultUpsert });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() =>
       expect(onToolResultUpsert).toHaveBeenLastCalledWith(
@@ -263,13 +530,14 @@ describe("useStreamingChat", () => {
     const api = {
       runChat: vi.fn(async () =>
         makeEvents([
-          agentEvent({ type: "tool_execution_update", toolName: "read", partialResult: "x" })
+          agentEvent({ type: "tool_execution_update", toolName: "read", partialResult: "x" }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onToolCallUpsert });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     expect(onToolCallUpsert).not.toHaveBeenCalled();
   });
@@ -297,14 +565,15 @@ describe("useStreamingChat", () => {
           agentEvent({
             type: "message_end",
             message: finalResult
-          })
+          }),
+          runCompleted()
         ])
       )
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantReplace, onToolResultUpsert });
 
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
 
     expect(onAssistantReplace).toHaveBeenCalledWith(
@@ -329,7 +598,7 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onError: vi.fn() });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() => expect(result.current.sending).toBe(false));
     expect(onAssistantStart).not.toHaveBeenCalled();
@@ -344,7 +613,7 @@ describe("useStreamingChat", () => {
     } as unknown as ApiClient;
     const { result } = makeHook(api, { onAssistantStart, onError: vi.fn() });
     await act(async () => {
-      await result.current.send("hi", []);
+      await result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() => expect(result.current.sending).toBe(false));
     expect(onAssistantStart).toHaveBeenCalledTimes(1);
@@ -368,7 +637,7 @@ describe("useStreamingChat", () => {
     const { result } = makeHook(api);
 
     await act(async () => {
-      void result.current.send("hi", []);
+      void result.current.send({ text: "hi", contextFiles: [], skills: [] });
     });
     await waitFor(() => expect(result.current.sending).toBe(true));
 

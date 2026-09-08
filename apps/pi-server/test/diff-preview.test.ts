@@ -2,11 +2,42 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { previewEdit, previewWrite } from "../src/agent/diff-preview.js";
+import { previewEdit, previewEdits, previewWrite } from "../src/agent/diff-preview.js";
 
 function tempWorkspace(): string {
   return mkdtempSync(path.join(os.tmpdir(), "diff-preview-"));
 }
+
+describe("previewEdits", () => {
+  it("applies multiple edits in sequence for an exact diff", () => {
+    const root = tempWorkspace();
+    writeFileSync(path.join(root, "a.md"), "# 旧标题\n\n正文一\n正文二\n");
+    const preview = previewEdits(root, "a.md", [
+      { oldText: "# 旧标题", newText: "# 新标题" },
+      { oldText: "正文二", newText: "结论" }
+    ]);
+    expect(preview.exact).toBe(true);
+    expect(preview.patch).toContain("+# 新标题");
+    expect(preview.patch).toContain("+结论");
+    expect(preview.additions).toBe(2);
+    expect(preview.deletions).toBe(2);
+  });
+
+  it("handles a single-element edits array like the legacy shape", () => {
+    const root = tempWorkspace();
+    writeFileSync(path.join(root, "a.md"), "# 旧标题\n");
+    const preview = previewEdits(root, "a.md", [{ oldText: "# 旧标题", newText: "# 验证通过" }]);
+    expect(preview.exact).toBe(true);
+    expect(preview.patch).toContain("+# 验证通过");
+  });
+
+  it("marks the preview approximate when an edit does not match", () => {
+    const root = tempWorkspace();
+    writeFileSync(path.join(root, "a.md"), "alpha\n");
+    const preview = previewEdits(root, "a.md", [{ oldText: "not-there", newText: "x" }]);
+    expect(preview.exact).toBe(false);
+  });
+});
 
 describe("previewWrite", () => {
   it("diffs against the existing file with Chinese content", () => {

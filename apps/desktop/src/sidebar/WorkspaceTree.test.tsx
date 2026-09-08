@@ -25,8 +25,8 @@ describe("WorkspaceTree", () => {
       activeSessionId: null,
       view: "new-thread",
       locale: "en",
-      pendingPrompt: null,
-      contextFiles: [],
+      pendingTurn: null,
+      turnDrafts: {},
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: []

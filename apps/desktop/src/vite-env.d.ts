@@ -2,7 +2,7 @@
 
 type PiServerStatus =
   | { status: "starting" }
-  | { status: "ready"; url: string }
+  | { status: "ready"; url: string; capabilityToken: string }
   | { status: "failed"; error: string; logs: string[] };
 
 interface Window {

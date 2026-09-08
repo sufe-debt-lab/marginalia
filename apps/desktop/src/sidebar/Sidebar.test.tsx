@@ -19,11 +19,13 @@ describe("Sidebar", () => {
     cleanup();
     useAppStore.setState({
       view: "new-thread",
+      settingsEntryTab: "general",
+      settingsEntryRevision: 0,
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
-      pendingPrompt: null,
-      contextFiles: [],
+      pendingTurn: null,
+      turnDrafts: {},
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: []
@@ -49,10 +51,16 @@ describe("Sidebar", () => {
     expect(useAppStore.getState().view).toBe("new-thread");
   });
 
-  it("clicking Settings sets view to settings", async () => {
+  it("clicking Settings opens the General settings entry", async () => {
+    useAppStore.setState({ settingsEntryTab: "skills" } as Parameters<
+      typeof useAppStore.setState
+    >[0]);
     render(<Sidebar api={fakeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: /settings/i }));
     expect(useAppStore.getState().view).toBe("settings");
+    expect(
+      (useAppStore.getState() as unknown as { settingsEntryTab?: string }).settingsEntryTab
+    ).toBe("general");
   });
 
   it("lists workspaces from api", async () => {

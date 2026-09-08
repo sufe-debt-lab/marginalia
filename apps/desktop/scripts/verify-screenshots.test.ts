@@ -1,11 +1,41 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { PNG } from "pngjs";
 
 // @ts-expect-error -- plain ESM script without type declarations
-import { assertScreenshotMotionOff, parseArgs, SCENARIOS } from "./verify-screenshots.mjs";
+import {
+  assertScreenshotMotionOff,
+  assessFramePair,
+  ensureFixtureProvider,
+  parseArgs,
+  SCENARIOS,
+  skillsApiJson,
+  writeSkillsFixture
+} from "./verify-screenshots.mjs";
 
-const DEFAULTS = ["core-ui", "seeded-workspace"];
+/** A solid-gray PNG buffer with optional per-pixel overrides for noise/regions. */
+function grayPng(width: number, height: number, overrides: Array<[number, number, number]> = []) {
+  const png = new PNG({ width, height });
+  png.data.fill(200);
+  for (let i = 3; i < png.data.length; i += 4) png.data[i] = 255;
+  for (const [x, y, value] of overrides) {
+    const k = (y * width + x) * 4;
+    png.data[k] = png.data[k + 1] = png.data[k + 2] = value;
+  }
+  return PNG.sync.write(png);
+}
+
+const DEFAULTS = ["core-ui", "seeded-workspace", "approval-flow", "skills-flow"];
+const SKILLS_FLOW_LABELS = [
+  "skills-settings",
+  "skill-picker-dollar",
+  "slash-skills",
+  "skill-chips",
+  "skills-global-only",
+  "skill-diagnostics",
+  "skill-precondition-blocked"
+];
 
 describe("verify-screenshots parseArgs", () => {
   it("defaults to the local scenarios with cleaning enabled", () => {
@@ -107,6 +137,168 @@ describe("verify-screenshots parseArgs", () => {
   });
 });
 
+describe("assessFramePair capture stability", () => {
+  it("treats byte-identical frames as stable", () => {
+    const frame = grayPng(20, 20);
+    expect(assessFramePair(frame, Buffer.from(frame))).toEqual({ stable: true, diffPixels: 0 });
+  });
+
+  it("tolerates sub-threshold compositor raster noise (±1 gray level)", () => {
+    // The real-world signature this guards: identical page content whose
+    // antialiased edges re-rasterize a hair differently per captured frame.
+    const a = grayPng(20, 20, [[10, 10, 245]]);
+    const b = grayPng(20, 20, [[10, 10, 246]]);
+    expect(a.equals(b)).toBe(false);
+    expect(assessFramePair(a, b)).toEqual({ stable: true, diffPixels: 0 });
+  });
+
+  it("still rejects real content changes", () => {
+    const a = grayPng(20, 20);
+    const b = grayPng(20, 20, [
+      [5, 5, 0],
+      [6, 5, 0],
+      [7, 5, 0]
+    ]);
+    const result = assessFramePair(a, b);
+    expect(result.stable).toBe(false);
+    expect(result.diffPixels).toBeGreaterThan(0);
+  });
+
+  it("treats undecodable or mismatched captures as unstable instead of throwing", () => {
+    const result = assessFramePair(grayPng(20, 20), grayPng(10, 10));
+    expect(result.stable).toBe(false);
+    expect(result.diffPixels).toBeNull();
+  });
+});
+
+describe("ensureFixtureProvider", () => {
+  it("reuses an existing fixture provider instead of creating a duplicate", async () => {
+    const existing = { id: "p1", name: "OpenAI", defaultModel: "gpt-5.1" };
+    const request = vi.fn(async () => [existing]);
+    await expect(ensureFixtureProvider("http://x", request)).resolves.toEqual(existing);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith("http://x", "/providers");
+  });
+
+  it("creates the fixture provider when none exists", async () => {
+    const request = vi.fn(async (_base: string, _endpoint: string, init?: { method?: string }) =>
+      init?.method === "POST" ? { id: "p2", name: "OpenAI" } : []
+    );
+    await ensureFixtureProvider("http://x", request);
+    expect(request).toHaveBeenCalledTimes(2);
+    const [, , init] = request.mock.calls[1] as [string, string, { method: string; body: string }];
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body) as { name: string; defaultModel: string };
+    expect(body.name).toBe("OpenAI");
+    expect(body.defaultModel).toBe("gpt-5.1");
+  });
+});
+
+describe("scenario hermeticity (source contracts)", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "scripts/verify-screenshots.mjs"),
+    "utf8"
+  );
+
+  it("seeded-workspace provisions its own provider before its first capture", () => {
+    // Solo runs and the shared default pass must render the same composer state;
+    // piggybacking on core-ui's provider made baselines depend on run grouping.
+    const provision = source.indexOf("ensureFixtureProvider(ctx.apiBase)");
+    expect(provision).toBeGreaterThan(-1);
+    expect(provision).toBeLessThan(
+      source.indexOf('capture(ctx, "seeded-workspace", "recent-threads")')
+    );
+  });
+
+  it("approval-flow shares the same idempotent provisioning helper", () => {
+    const scenarioStart = source.indexOf("async function scenarioApprovalFlow");
+    const scenarioEnd = source.indexOf("async function scenarioMinimaxLive");
+    const body = source.slice(scenarioStart, scenarioEnd);
+    expect(body).toContain("ensureFixtureProvider(ctx.apiBase)");
+  });
+
+  it("capture stability uses the tolerant frame comparison, not raw byte equality", () => {
+    expect(source).toContain("assessFramePair");
+  });
+
+  it("resets isolated harness state without deleting screenshots from earlier passes", () => {
+    const start = source.indexOf("async function withHarness");
+    const end = source.indexOf("async function runAdhocSession");
+    const body = source.slice(start, end);
+    expect(body).toContain("if (clean) await rm(outRoot");
+    expect(body).toContain("else await rm(runRoot");
+  });
+
+  it("keeps Skills fixture writes inside the isolated harness home and workspace", async () => {
+    const root = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const os = await vi.importActual<typeof import("node:os")>("node:os");
+    const fixtureRoot = await root.mkdtemp(path.join(os.tmpdir(), "marginalia-skills-shot-"));
+    const home = path.join(fixtureRoot, "home");
+    const workspace = path.join(fixtureRoot, "workspace");
+    try {
+      const fixture = await writeSkillsFixture({ root: fixtureRoot, home, workspace });
+      expect(fixture.writtenPaths.length).toBeGreaterThan(0);
+      expect(
+        fixture.writtenPaths.every((file: string) => file.startsWith(`${fixtureRoot}${path.sep}`))
+      ).toBe(true);
+      expect(
+        fixture.writtenPaths.every((file: string) =>
+          [".marginalia/skills", ".pi/skills", ".agents/skills"].some((directory) =>
+            file.split(path.sep).join("/").includes(`/${directory}/`)
+          )
+        )
+      ).toBe(true);
+      expect(
+        fixture.writtenPaths.some((file: string) => file.includes(process.env.HOME ?? ""))
+      ).toBe(false);
+    } finally {
+      await root.rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a Skills fixture root that escapes the isolated harness run", async () => {
+    const root = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const os = await vi.importActual<typeof import("node:os")>("node:os");
+    const fixtureRoot = await root.mkdtemp(path.join(os.tmpdir(), "marginalia-skills-boundary-"));
+    const escapedWorkspace = `${fixtureRoot}-escape`;
+    try {
+      await expect(
+        writeSkillsFixture({
+          root: fixtureRoot,
+          home: path.join(fixtureRoot, "home"),
+          workspace: escapedWorkspace
+        })
+      ).rejects.toThrow(/outside isolated run root/i);
+    } finally {
+      await root.rm(fixtureRoot, { recursive: true, force: true });
+      await root.rm(escapedWorkspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uses bearer authentication only in the Skills harness API helper", async () => {
+    const request = vi.fn(
+      async (_url: string, _init: RequestInit) =>
+        new Response(JSON.stringify({ catalogRevision: "catalog-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+    );
+    await skillsApiJson(
+      { url: "http://127.0.0.1:3456", capabilityToken: "fixture-secret" },
+      "/skills",
+      {},
+      request
+    );
+    expect(request).toHaveBeenCalledWith(
+      "http://127.0.0.1:3456/skills",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer fixture-secret" })
+      })
+    );
+    expect(source).not.toMatch(/manifest\.(?:capabilityToken|token)|capabilityToken.*summary/);
+  });
+});
+
 describe("screenshot determinism injection (electron main)", () => {
   const mainSource = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
 
@@ -121,9 +313,24 @@ describe("screenshot determinism injection (electron main)", () => {
 
 describe("SCENARIOS registry export", () => {
   it("exposes scenario metadata for the compare tool", () => {
-    expect(Object.keys(SCENARIOS)).toEqual(["core-ui", "seeded-workspace", "minimax-live"]);
+    expect(Object.keys(SCENARIOS)).toEqual([
+      "core-ui",
+      "seeded-workspace",
+      "approval-flow",
+      "skills-flow",
+      "minimax-live"
+    ]);
     expect(SCENARIOS["minimax-live"].live).toBe(true);
     expect(SCENARIOS["core-ui"].expected).toContain("first-run");
     expect(SCENARIOS["seeded-workspace"].expected).toContain("recent-threads");
+    expect(SCENARIOS["approval-flow"].expected).toContain("approval-command-pending");
+    expect(SCENARIOS["skills-flow"].expected).toEqual(SKILLS_FLOW_LABELS);
+  });
+
+  it("isolates env-declaring scenarios (e.g. approval-flow's fake agent) from the shared harness pass", () => {
+    expect(SCENARIOS["approval-flow"].env).toEqual({ MARGINALIA_FAKE_AGENT: "1" });
+    expect(SCENARIOS["skills-flow"].env).toEqual({ MARGINALIA_FAKE_AGENT: "1" });
+    expect(SCENARIOS["core-ui"].env).toBeUndefined();
+    expect(SCENARIOS["seeded-workspace"].env).toBeUndefined();
   });
 });

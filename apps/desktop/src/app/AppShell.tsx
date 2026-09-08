@@ -12,12 +12,20 @@ import { DocumentPanel } from "@/documents/DocumentPanel.js";
 import { SettingsView } from "@/settings/SettingsView.js";
 import { Topbar } from "./Topbar.js";
 
-export function AppShell({ serverUrl }: { serverUrl: string }) {
-  const api = useApi(serverUrl);
+export function AppShell({
+  serverUrl,
+  capabilityToken
+}: {
+  serverUrl: string;
+  capabilityToken: string;
+}) {
+  const api = useApi(serverUrl, capabilityToken);
   const { t } = useTranslation();
   const view = useAppStore((s) => s.view);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const activeSessionTitle = useAppStore((s) => s.activeSessionTitle);
+  const settingsEntryTab = useAppStore((s) => s.settingsEntryTab);
+  const settingsEntryRevision = useAppStore((s) => s.settingsEntryRevision);
   const leftCollapsed = useAppStore((s) => s.leftSidebarCollapsed);
   const rightCollapsed = useAppStore((s) => s.rightPanelCollapsed);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
@@ -33,10 +41,11 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
   const setRightWidth = useAppStore((s) => s.setRightPanelWidth);
   const workspaces = useWorkspaces(api);
   const noWorkspaces = !workspaces.loading && workspaces.data.length === 0;
-  const activeWorkspaceName = useMemo(
-    () => workspaces.data.find((w) => w.id === activeWorkspaceId)?.name ?? null,
+  const activeWorkspace = useMemo(
+    () => workspaces.data.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [workspaces.data, activeWorkspaceId]
   );
+  const activeWorkspaceName = activeWorkspace?.name ?? null;
   const showRight = view === "chat" && !rightCollapsed && Boolean(activeWorkspaceId);
 
   const title =
@@ -66,7 +75,14 @@ export function AppShell({ serverUrl }: { serverUrl: string }) {
         </aside>
         <main className="min-h-0 flex-1 overflow-hidden bg-background">
           {view === "settings" ? (
-            <SettingsView api={api} />
+            <SettingsView
+              key={settingsEntryRevision}
+              api={api}
+              initialTab={settingsEntryTab}
+              skillsWorkspace={
+                activeWorkspace ? { id: activeWorkspace.id, name: activeWorkspace.name } : null
+              }
+            />
           ) : noWorkspaces ? (
             <FirstRunView api={api} />
           ) : view === "chat" && activeSessionId ? (

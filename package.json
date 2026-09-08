@@ -4,22 +4,27 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:workspace-libs": "pnpm --filter @marginalia/chat-core build",
     "ensure:native": "pnpm --filter @marginalia/pi-server run ensure:native",
-    "predev": "pnpm run ensure:native",
+    "predev": "pnpm run build:workspace-libs && pnpm run ensure:native",
     "dev": "pnpm --filter @marginalia/pi-server build && concurrently -k -n server,desktop \"pnpm --filter @marginalia/pi-server build --watch\" \"pnpm --filter @marginalia/desktop dev\"",
     "build": "pnpm -r build",
     "package": "pnpm --filter @marginalia/desktop package",
     "dist": "pnpm --filter @marginalia/desktop dist",
-    "pretest": "pnpm run ensure:native",
-    "test": "pnpm -r test",
+    "pretest": "pnpm run build:workspace-libs && pnpm run ensure:native",
+    "test:docs": "node --test scripts/docs-check.test.mjs",
+    "test": "pnpm run test:docs && pnpm -r test",
+    "pretypecheck": "pnpm run build:workspace-libs",
     "typecheck": "pnpm -r typecheck",
+    "docs:check": "node scripts/docs-check.mjs",
+    "verify": "pnpm docs:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "verify:screenshots": "pnpm --filter @marginalia/desktop verify:screenshots",
     "verify:screenshots:live": "pnpm --filter @marginalia/desktop verify:screenshots:live",
     "verify:screenshots:shot": "pnpm --filter @marginalia/desktop verify:screenshots:shot",
     "verify:visual": "pnpm --filter @marginalia/desktop verify:visual",
-    "lint": "eslint apps packages",
-    "format": "prettier --write \"{apps,packages}/**/*.{ts,tsx,css,json}\"",
-    "format:check": "prettier --check \"{apps,packages}/**/*.{ts,tsx,css,json}\""
+    "lint": "eslint apps packages scripts",
+    "format": "prettier --write \"*.{md,json,js,mjs,cjs}\" \"pnpm-workspace.yaml\" \"{apps,packages}/**/*.{ts,tsx,css,json}\" \"scripts/**/*.{mjs,json}\" \"docs/{README.md,internal/README.md}\" \"docs/{product,user,developer,superpowers,contracts}/**/*.{md,json}\" \".github/**/*.{md,yml,yaml}\"",
+    "format:check": "prettier --check \"*.{md,json,js,mjs,cjs}\" \"pnpm-workspace.yaml\" \"{apps,packages}/**/*.{ts,tsx,css,json}\" \"scripts/**/*.{mjs,json}\" \"docs/{README.md,internal/README.md}\" \"docs/{product,user,developer,superpowers,contracts}/**/*.{md,json}\" \".github/**/*.{md,yml,yaml}\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -33,6 +38,6 @@
   },
   "packageManager": "pnpm@9.15.4",
   "engines": {
-    "node": ">=20.11.0"
+    "node": ">=22.19.0"
   }
 }

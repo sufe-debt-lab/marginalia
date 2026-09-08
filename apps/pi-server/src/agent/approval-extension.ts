@@ -1,7 +1,24 @@
 import type { ApprovalPayload } from "./agent-client.js";
 import type { ApprovalGateway } from "./approval-gateway.js";
 import type { ApprovalNeed } from "./approval-policy.js";
-import { previewEdit, previewWrite } from "./diff-preview.js";
+import { previewEdits, previewWrite, type EditOp } from "./diff-preview.js";
+
+/**
+ * pi's edit tool accepts either the legacy single `{ oldText, newText }` or the
+ * current `{ edits: [{ oldText, newText }, ...] }` array. Normalise both to an
+ * edit list so the diff preview isn't empty when a model uses the array form.
+ */
+function parseEdits(input: Record<string, unknown>): EditOp[] {
+  if (Array.isArray(input.edits)) {
+    return input.edits
+      .map((edit) => {
+        const e = edit as { oldText?: unknown; newText?: unknown };
+        return { oldText: String(e.oldText ?? ""), newText: String(e.newText ?? "") };
+      })
+      .filter((e) => e.oldText || e.newText);
+  }
+  return [{ oldText: String(input.oldText ?? ""), newText: String(input.newText ?? "") }];
+}
 
 export type PiExtensionApi = {
   on(
@@ -22,12 +39,7 @@ function buildPayload(
     return { kind: "command", command: need.command, cwd: workspaceRoot };
   }
   if (need.mode === "edit") {
-    const preview = previewEdit(
-      workspaceRoot,
-      need.path,
-      String(input.oldText ?? ""),
-      String(input.newText ?? "")
-    );
+    const preview = previewEdits(workspaceRoot, need.path, parseEdits(input));
     return { kind: "file_edit", path: need.path, mode: "edit", ...preview };
   }
   const preview = previewWrite(workspaceRoot, need.path, String(input.content ?? ""));

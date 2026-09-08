@@ -1,6 +1,46 @@
+---
+type: spec
+record_id: SPEC-P1-CHAT-CORE-001
+status: active
+created: 2026-07-08
+updated: 2026-07-11
+target_milestone: M0-trustworthy-local-alpha
+owner: repository-maintainers
+docs_impact:
+  user:
+    - docs/user/guide.md
+    - docs/user/concepts.md
+    - docs/user/configuration.md
+  developer:
+    - docs/developer/api.md
+    - docs/developer/architecture.md
+    - docs/developer/development.md
+  product_status: true
+---
+
 # P1 对话核心体验设计（Codex 级交互）
 
 日期：2026-07-08 · 状态：已与用户逐节确认，并经独立评审修订（v2）
+
+## Current Progress
+
+截至 2026-07-11（验证提交 `1199645`）：
+
+- 第 1 节审批骨架已交付并归档为 `PLAN-P1-APPROVAL-BACKBONE-001`。审批事件、持久化、桌面端卡片和恢复
+  链路均已实现；2026-07-19 又完成 provider/model/tool-profile cache invalidation，关闭 `P0-SEC-004`。
+  默认权限、命令判定和 workspace 边界仍有 readiness P0，不能视为可发布安全边界。
+- 第 2 节对应的 `PLAN-P1-MESSAGE-STREAM-001` 已完成 Task 1–11，包括工具进度、可展开工具卡、thinking、长文排版、目录、复制/导出和存入 workspace；Task 12–15（可暂停滚动、文件变更事件、回合摘要、完整截图与文档同步）未完成，计划以部分交付关闭并转入 `P1-MESSAGE-001`。
+- 第 3 节 Composer 与第 4 节会话管理/错误恢复尚未完成，因此本 spec 继续保持 `active`。
+- 当前发布决定仍为 NO-GO；完成的交互能力与产品发布门槛分别评估，不能用已有 UI 或测试数量替代安全、恢复和文档准确性验收。
+
+## Deviation
+
+- 第 1 节中的“Ask 是空操作”和“尚未传 resourceLoader”是 2026-07-08 的设计时基线，审批 extension、事件、
+  持久化和 UI 已经交付。默认权限仍是 Full；AgentSession cache 现已按 provider/model/tool profile 失效并
+  重建，`P0-SEC-004` 于 2026-07-19 关闭。Ask shell 语义问题仍由 `P0-SEC-003` 跟踪。
+- 最终审批 REST body 为 `{ approved, reason?, alwaysAllowPrefix? }`，不是初稿中的 `{ decision, reason? }`；审批表用 `status` 保存 `pending/approved/denied/expired`。
+- diff 预览无法复用未导出的 pi 内部 helper，实际使用现有 `diff` 包；精确预览失败时降级为近似 patch。
+- 消息代码高亮保留 highlight.js。目录只解析助手消息的第一个 text part。滚动暂停、`file_changed`、TurnSummary、重开还原和专项视觉场景未完成，由 `P1-MESSAGE-001` 跟踪。
 
 ## 背景与目标
 
@@ -34,20 +74,20 @@ Marginalia 的目标用户场景是**文本工作**（文章解读、基于资�
 
 ## 第 1 节：总体架构与审批权限
 
-**现状**：API 已定义 `readonly / ask / full` 三档权限，但 `ask` 是空操作——
+**设计时基线（已过期）**：API 已定义 `readonly / ask / full` 三档权限，但 `ask` 是空操作——
 `PiCodingAgentClient` 只对 `readonly` 传工具白名单，选 `ask` 实际等于 `full`。
 桌面端 store 的 `permission` 是全局单值且默认 `full`，需改为默认 `ask` 并按会话记忆
-（见第 3 节）。
+（见第 3 节）。当前审批链路已经实现，默认值和缓存权限边界仍未达到设计目标。
 
 **总体架构不变**（renderer ←SSE← pi-server ←→ pi agent），新增双向审批通道。
 
-**三档权限语义**（按副作用分级）：
+**三档权限目标语义**（按副作用分级，默认 Ask 尚未落地）：
 
-| 档位          | 行为                                                                         |
-| ------------- | ---------------------------------------------------------------------------- |
-| `readonly`    | 只给 read/grep/find/ls 只读工具（现状保持）                                  |
-| `ask`（默认） | 只读操作与**新建文件**直通；**覆盖/删除已有文件**必审；bash 保守判定（见下） |
-| `full`        | 全部直通，事后可查执行记录                                                   |
+| 档位              | 行为                                                                         |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `readonly`        | 只给 read/grep/find/ls 只读工具（现状保持）                                  |
+| `ask`（目标默认） | 只读操作与**新建文件**直通；**覆盖/删除已有文件**必审；bash 保守判定（见下） |
+| `full`            | 全部直通，事后可查执行记录                                                   |
 
 `ask` 档的副作用判定规则：
 
@@ -78,7 +118,7 @@ Marginalia 的目标用户场景是**文本工作**（文章解读、基于资�
 
 1. **pi 对接**：`PiCodingAgentClient` 为每个 session 构造
    `DefaultResourceLoader({ extensionFactories: [approvalExtension], eventBus })`
-   （现状 `createSession` 未传 resourceLoader，属新增）。approvalExtension 在
+   （设计时 `createSession` 未传 resourceLoader；当前已经接入）。approvalExtension 在
    `tool_call` 事件（异步、可阻塞）中调用 ApprovalGateway：需审批时生成 approvalId、
    通过共享 eventBus 发出审批请求、await pending Promise；拒绝则返回
    `{ block: true, reason: 用户理由 }`。不使用 `ctx.ui.confirm`（TUI 概念，headless
@@ -90,13 +130,13 @@ Marginalia 的目标用户场景是**文本工作**（文章解读、基于资�
    `resolveApproval(sessionId, approvalId, decision)`。SSE 层将审批作为 run envelope 的
    第三类事件（`approval_requested` / `approval_resolved`），与 `run_started` /
    `agent_event` / `run_completed` 并列——**`agent_event` 仍保持纯 pi 透传不动**，红线不破。
-   桌面端新增 `POST /sessions/:sid/approvals/:id { decision, reason? }` 回传决定。
+   桌面端最终使用 `POST /sessions/:sid/approvals/:id { approved, reason?, alwaysAllowPrefix? }` 回传决定。
 4. **diff 生成复用 pi**：不自写 diff。预览用 pi 导出的
    `generateUnifiedPatch(path, oldContent, newContent)`；`edit` 工具入参只有
    `oldText/newText`，pi-server 需**读盘 + 用 pi 的 edit 应用函数模拟**得到完整新文，
    再生成 diff——保证预览与 pi 实际落盘结果一致（含 fuzzy 匹配行为）。实测 `generateUnifiedPatch` / `applyEditsToNormalizedContent` 未从 pi 包根导出（exports map 拒绝 deep import），实现改用 pi 同款 `diff` 包生成 patch；edit 预览精确匹配优先，失败降级为 oldText→newText 近似 diff 并在卡片上标注「近似预览」。
 5. **持久化与重开 merge**：`approvals` 表（id, run_id, tool_call_id, kind,
-   payload(diff/命令), decision, reason, decided_at）。重开会话时，消息接口在 pi session
+   payload(diff/命令), status, reason, decided_at）。重开会话时，消息接口在 pi session
    文件消息之外附带审批元数据，桌面端按 `toolCallId` merge 到对应工具卡，渲染最终结果态
    （批准/拒绝/过期）。
 6. **测试策略**（修正原「fake-agent-client 测审批」的不自洽）：ApprovalGateway 独立于
@@ -106,8 +146,8 @@ Marginalia 的目标用户场景是**文本工作**（文章解读、基于资�
 
 ## 第 2 节：消息流渲染
 
-现状问题：ToolCard 单行不可展开、思考过程是一坨斜体、代码块无高亮无复制、自动滚动强制跟随、
-正文排版未为长文优化。
+设计时问题：ToolCard 单行不可展开、思考过程是一坨斜体、代码块无高亮无复制、自动滚动强制跟随、
+正文排版未为长文优化。除自动滚动暂停外，这些主路径已经按 Current Progress 所述实现。
 
 1. **工具卡片重做**（Codex 式折叠卡片）
    - 默认一行摘要，按工具类型定制：`read` 显示文件名、`bash` 显示命令、`edit/write`

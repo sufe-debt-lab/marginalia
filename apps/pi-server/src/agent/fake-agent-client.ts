@@ -1,11 +1,12 @@
 import type {
   AgentClient,
+  AgentPrepareInput,
   AgentRunEvent,
-  AgentRunInput,
-  AgentRunResult,
+  AgentRunExecution,
   ApprovalDecision,
   ApprovalRequestedEvent,
-  ApprovalResolvedEvent
+  ApprovalResolvedEvent,
+  PreparedAgentRun
 } from "./agent-client.js";
 
 /**
@@ -47,39 +48,88 @@ export class FakeAgentClient implements AgentClient {
     return count;
   }
 
-  async run(input: AgentRunInput): Promise<AgentRunResult> {
+  async prepare(input: AgentPrepareInput): Promise<PreparedAgentRun> {
     const events = this.nextEvents.slice();
     this.nextEvents = [];
-    const pending = this.pending;
-    async function* iterate(): AsyncGenerator<AgentRunEvent> {
-      for (const event of events) {
-        yield event;
-        if ((event as { type?: string }).type === "approval_requested") {
-          const req = event as ApprovalRequestedEvent;
-          const decision = await new Promise<ApprovalDecision & { expired?: boolean }>((resolve) =>
-            pending.set(req.approvalId, {
-              sessionId: req.sessionId,
-              toolCallId: req.toolCallId,
-              resolve
-            })
-          );
-          const resolved: ApprovalResolvedEvent = {
-            type: "approval_resolved",
-            approvalId: req.approvalId,
-            sessionId: req.sessionId,
-            toolCallId: req.toolCallId,
-            approved: decision.approved,
-            reason: decision.reason,
-            expired: decision.expired
-          };
-          yield resolved;
-        }
-      }
-    }
+    let started = false;
     return {
       sessionFile: `/tmp/fake/${input.sessionId}.jsonl`,
-      events: iterate(),
-      dispose() {}
+      release() {},
+      start: () => {
+        if (started) throw new Error("prepared run already started");
+        started = true;
+        return this.start(input.sessionId, events);
+      }
+    };
+  }
+
+  private start(sessionId: string, events: AgentRunEvent[]): AgentRunExecution {
+    let aborted = false;
+    let settledDone = false;
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
+    const settle = () => {
+      if (settledDone) return;
+      settledDone = true;
+      resolveSettled();
+    };
+    const pending = this.pending;
+    async function* iterate(): AsyncGenerator<AgentRunEvent> {
+      try {
+        for (const event of events) {
+          if (aborted) return;
+          if ((event as { type?: string }).type === "approval_requested") {
+            const req = event as ApprovalRequestedEvent;
+            // Mirror ApprovalGateway.request(): register the pending entry BEFORE
+            // the event reaches the consumer, so resolveApproval/cancelPending
+            // fired from an abort handler mid-delivery can always find it.
+            const decisionPromise = new Promise<ApprovalDecision & { expired?: boolean }>(
+              (resolve) =>
+                pending.set(req.approvalId, {
+                  sessionId: req.sessionId,
+                  toolCallId: req.toolCallId,
+                  resolve
+                })
+            );
+            yield event;
+            const decision = await decisionPromise;
+            if (aborted) return;
+            const resolved: ApprovalResolvedEvent = {
+              type: "approval_resolved",
+              approvalId: req.approvalId,
+              sessionId: req.sessionId,
+              toolCallId: req.toolCallId,
+              approved: decision.approved,
+              reason: decision.reason,
+              expired: decision.expired
+            };
+            yield resolved;
+          } else {
+            yield event;
+          }
+        }
+      } finally {
+        settle();
+      }
+    }
+    const iterator = iterate();
+    return {
+      events: {
+        [Symbol.asyncIterator]: () => iterator
+      },
+      abort: () => {
+        if (aborted) return;
+        aborted = true;
+        this.cancelPending(sessionId);
+        try {
+          void Promise.resolve(iterator.return(undefined)).then(settle, settle);
+        } catch {
+          settle();
+        }
+      },
+      settled
     };
   }
 }

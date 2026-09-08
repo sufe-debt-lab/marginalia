@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button.js";
 import { useDocumentContent } from "@/hooks/useDocumentContent.js";
 import { useFileTree } from "@/hooks/useFileTree.js";
 import { useTranslation } from "@/i18n/useTranslation.js";
-import { useAppStore } from "@/store/app-store.js";
+import { useAppStore, type TurnOwner } from "@/store/app-store.js";
 import { cn } from "@/lib/cn.js";
 import { DocumentTabs, type Tab } from "./DocumentTabs.js";
 import { DocumentTree } from "./DocumentTree.js";
@@ -43,7 +43,11 @@ export function DocumentPanel({
   const [filter, setFilter] = useState("");
   const tree = useFileTree(api, workspaceId);
   const doc = useDocumentContent(api, workspaceId, activeTab);
-  const addContextFile = useAppStore((s) => s.addContextFile);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const view = useAppStore((s) => s.view);
+  const addTurnContextFile = useAppStore((s) => s.addTurnContextFile);
+  const turnOwner: TurnOwner =
+    view === "chat" && activeSessionId ? `session:${activeSessionId}` : `new:${workspaceId}`;
 
   // No tab open → file tree fills the panel. A tab open → split (narrow tree + viewer).
   const hasTab = activeTab !== null;
@@ -233,7 +237,7 @@ export function DocumentPanel({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => activeTab && addContextFile(activeTab)}
+                onClick={() => activeTab && addTurnContextFile(turnOwner, activeTab)}
                 aria-label={t("docPanel.attachToChat")}
               >
                 <Paperclip className="mr-1 h-3 w-3" />

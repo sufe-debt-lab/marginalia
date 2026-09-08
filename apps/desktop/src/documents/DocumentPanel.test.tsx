@@ -30,8 +30,8 @@ describe("DocumentPanel", () => {
       activeWorkspaceId: "w1",
       activeSessionId: "s1",
       view: "chat",
-      pendingPrompt: null,
-      contextFiles: [],
+      pendingTurn: null,
+      turnDrafts: {},
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false
     }));
@@ -103,6 +103,6 @@ describe("DocumentPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /open README.md/i }));
     await waitFor(() => screen.getByRole("button", { name: /attach to chat/i }));
     await userEvent.click(screen.getByRole("button", { name: /attach to chat/i }));
-    expect(useAppStore.getState().contextFiles).toContain("README.md");
+    expect(useAppStore.getState().getTurnDraft("session:s1").contextFiles).toContain("README.md");
   });
 });

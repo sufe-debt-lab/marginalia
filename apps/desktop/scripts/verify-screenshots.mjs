@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { diffPngBuffers } from "./lib/image-diff.mjs";
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "../..");
 const outRoot = path.join(repoRoot, "output/desktop-screenshots");
@@ -47,12 +48,44 @@ const SCENARIOS = {
       "sidebar-session-timestamps",
       "sidebar-show-more-expanded",
       "chat-seeded-session",
+      "save-dialog-input",
+      "save-dialog-overwrite",
       "attach-picker",
       "attachment-card",
       "mention-menu",
       "mention-inline-token"
     ],
     run: scenarioSeededWorkspace
+  },
+  "approval-flow": {
+    description: "Approval cards: command pending/approved, edit diff pending, denied with reason.",
+    default: true,
+    // Runs the scripted fake agent instead of a real provider, so this scenario
+    // gets its own isolated harness pass (see main()'s scenario grouping below).
+    env: { MARGINALIA_FAKE_AGENT: "1" },
+    expected: [
+      "approval-command-pending",
+      "approval-command-approved",
+      "approval-edit-pending",
+      "approval-denied"
+    ],
+    run: scenarioApprovalFlow
+  },
+  "skills-flow": {
+    description:
+      "Skills settings, dual picker, ordered chips, global context, diagnostics and blocked turns.",
+    default: true,
+    env: { MARGINALIA_FAKE_AGENT: "1" },
+    expected: [
+      "skills-settings",
+      "skill-picker-dollar",
+      "slash-skills",
+      "skill-chips",
+      "skills-global-only",
+      "skill-diagnostics",
+      "skill-precondition-blocked"
+    ],
+    run: scenarioSkillsFlow
   },
   "minimax-live": {
     live: true,
@@ -216,6 +249,48 @@ async function apiJson(baseUrl, endpoint, init = {}) {
   return response.json();
 }
 
+export async function skillsApiJson(server, endpoint, init = {}, request = globalThis.fetch) {
+  const signal = init.signal ?? AbortSignal.timeout(15000);
+  const response = await request(`${server.url}${endpoint}`, {
+    ...init,
+    signal,
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${server.capabilityToken}`,
+      ...(init.headers ?? {})
+    }
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    throw new Error(`${endpoint}: ${response.status} ${detail}`);
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+// The one provider fixture every local scenario renders: its name/defaultModel
+// are what the composer chip and assistant header show, so scenarios must
+// provision the exact same shape whether they run solo or after another
+// scenario in the shared harness pass (create-or-reuse keeps reruns and the
+// shared-DB isolated passes from stacking duplicates).
+const FIXTURE_PROVIDER = {
+  name: "OpenAI",
+  apiKey: "sk-screenshot-fixture",
+  defaultModel: "gpt-5.1"
+};
+
+export async function ensureFixtureProvider(apiBase, request = apiJson) {
+  const providers = await request(apiBase, "/providers");
+  const existing = (Array.isArray(providers) ? providers : []).find(
+    (provider) => provider?.name === FIXTURE_PROVIDER.name
+  );
+  if (existing) return existing;
+  return request(apiBase, "/providers", {
+    method: "POST",
+    body: JSON.stringify(FIXTURE_PROVIDER)
+  });
+}
+
 async function waitForMain(page) {
   await page.waitForLoadState("domcontentloaded");
   await page.getByRole("main").waitFor({ timeout: 30000 });
@@ -241,7 +316,9 @@ async function waitForPiServerUrl(page) {
   const start = Date.now();
   while (Date.now() - start < 30000) {
     const status = await page.evaluate(() => window.marginalia?.getPiServerStatus?.());
-    if (status?.status === "ready") return status.url;
+    if (status?.status === "ready") {
+      return { url: status.url, capabilityToken: status.capabilityToken };
+    }
     if (status?.status === "failed") {
       const logs = Array.isArray(status.logs) ? `\n${status.logs.join("\n")}` : "";
       throw new Error(`pi-server failed: ${status.error}${logs}`);
@@ -251,7 +328,7 @@ async function waitForPiServerUrl(page) {
   throw new Error("pi-server did not become ready");
 }
 
-async function startHarness() {
+async function startHarness(extraEnv = {}) {
   await runCommand(
     "ensure:native",
     "pnpm",
@@ -293,7 +370,8 @@ async function startHarness() {
       MARGINALIA_DB_PATH: path.join(runRoot, "db.sqlite"),
       MARGINALIA_SCREENSHOT_VERIFY: "1",
       MARGINALIA_USER_DATA_DIR: path.join(runRoot, "user-data"),
-      HOME: path.join(runRoot, "home")
+      HOME: path.join(runRoot, "home"),
+      ...extraEnv
     };
     await mkdir(env.HOME, { recursive: true });
     await mkdir(env.MARGINALIA_USER_DATA_DIR, { recursive: true });
@@ -311,9 +389,11 @@ async function startHarness() {
     page.on("pageerror", (error) => console.log(`[renderer:pageerror] ${error.message}`));
     await page.waitForLoadState("domcontentloaded");
     await assertScreenshotMotionOff(page);
-    apiBase = await waitForPiServerUrl(page);
+    const server = await waitForPiServerUrl(page);
+    apiBase = server.url;
+    const skillsApi = (endpoint, init) => skillsApiJson(server, endpoint, init);
     await waitForMain(page);
-    return { app, page, vite, viteUrl, apiBase };
+    return { app, page, vite, viteUrl, apiBase, skillsApi };
   } catch (error) {
     await mkdir(outRoot, { recursive: true });
     const page = app ? await app.firstWindow().catch(() => null) : null;
@@ -326,6 +406,25 @@ async function startHarness() {
 
 const STABLE_RETRY_LIMIT = 10;
 const STABLE_RETRY_DELAY_MS = 200;
+// Same notion of "different" as compare-screenshots' gate: pixelmatch at this
+// threshold ignores the compositor's sub-visible raster noise (antialiased
+// edges re-rasterizing ±1 gray level between captured frames) that byte
+// equality can never converge on, while real content changes still fail.
+const STABLE_PIXEL_THRESHOLD = 0.1;
+
+// Decide whether two consecutive captures are "the same frame". Byte equality
+// is the fast path; otherwise decode and diff. Undecodable or size-mismatched
+// buffers report unstable (diffPixels: null) instead of throwing so the retry
+// loop keeps polling.
+export function assessFramePair(previous, next) {
+  if (next.equals(previous)) return { stable: true, diffPixels: 0 };
+  try {
+    const { diffPixels } = diffPngBuffers(previous, next, { threshold: STABLE_PIXEL_THRESHOLD });
+    return { stable: diffPixels === 0, diffPixels };
+  } catch {
+    return { stable: false, diffPixels: null };
+  }
+}
 
 async function captureStablePng(page) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -338,16 +437,18 @@ async function captureStablePng(page) {
       })
   );
   let previous = await page.screenshot({ fullPage: false, scale: "css" });
-  let last = previous;
+  let lastDiffPixels = null;
   for (let attempt = 0; attempt < STABLE_RETRY_LIMIT; attempt += 1) {
     await page.waitForTimeout(STABLE_RETRY_DELAY_MS);
-    last = await page.screenshot({ fullPage: false, scale: "css" });
-    if (last.equals(previous)) return last;
-    previous = last;
+    const next = await page.screenshot({ fullPage: false, scale: "css" });
+    const { stable, diffPixels } = assessFramePair(previous, next);
+    if (stable) return next;
+    lastDiffPixels = diffPixels;
+    previous = next;
   }
   throw new Error(
     `screenshot did not become stable after ${STABLE_RETRY_LIMIT} retries ` +
-      `(last two frames: ${previous.length}B vs ${last.length}B); ` +
+      `(last pair differed by ${lastDiffPixels ?? "unmeasurable"} pixels above threshold); ` +
       "check for animation or async content not covered by data-motion=off"
   );
 }
@@ -389,6 +490,20 @@ async function goNewChat(page) {
     .waitFor({ timeout: 10000 });
 }
 
+// Fills the composer and submits it (same fill-then-click-send shape as
+// scenarioMinimaxLive's inline steps, factored out here since approval-flow
+// drives two separate turns).
+async function typeAndSend(page, text) {
+  await page
+    .getByRole("textbox", { name: /message|消息/i })
+    .first()
+    .fill(text);
+  await page
+    .getByRole("button", { name: /send|发送/i })
+    .first()
+    .click({ timeout: 5000 });
+}
+
 async function waitForDocumentPanelReady(page) {
   await page.locator("aside[aria-label='Document panel']").waitFor({ timeout: 10000 });
   await page.waitForFunction(
@@ -426,6 +541,16 @@ async function resetUiState(page) {
   });
 }
 
+async function updatePersistedUiState(page, updates) {
+  await page.evaluate((next) => {
+    const raw = window.localStorage.getItem("marginalia-app");
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    parsed.state = { ...parsed.state, ...next };
+    window.localStorage.setItem("marginalia-app", JSON.stringify(parsed));
+  }, updates);
+}
+
 async function reloadApp(page) {
   await page.reload();
   await waitForMain(page);
@@ -452,8 +577,132 @@ async function writeSeedWorkspace() {
   return root;
 }
 
+function skillMarkdown(name, description, body, extraFrontmatter = "") {
+  return [
+    "---",
+    `name: ${name}`,
+    ...(description === null ? [] : [`description: ${description}`]),
+    ...(extraFrontmatter ? [extraFrontmatter] : []),
+    "---",
+    "",
+    body,
+    ""
+  ].join("\n");
+}
+
+function assertInsideRunRoot(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Skills fixture path is outside isolated run root: ${candidate}`);
+  }
+}
+
+export async function writeSkillsFixture({ root, home, workspace }) {
+  assertInsideRunRoot(root, home);
+  assertInsideRunRoot(root, workspace);
+  const fixtures = [
+    {
+      root: workspace,
+      relative: ".marginalia/skills/release-review/SKILL.md",
+      content: skillMarkdown(
+        "release-review",
+        "Review a release checklist and verification evidence.",
+        "# Release review\n\nCheck scope, tests, documentation, and release evidence in order."
+      )
+    },
+    {
+      root: workspace,
+      relative: ".pi/skills/release-review-shadow/SKILL.md",
+      content: skillMarkdown(
+        "release-review",
+        "Lower-priority release review candidate.",
+        "# Shadowed release review\n\nThis candidate demonstrates deterministic collision diagnostics."
+      )
+    },
+    {
+      root: workspace,
+      relative: ".marginalia/skills/disabled-helper/SKILL.md",
+      content: skillMarkdown(
+        "disabled-helper",
+        "A helper toggled off through the real Settings control.",
+        "# Disabled helper\n\nThis fixture demonstrates Marginalia's private enablement preference."
+      )
+    },
+    {
+      root: workspace,
+      relative: ".agents/skills/missing-description/SKILL.md",
+      content: skillMarkdown(
+        "missing-description",
+        null,
+        "# Missing description\n\nPi rejects this candidate while Settings keeps its diagnostic visible."
+      )
+    },
+    {
+      root: workspace,
+      relative: ".agents/skills/invalid-name/SKILL.md",
+      content: skillMarkdown(
+        "Invalid_Name",
+        "A loadable candidate with a Pi name warning.",
+        "# Warning candidate\n\nThe invalid name remains loadable and carries a warning."
+      )
+    },
+    {
+      root: workspace,
+      relative: ".pi/skills/oversized/SKILL.md",
+      content: skillMarkdown(
+        "oversized-reference",
+        "A valid implicit Skill whose body is too large for explicit selection.",
+        `# Oversized reference\n\n${"x".repeat(512 * 1024)}`
+      )
+    },
+    {
+      root: home,
+      relative: ".marginalia/skills/explicit-only/SKILL.md",
+      content: skillMarkdown(
+        "explicit-only",
+        "A global Skill available only through explicit selection.",
+        "# Explicit only\n\nUse this global fixture only when the user selects it.",
+        "disable-model-invocation: true"
+      )
+    },
+    {
+      root: home,
+      relative: ".agents/skills/global-audit/SKILL.md",
+      content: skillMarkdown(
+        "global-audit",
+        "A global Agent Skill available without a workspace.",
+        "# Global audit\n\nAudit a plan from any workspace context."
+      )
+    }
+  ];
+
+  const writtenPaths = [];
+  for (const fixture of fixtures) {
+    const file = path.join(fixture.root, fixture.relative);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, fixture.content);
+    writtenPaths.push(file);
+  }
+  return {
+    writtenPaths,
+    effectivePath: path.join(workspace, ".marginalia/skills/release-review/SKILL.md")
+  };
+}
+
 async function ensureSeededWorkspace(ctx) {
   if (ctx.seed) return ctx.seed;
+
+  // Isolated passes run with clean=false and inherit the shared pass's
+  // database, so the fixture must be create-or-reuse — a second
+  // "screenshot-fixture" workspace would double the sidebar in captures.
+  const existing = (await apiJson(ctx.apiBase, "/workspaces")).find(
+    (workspace) => workspace?.name === "screenshot-fixture"
+  );
+  if (existing) {
+    await apiJson(ctx.apiBase, `/workspaces/${existing.id}/open`, { method: "PATCH" });
+    ctx.seed = { workspace: existing, sessions: [] };
+    return ctx.seed;
+  }
 
   const seedRoot = await writeSeedWorkspace();
   const workspace = await apiJson(ctx.apiBase, "/workspaces", {
@@ -553,7 +802,7 @@ async function scenarioCoreUi(ctx) {
   await capture(ctx, "core-ui", "settings-general");
 
   await ctx.page
-    .getByRole("button", { name: /providers|服务商/i })
+    .getByRole("tab", { name: /providers|服务商/i })
     .first()
     .click({ timeout: 5000 });
   await ctx.page
@@ -638,7 +887,7 @@ async function scenarioCoreUi(ctx) {
   await ctx.page.keyboard.press("Escape");
 
   await ctx.page
-    .getByRole("button", { name: /general|通用/i })
+    .getByRole("tab", { name: /general|通用/i })
     .first()
     .click({ timeout: 5000 });
   await ctx.page.getByRole("button", { name: "中文" }).first().click({ timeout: 5000 });
@@ -682,6 +931,9 @@ async function scenarioCoreUi(ctx) {
 
 async function scenarioSeededWorkspace(ctx) {
   await ensureSeededWorkspace(ctx);
+  // Solo runs and the shared default pass must render the same composer state
+  // (provider chip + assistant model label) — never piggyback on core-ui's.
+  await ensureFixtureProvider(ctx.apiBase);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
@@ -716,6 +968,34 @@ async function scenarioSeededWorkspace(ctx) {
   await waitForDocumentPanelReady(ctx.page);
   await capture(ctx, "seeded-workspace", "chat-seeded-session");
 
+  // Hovering the assistant bubble reveals its action bar (copy / export / save);
+  // "save to workspace" opens the dialog added in this change.
+  await ctx.page.getByText(/implementation, verification and release notes/i).hover();
+  const saveToWorkspaceButton = ctx.page
+    .getByRole("button", { name: /save to workspace|存入工作区/i })
+    .first();
+  await saveToWorkspaceButton.waitFor({ timeout: 5000 });
+  await saveToWorkspaceButton.click({ timeout: 5000 });
+  const saveDialog = ctx.page.getByRole("alertdialog");
+  await saveDialog.getByRole("textbox").waitFor({ timeout: 5000 });
+  await capture(ctx, "seeded-workspace", "save-dialog-input");
+
+  // README.md already exists in the seed workspace fixture (writeSeedWorkspace),
+  // so saving under that exact name deterministically exercises the real
+  // pi-server 409 path and the dialog's overwrite-confirm step.
+  await saveDialog.getByRole("textbox").fill("README.md");
+  await saveDialog
+    .getByRole("button", { name: /^save$|^保存$/i })
+    .first()
+    .click({ timeout: 5000 });
+  await saveDialog.getByText(/already exists|已存在/i).waitFor({ timeout: 5000 });
+  await capture(ctx, "seeded-workspace", "save-dialog-overwrite");
+  await saveDialog
+    .getByRole("button", { name: /^cancel$|^取消$/i })
+    .first()
+    .click({ timeout: 5000 });
+  await saveDialog.waitFor({ state: "hidden", timeout: 5000 });
+
   await ctx.page
     .getByRole("button", { name: /add attachment|添加附件/i })
     .first()
@@ -747,6 +1027,197 @@ async function scenarioSeededWorkspace(ctx) {
     { timeout: 5000 }
   );
   await capture(ctx, "seeded-workspace", "mention-inline-token");
+}
+
+// Drives the scripted fake agent (MARGINALIA_FAKE_AGENT=1, see scenario.env above)
+// through both approval variants: a bash command approved after a pending review,
+// and a file edit denied with a reason. The scripted client keys its canned events
+// off keywords in the message text ("approval-bash" / "approval-edit"), so the
+// composer's own permission selector doesn't matter here — see
+// apps/pi-server/src/agent/scripted-fake-agent.ts.
+async function scenarioApprovalFlow(ctx) {
+  await ensureSeededWorkspace(ctx);
+  // The composer refuses to send without a provider selected; the key/model are
+  // never used since the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never
+  // calls a real model. Create-or-reuse also keeps this isolated pass from
+  // stacking a duplicate when it inherits the shared pass's database.
+  await ensureFixtureProvider(ctx.apiBase);
+  await resetUiState(ctx.page);
+  await reloadApp(ctx.page);
+  await goNewChat(ctx.page);
+
+  // 1) Command approval: pending → approved.
+  await typeAndSend(ctx.page, "approval-bash demo");
+  await ctx.page
+    .getByText(/需要审批|Approval required/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-command-pending");
+  await ctx.page
+    .getByRole("button", { name: /允许|Allow/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/已批准|Approved|分析完成/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-command-approved");
+
+  // 2) Edit approval: diff pending. `exact: true` in the scripted payload means
+  // the "approximate preview" badge never renders, so match on the file path
+  // (always shown) with the badge text kept as a defensive alternate.
+  await typeAndSend(ctx.page, "approval-edit demo");
+  await ctx.page
+    .getByText(/近似预览|摘要\.md/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-edit-pending");
+
+  // 3) Deny with a reason. The reason textarea has no aria-label, so target it by
+  // its placeholder rather than `getByRole("textbox").last()` — the composer's own
+  // message textbox sits later in the DOM (below the transcript) and would win a
+  // last-match instead of the approval card's textarea.
+  await ctx.page
+    .getByRole("button", { name: /拒绝|Deny/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByPlaceholder(/告诉模型该怎么改|Tell the model what to do instead/i)
+    .fill("先给我看结论");
+  await ctx.page
+    .getByRole("button", { name: /确认拒绝|Confirm deny/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/已拒绝|Denied/i)
+    .first()
+    .waitFor({ timeout: 10000 });
+  await capture(ctx, "approval-flow", "approval-denied");
+}
+
+async function openSkillsSettings(page) {
+  const skills = page.getByRole("tab", { name: /^(skills|技能)$/i }).first();
+  if (!(await skills.isVisible())) {
+    await page
+      .getByRole("button", { name: /^(settings|设置)$/i })
+      .first()
+      .click({ timeout: 5000 });
+  }
+  await skills.click({ timeout: 5000 });
+  await page.getByRole("searchbox", { name: /search skills|搜索技能/i }).waitFor({
+    timeout: 15000
+  });
+}
+
+async function scenarioSkillsFlow(ctx) {
+  const seedRoot = await writeSeedWorkspace();
+  const fixture = await writeSkillsFixture({
+    root: runRoot,
+    home: path.join(runRoot, "home"),
+    workspace: seedRoot
+  });
+  const { workspace } = await ensureSeededWorkspace(ctx);
+  await ensureFixtureProvider(ctx.apiBase);
+  await ctx.skillsApi(`/skills?workspaceId=${encodeURIComponent(workspace.id)}`);
+
+  await resetUiState(ctx.page);
+  await reloadApp(ctx.page);
+  await goNewChat(ctx.page);
+  await openSkillsSettings(ctx.page);
+
+  const search = ctx.page.getByRole("searchbox", { name: /search skills|搜索技能/i });
+  const disabledToggle = ctx.page.getByRole("switch", { name: /enabled: disabled-helper/i });
+  await disabledToggle.waitFor({ timeout: 15000 });
+  if ((await disabledToggle.getAttribute("aria-checked")) === "true") {
+    await disabledToggle.click({ timeout: 5000 });
+  }
+  await ctx.page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("[role='switch']")).some(
+        (item) =>
+          /disabled-helper/i.test(item.getAttribute("aria-label") ?? "") &&
+          item.getAttribute("aria-checked") === "false"
+      ),
+    null,
+    { timeout: 15000 }
+  );
+  await search.fill("release-review");
+  await ctx.page
+    .getByRole("button", { name: /view details: release-review/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page.getByText("# Release review", { exact: false }).waitFor({ timeout: 15000 });
+  await search.fill("");
+  await ctx.page.getByText("Disabled", { exact: true }).waitFor({ timeout: 15000 });
+  await capture(ctx, "skills-flow", "skills-settings");
+
+  await updatePersistedUiState(ctx.page, {
+    view: "settings",
+    activeWorkspaceId: "stale-screenshot-workspace",
+    activeSessionId: null,
+    leftSidebarCollapsed: true
+  });
+  await reloadApp(ctx.page);
+  await openSkillsSettings(ctx.page);
+  await ctx.page.getByText("Global Skills", { exact: true }).waitFor({ timeout: 15000 });
+  await ctx.page
+    .getByRole("button", { name: /view details: global-audit/i })
+    .click({ timeout: 5000 });
+  await ctx.page.getByText("# Global audit", { exact: false }).waitFor({ timeout: 15000 });
+  await capture(ctx, "skills-flow", "skills-global-only");
+
+  await updatePersistedUiState(ctx.page, {
+    view: "settings",
+    activeWorkspaceId: workspace.id,
+    activeSessionId: null,
+    leftSidebarCollapsed: false
+  });
+  await reloadApp(ctx.page);
+  await openSkillsSettings(ctx.page);
+  const diagnosticSearch = ctx.page.getByRole("searchbox", {
+    name: /search skills|搜索技能/i
+  });
+  await diagnosticSearch.fill("invalid");
+  await ctx.page
+    .getByRole("button", { name: /view details: Invalid_Name/i })
+    .click({ timeout: 5000 });
+  await ctx.page.getByText("Diagnostics", { exact: true }).waitFor({ timeout: 15000 });
+  await capture(ctx, "skills-flow", "skill-diagnostics");
+
+  await goNewChat(ctx.page);
+  const box = ctx.page.getByRole("textbox", { name: /message|消息/i }).first();
+  await box.fill("$");
+  const skillsList = ctx.page.getByRole("listbox", { name: /^skills$|^技能$/i });
+  await skillsList.getByRole("option", { name: /\$release-review/i }).waitFor({ timeout: 15000 });
+  await capture(ctx, "skills-flow", "skill-picker-dollar");
+
+  await box.fill("/");
+  const slashList = ctx.page.getByRole("listbox", { name: /commands and skills|命令和技能/i });
+  await slashList.getByRole("option", { name: /\$release-review/i }).waitFor({ timeout: 15000 });
+  await capture(ctx, "skills-flow", "slash-skills");
+
+  await box.fill("$");
+  await skillsList.getByRole("option", { name: /\$release-review/i }).click({ timeout: 5000 });
+  await box.fill("$");
+  await skillsList.getByRole("option", { name: /\$explicit-only/i }).click({ timeout: 5000 });
+  await box.fill("Review the release checklist and summarize the verification evidence.");
+  await ctx.page
+    .getByRole("button", { name: /remove skill explicit-only|移除技能 explicit-only/i })
+    .waitFor({ timeout: 5000 });
+  await capture(ctx, "skills-flow", "skill-chips");
+
+  await rm(fixture.effectivePath, { force: true });
+  await ctx.page
+    .getByRole("button", { name: /send|发送/i })
+    .first()
+    .click({ timeout: 5000 });
+  await ctx.page
+    .getByText(/selected skills changed|所选技能已发生变化/i)
+    .waitFor({ timeout: 15000 });
+  await ctx.page
+    .getByRole("button", { name: /open skills settings|前往技能设置/i })
+    .waitFor({ timeout: 5000 });
+  await capture(ctx, "skills-flow", "skill-precondition-blocked");
 }
 
 async function scenarioMinimaxLive(ctx) {
@@ -867,17 +1338,23 @@ async function writeSummary(manifest) {
   await writeFile(path.join(outRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-// Owns the harness lifecycle shared by every mode: clean the output tree (which
-// also resets the isolated runRoot db/home/user-data), launch, hand a ready ctx to
-// the mode, and always tear the app + vite down. `manifest` is only the capture
+// Owns the harness lifecycle shared by every mode: optionally clean the output
+// tree, always reset this pass's isolated db/home/user-data, launch, hand a ready
+// ctx to the mode, and always tear the app + vite down. `manifest` is only the capture
 // sink threaded onto ctx for capture() to append to; reading it back (status,
 // contract validation, summary) is entirely the caller's job.
-async function withHarness({ clean, manifest }, run) {
+//
+// `extraEnv` lets a caller start this one pass's Electron process with extra
+// env vars (e.g. MARGINALIA_FAKE_AGENT=1) without leaking them into other
+// passes — main() only ever passes it for scenarios that declare `scenario.env`,
+// each isolated in its own startHarness() call (see main()'s scenario grouping).
+async function withHarness({ clean, manifest, extraEnv }, run) {
   if (clean) await rm(outRoot, { recursive: true, force: true });
+  else await rm(runRoot, { recursive: true, force: true });
   await mkdir(runRoot, { recursive: true });
   let harness = null;
   try {
-    harness = await startHarness();
+    harness = await startHarness(extraEnv);
     await run({ ...harness, manifest, captureCounts: new Map(), seed: null });
   } finally {
     if (harness?.app) await harness.app.close().catch(() => {});
@@ -957,16 +1434,39 @@ async function main() {
     screenshots: []
   };
 
+  // Most scenarios share one Electron/vite harness for the whole run. A scenario
+  // that declares `env` (currently only approval-flow, which needs
+  // MARGINALIA_FAKE_AGENT=1) can't join that shared pass — startHarness() bakes
+  // env once at launch, and pi-server inherits it via utilityProcess.fork, so
+  // setting it globally would leak the fake agent into core-ui/seeded-workspace/
+  // minimax-live too. Instead each env-declaring scenario gets its own isolated
+  // withHarness() pass, run after the shared one. All passes append into the same
+  // `manifest` so the contract validation below sees every captured screenshot.
+  const sharedScenarios = options.scenarios.filter((id) => !SCENARIOS[id].env);
+  const isolatedScenarios = options.scenarios.filter((id) => SCENARIOS[id].env);
+
   let exitCode = 0;
   try {
-    await withHarness({ clean: options.clean, manifest }, async (ctx) => {
-      for (const scenario of options.scenarios) {
-        console.log(`[scenario] ${scenario}`);
-        await SCENARIOS[scenario].run(ctx);
-      }
-      await validateScreenshotContract(manifest);
-      manifest.status = "passed";
-    });
+    let clean = options.clean;
+    if (sharedScenarios.length > 0) {
+      await withHarness({ clean, manifest }, async (ctx) => {
+        for (const scenario of sharedScenarios) {
+          console.log(`[scenario] ${scenario}`);
+          await SCENARIOS[scenario].run(ctx);
+        }
+      });
+      // Later passes must not wipe the screenshots the earlier pass just captured.
+      clean = false;
+    }
+    for (const scenario of isolatedScenarios) {
+      console.log(`[scenario] ${scenario}`);
+      await withHarness({ clean, manifest, extraEnv: SCENARIOS[scenario].env }, (ctx) =>
+        SCENARIOS[scenario].run(ctx)
+      );
+      clean = false;
+    }
+    await validateScreenshotContract(manifest);
+    manifest.status = "passed";
   } catch (error) {
     manifest.status = "failed";
     manifest.error = error instanceof Error ? error.stack || error.message : String(error);

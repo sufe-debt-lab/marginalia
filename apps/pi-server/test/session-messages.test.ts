@@ -21,6 +21,131 @@ const usage = {
 };
 
 describe("readMessagesFromSessionFile", () => {
+  it("preserves multimodal user content while cloning its outer message", () => {
+    const content = [
+      { type: "text", text: "inspect this image" },
+      { type: "image", data: "aW1hZ2U=", mimeType: "image/png" }
+    ];
+    const originalMessage = { role: "user", content, timestamp: 1748390401000 };
+    const file = writeJsonl([
+      {
+        type: "session",
+        version: 3,
+        id: "abc",
+        cwd: "/tmp",
+        timestamp: "2026-05-26T00:00:00.000Z"
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-05-26T00:00:01.000Z",
+        message: originalMessage
+      }
+    ]);
+    const before = fs.readFileSync(file);
+
+    const [entry] = readMessagesFromSessionFile(file);
+
+    expect(entry).toEqual({ id: "u1", message: originalMessage });
+    expect(entry?.message).not.toBe(originalMessage);
+    expect(originalMessage.content).toBe(content);
+    expect(fs.readFileSync(file)).toEqual(before);
+  });
+
+  it("normalizes only a cloned user prompt and leaves session bytes unchanged", () => {
+    const rawPrompt =
+      '<skill name="deleted&amp;skill" location="/deleted/SKILL.md">\nInstructions\n</skill>\n\n' +
+      "Review this document\n\n<attached_files>\n" +
+      '<attached_file path="note.md" mime="text/markdown">\ncontext\n</attached_file>\n' +
+      "</attached_files>";
+    const file = writeJsonl([
+      {
+        type: "session",
+        version: 3,
+        id: "abc",
+        cwd: "/tmp",
+        timestamp: "2026-05-26T00:00:00.000Z"
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-05-26T00:00:01.000Z",
+        message: { role: "user", content: rawPrompt, timestamp: 1748390401000 }
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: "2026-05-26T00:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: rawPrompt }],
+          api: "anthropic-messages",
+          provider: "minimax-cn",
+          model: "MiniMax-M2.7",
+          usage,
+          stopReason: "stop",
+          timestamp: 1748390402000
+        }
+      },
+      {
+        type: "message",
+        id: "tr1",
+        parentId: "a1",
+        timestamp: "2026-05-26T00:00:03.000Z",
+        message: {
+          role: "toolResult",
+          toolCallId: "tc1",
+          toolName: "read",
+          content: [{ type: "text", text: rawPrompt }],
+          isError: false,
+          timestamp: 1748390403000
+        }
+      }
+    ]);
+    const before = fs.readFileSync(file);
+
+    const messages = readMessagesFromSessionFile(file);
+
+    expect(messages).toEqual([
+      {
+        id: "u1",
+        message: {
+          role: "user",
+          content: "$deleted&skill\n\nReview this document",
+          timestamp: 1748390401000
+        }
+      },
+      {
+        id: "a1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: rawPrompt }],
+          api: "anthropic-messages",
+          provider: "minimax-cn",
+          model: "MiniMax-M2.7",
+          usage,
+          stopReason: "stop",
+          timestamp: 1748390402000
+        }
+      },
+      {
+        id: "tr1",
+        message: {
+          role: "toolResult",
+          toolCallId: "tc1",
+          toolName: "read",
+          content: [{ type: "text", text: rawPrompt }],
+          isError: false,
+          timestamp: 1748390403000
+        }
+      }
+    ]);
+    expect(fs.readFileSync(file)).toEqual(before);
+  });
+
   it("returns user and assistant messages in order, ignoring header and non-message entries", () => {
     const file = writeJsonl([
       {

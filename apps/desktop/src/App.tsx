@@ -12,12 +12,40 @@ type UiStatus = PiServerStatus & { health?: Health };
 
 function getBridge() {
   if (window.marginalia) return window.marginalia;
-  const serverUrl = new URLSearchParams(window.location.search).get("serverUrl");
-  if (import.meta.env.DEV && serverUrl) {
+  const params = new URLSearchParams(window.location.search);
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const serverUrl = params.get("serverUrl");
+  const capabilityToken = fragment.get("capabilityToken");
+  const hasLegacyQueryToken = params.has("capabilityToken");
+  params.delete("capabilityToken");
+  if (import.meta.env.DEV && serverUrl && capabilityToken) {
+    params.delete("serverUrl");
+    const remainingQuery = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}`
+    );
     return {
-      getPiServerStatus: async () => ({ status: "ready" as const, url: serverUrl }),
-      restartPiServer: async () => ({ status: "ready" as const, url: serverUrl })
+      getPiServerStatus: async () => ({
+        status: "ready" as const,
+        url: serverUrl,
+        capabilityToken
+      }),
+      restartPiServer: async () => ({
+        status: "ready" as const,
+        url: serverUrl,
+        capabilityToken
+      })
     };
+  }
+  if (hasLegacyQueryToken || capabilityToken) {
+    const remainingQuery = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${capabilityToken ? "" : window.location.hash}`
+    );
   }
   return null;
 }
@@ -92,5 +120,5 @@ export function App() {
     );
   }
 
-  return <AppShell serverUrl={server.url} />;
+  return <AppShell serverUrl={server.url} capabilityToken={server.capabilityToken} />;
 }

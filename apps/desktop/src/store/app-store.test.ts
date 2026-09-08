@@ -5,11 +5,13 @@ describe("useAppStore", () => {
   beforeEach(() => {
     useAppStore.setState({
       view: "new-thread",
+      settingsEntryTab: "general",
+      settingsEntryRevision: 0,
       locale: "en",
       activeWorkspaceId: null,
       activeSessionId: null,
-      pendingPrompt: null,
-      contextFiles: [],
+      turnDrafts: {},
+      pendingTurn: null,
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
@@ -53,23 +55,6 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().view).toBe("chat");
   });
 
-  it("adds and removes context files without duplicates", () => {
-    const { addContextFile, removeContextFile } = useAppStore.getState();
-    addContextFile("a.ts");
-    addContextFile("a.ts");
-    addContextFile("b.ts");
-    expect(useAppStore.getState().contextFiles).toEqual(["a.ts", "b.ts"]);
-    removeContextFile("a.ts");
-    expect(useAppStore.getState().contextFiles).toEqual(["b.ts"]);
-  });
-
-  it("clears context files", () => {
-    const { addContextFile, clearContextFiles } = useAppStore.getState();
-    addContextFile("a.ts");
-    clearContextFiles();
-    expect(useAppStore.getState().contextFiles).toEqual([]);
-  });
-
   it("toggles sidebars", () => {
     const { toggleLeftSidebar, toggleRightPanel } = useAppStore.getState();
     toggleLeftSidebar();
@@ -78,21 +63,144 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().rightPanelCollapsed).toBe(true);
   });
 
-  it("sets and clears pending prompt", () => {
-    const { setPendingPrompt } = useAppStore.getState();
-    setPendingPrompt("hello");
-    expect(useAppStore.getState().pendingPrompt).toBe("hello");
-    setPendingPrompt(null);
-    expect(useAppStore.getState().pendingPrompt).toBeNull();
+  it("isolates complete turn drafts by session and new-thread owner", () => {
+    const store = useAppStore.getState();
+    const owners = ["session:s1", "session:s2", "new:w1", "new:w2"] as const;
+
+    owners.forEach((owner, index) => {
+      store.setTurnText(owner, `text-${index}`);
+      store.addTurnContextFile(owner, `/context/${index}.md`);
+      store.addTurnSkill(owner, { name: `skill-${index}`, path: `/skills/${index}` });
+    });
+
+    owners.forEach((owner, index) => {
+      expect(store.getTurnDraft(owner)).toEqual({
+        text: `text-${index}`,
+        contextFiles: [`/context/${index}.md`],
+        skills: [{ name: `skill-${index}`, path: `/skills/${index}` }]
+      });
+    });
+  });
+
+  it("deduplicates canonical paths while preserving the first selection", () => {
+    const store = useAppStore.getState();
+    store.addTurnContextFile("session:s1", "/docs/a.md");
+    store.addTurnContextFile("session:s1", "/docs/a.md");
+    store.addTurnSkill("session:s1", { name: "pdf", path: "/skills/pdf" });
+    store.addTurnSkill("session:s1", { name: "renamed", path: "/skills/pdf" });
+    store.replaceTurnSkills("session:s1", [
+      { name: "pdf", path: "/skills/pdf" },
+      { name: "renamed", path: "/skills/pdf" },
+      { name: "review", path: "/skills/review" }
+    ]);
+
+    expect(store.getTurnDraft("session:s1")).toEqual({
+      text: "",
+      contextFiles: ["/docs/a.md"],
+      skills: [
+        { name: "pdf", path: "/skills/pdf" },
+        { name: "review", path: "/skills/review" }
+      ]
+    });
+  });
+
+  it("returns fresh draft snapshots and atomically moves or clears only the target owner", () => {
+    const store = useAppStore.getState();
+    store.setTurnText("new:w1", "move me");
+    store.addTurnContextFile("new:w1", "/docs/a.md");
+    store.addTurnSkill("new:w1", { name: "pdf", path: "/skills/pdf" });
+    store.setTurnText("new:w2", "keep me");
+
+    const moved = store.moveTurnDraft("new:w1", "session:s3");
+    moved.contextFiles.push("mutated.md");
+    moved.skills[0]!.name = "mutated";
+
+    expect(store.getTurnDraft("new:w1")).toEqual({ text: "", contextFiles: [], skills: [] });
+    expect(store.getTurnDraft("session:s3")).toEqual({
+      text: "move me",
+      contextFiles: ["/docs/a.md"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    });
+    expect(store.getTurnDraft("new:w2").text).toBe("keep me");
+
+    const missingA = store.getTurnDraft("session:missing");
+    const missingB = store.getTurnDraft("session:missing");
+    expect(missingA).not.toBe(missingB);
+    expect(missingA.contextFiles).not.toBe(missingB.contextFiles);
+    expect(missingA.skills).not.toBe(missingB.skills);
+
+    store.clearTurnDraft("session:s3");
+    expect(store.getTurnDraft("session:s3")).toEqual({ text: "", contextFiles: [], skills: [] });
+    expect(store.getTurnDraft("new:w2").text).toBe("keep me");
+  });
+
+  it("moves a submitted snapshot without deleting later edits on the source owner", () => {
+    const store = useAppStore.getState();
+    const submitted = {
+      text: "first",
+      contextFiles: ["/docs/a.md"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    };
+    store.setTurnText("new:w1", "first");
+    store.addTurnContextFile("new:w1", "/docs/a.md");
+    store.addTurnSkill("new:w1", { name: "pdf", path: "/skills/pdf" });
+    store.setTurnText("new:w1", "later edit");
+
+    expect(store.moveTurnDraft("new:w1", "session:s3", submitted)).toEqual(submitted);
+    expect(store.getTurnDraft("session:s3")).toEqual(submitted);
+    expect(store.getTurnDraft("new:w1")).toEqual({
+      text: "later edit",
+      contextFiles: ["/docs/a.md"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    });
+  });
+
+  it("claims a matching pending turn exactly once without clearing the session draft", () => {
+    const store = useAppStore.getState();
+    store.setTurnText("session:s3", "keep until accepted");
+    store.setPendingTurn({
+      sessionId: "s3",
+      turn: {
+        text: "keep until accepted",
+        contextFiles: ["/docs/a.md"],
+        skills: [{ name: "pdf", path: "/skills/pdf" }]
+      }
+    });
+
+    expect(store.claimPendingTurn("other")).toBeNull();
+    expect(store.claimPendingTurn("s3")).toEqual({
+      text: "keep until accepted",
+      contextFiles: ["/docs/a.md"],
+      skills: [{ name: "pdf", path: "/skills/pdf" }]
+    });
+    expect(store.claimPendingTurn("s3")).toBeNull();
+    expect(store.getTurnDraft("session:s3").text).toBe("keep until accepted");
+  });
+
+  it("never persists turn drafts or a pending turn", () => {
+    const store = useAppStore.getState();
+    store.setTurnText("session:s1", "private draft");
+    store.setPendingTurn({
+      sessionId: "s1",
+      turn: { text: "private draft", contextFiles: [], skills: [] }
+    });
+    store.setLocale("zh");
+
+    const persisted = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
+    expect(persisted.state).not.toHaveProperty("turnDrafts");
+    expect(persisted.state).not.toHaveProperty("pendingTurn");
   });
 
   it("persists only the partialize-listed fields", () => {
-    const { setActiveWorkspace, setActiveSession, setLocale, toggleLeftSidebar, setPendingPrompt } =
+    const { setActiveWorkspace, setActiveSession, setLocale, toggleLeftSidebar, setPendingTurn } =
       useAppStore.getState();
     setActiveWorkspace("ws-1");
     setActiveSession("s-1");
     setLocale("zh");
-    setPendingPrompt("draft");
+    setPendingTurn({
+      sessionId: "s-1",
+      turn: { text: "draft", contextFiles: [], skills: [] }
+    });
     toggleLeftSidebar();
 
     const stored = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
@@ -101,8 +209,10 @@ describe("useAppStore", () => {
     expect(state.locale).toBe("zh");
     expect(state.leftSidebarCollapsed).toBe(true);
     expect(state.activeSessionId).toBeUndefined();
-    expect(state.pendingPrompt).toBeUndefined();
+    expect(state.pendingTurn).toBeUndefined();
     expect(state.view).toBeUndefined();
+    expect(state.settingsEntryTab).toBeUndefined();
+    expect(state.settingsEntryRevision).toBeUndefined();
   });
 
   it("togglePin adds and removes workspace ids", () => {

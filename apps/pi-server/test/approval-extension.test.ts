@@ -75,4 +75,27 @@ describe("createApprovalExtension", () => {
     gateway.resolve(gateway.pendingIds("s1")[0]!, { approved: true });
     expect(await resultPromise).toBeUndefined();
   });
+
+  it("builds a real diff from the edits-array shape (pi's current edit tool)", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "approval-ext-edits-"));
+    writeFileSync(path.join(root, "a.md"), "# 旧标题\n");
+    const gateway = new ApprovalGateway();
+    gateway.setPolicy("s1", { permission: "ask", workspaceRoot: root });
+    const events: Array<{ payload: { kind: string; patch: string; exact: boolean } }> = [];
+    gateway.onEvent("s1", (e) => events.push(e as never));
+    const handler = register(gateway, "s1");
+    const resultPromise = handler(
+      {
+        toolName: "edit",
+        toolCallId: "t3",
+        input: { path: "a.md", edits: [{ oldText: "# 旧标题", newText: "# 新标题" }] }
+      },
+      {}
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(events[0]?.payload.exact).toBe(true);
+    expect(events[0]?.payload.patch).toContain("+# 新标题");
+    gateway.resolve(gateway.pendingIds("s1")[0]!, { approved: true });
+    expect(await resultPromise).toBeUndefined();
+  });
 });

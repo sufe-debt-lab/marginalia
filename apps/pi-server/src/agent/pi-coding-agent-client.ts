@@ -4,10 +4,10 @@ import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type {
   AgentClient,
+  AgentPrepareInput,
   AgentRunEvent,
-  AgentRunInput,
-  AgentRunResult,
-  ApprovalDecision
+  ApprovalDecision,
+  PreparedAgentRun
 } from "./agent-client.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import type { ApprovalGateway } from "./approval-gateway.js";
@@ -34,7 +34,7 @@ export class PiCodingAgentClient implements AgentClient {
     return this.gateway.cancelPending(sessionId);
   }
 
-  async run(input: AgentRunInput): Promise<AgentRunResult> {
+  async prepare(input: AgentPrepareInput): Promise<PreparedAgentRun> {
     const model = this.resolveModel(input.piProviderId, input.modelId);
     if (!model) {
       throw new Error(`unknown model ${input.piProviderId}/${input.modelId}`);
@@ -46,6 +46,7 @@ export class PiCodingAgentClient implements AgentClient {
       workspaceRoot: input.workspaceRoot
     });
 
+    const pinnedSkills = input.runtimeSkills.loadResult;
     const loader = new DefaultResourceLoader({
       cwd: input.workspaceRoot,
       agentDir: path.join(homedir(), ".marginalia", "pi-agent"),
@@ -54,6 +55,10 @@ export class PiCodingAgentClient implements AgentClient {
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
+      skillsOverride: () => ({
+        skills: [...pinnedSkills.skills],
+        diagnostics: [...pinnedSkills.diagnostics]
+      }),
       extensionFactories: [
         createApprovalExtension(this.gateway, input.sessionId) as unknown as ExtensionFactory
       ]
@@ -65,91 +70,131 @@ export class PiCodingAgentClient implements AgentClient {
     if (input.permission === "readonly") config.tools = READONLY_TOOLS;
     if (input.reasoning) config.thinkingLevel = input.reasoning;
 
-    const handle = await this.registry.acquire({
+    const reservation = await this.registry.acquirePinned({
       sessionId: input.sessionId,
       workspaceRoot: input.workspaceRoot,
       agentSessionPath: input.agentSessionPath ?? null,
+      resourceRevision: input.runtimeSkills.effectiveRevision,
+      runtimeRevision: JSON.stringify([
+        input.piProviderId,
+        input.modelId,
+        input.permission === "readonly" ? "readonly" : "default"
+      ]),
       config
     });
+    const { handle } = reservation;
+    let released = false;
+    const releaseReservation = () => {
+      if (released) return;
+      released = true;
+      reservation.release();
+    };
 
     // Reasoning is dynamic: apply per run so cached sessions also honour it.
     const session = handle.session as unknown as {
       setThinkingLevel?: (level: string) => void;
     };
-    if (input.reasoning && typeof session.setThinkingLevel === "function") {
-      session.setThinkingLevel(input.reasoning);
+    try {
+      if (input.reasoning && typeof session.setThinkingLevel === "function") {
+        session.setThinkingLevel(input.reasoning);
+      }
+    } catch (error) {
+      releaseReservation();
+      throw error;
     }
 
-    const abort = () => {
-      void (handle.session as unknown as { abort?: () => Promise<void> }).abort?.();
-    };
-    input.abortSignal?.addEventListener("abort", abort, { once: true });
-
-    const queue: AgentRunEvent[] = [];
-    const waiters: Array<(value: IteratorResult<AgentRunEvent>) => void> = [];
-    let finished = false;
-    let error: unknown = null;
-
-    // Shared sink: both raw pi session events and gateway approval events feed
-    // the same ordered stream, so the consumer sees approvals interleaved with
-    // the tool calls they gate.
-    const pushEvent = (event: AgentRunEvent) => {
-      const waiter = waiters.shift();
-      if (waiter) {
-        waiter({ value: event, done: false });
-        return;
-      }
-      queue.push(event);
-    };
-
-    const offApproval = this.gateway.onEvent(input.sessionId, pushEvent);
-    const unsubscribe = handle.session.subscribe(pushEvent);
-
-    handle.session
-      .prompt(input.message, input.promptOptions)
-      .catch((err) => {
-        error = err;
-      })
-      .finally(() => {
-        finished = true;
-        input.abortSignal?.removeEventListener("abort", abort);
-        offApproval();
-        unsubscribe?.();
-        for (const waiter of waiters.splice(0)) {
-          waiter({ value: undefined as unknown as AgentRunEvent, done: true });
-        }
-      });
-
-    const events: AsyncIterable<AgentRunEvent> = {
-      [Symbol.asyncIterator]() {
-        return {
-          next() {
-            return new Promise<IteratorResult<AgentRunEvent>>((resolve, reject) => {
-              if (queue.length > 0) {
-                resolve({ value: queue.shift()!, done: false });
-                return;
-              }
-              if (error) {
-                reject(error);
-                return;
-              }
-              if (finished) {
-                resolve({ value: undefined as unknown as AgentRunEvent, done: true });
-                return;
-              }
-              waiters.push(resolve);
-            });
-          }
-        };
-      }
-    };
-
+    let started = false;
     return {
       sessionFile: handle.sessionFile,
-      events,
-      dispose: () => {
-        offApproval();
-        unsubscribe?.();
+      release: () => {
+        if (!started) releaseReservation();
+      },
+      start: (message, promptOptions) => {
+        if (released) throw new Error("prepared run already released");
+        if (started) throw new Error("prepared run already started");
+        started = true;
+        const queue: AgentRunEvent[] = [];
+        const waiters: Array<() => void> = [];
+        let finished = false;
+        let error: unknown = null;
+        let resolveSettled!: () => void;
+        const settled = new Promise<void>((resolve) => {
+          resolveSettled = resolve;
+        });
+
+        // Shared sink: both raw pi session events and gateway approval events feed
+        // the same ordered stream, so the consumer sees approvals interleaved with
+        // the tool calls they gate.
+        const pushEvent = (event: AgentRunEvent) => {
+          queue.push(event);
+          waiters.shift()?.();
+        };
+
+        let offApproval: () => void = () => {};
+        let unsubscribe: (() => void) | void;
+        const finish = (failure?: unknown) => {
+          if (finished) return;
+          error = failure ?? null;
+          finished = true;
+          offApproval();
+          unsubscribe?.();
+          releaseReservation();
+          for (const waiter of waiters.splice(0)) waiter();
+          resolveSettled();
+        };
+
+        try {
+          offApproval = this.gateway.onEvent(input.sessionId, pushEvent);
+          unsubscribe = handle.session.subscribe(pushEvent);
+          Promise.resolve(
+            handle.session.prompt(message, {
+              ...(promptOptions ?? {}),
+              // Explicit Skills must pass through Task 9's snapshot-only preflight.
+              // Pi's native expansion rereads skill.filePath and bypasses those limits.
+              expandPromptTemplates: false
+            })
+          ).then(
+            () => finish(),
+            (failure) => finish(failure)
+          );
+        } catch (failure) {
+          finish(failure);
+        }
+
+        const events: AsyncIterable<AgentRunEvent> = {
+          [Symbol.asyncIterator]() {
+            return {
+              next() {
+                return new Promise<IteratorResult<AgentRunEvent>>((resolve, reject) => {
+                  const read = () => {
+                    if (queue.length > 0) {
+                      resolve({ value: queue.shift()!, done: false });
+                      return;
+                    }
+                    if (error !== null) {
+                      reject(error);
+                      return;
+                    }
+                    if (finished) {
+                      resolve({ value: undefined as unknown as AgentRunEvent, done: true });
+                      return;
+                    }
+                    waiters.push(read);
+                  };
+                  read();
+                });
+              }
+            };
+          }
+        };
+
+        return {
+          events,
+          abort: () => {
+            void (handle.session as unknown as { abort?: () => Promise<void> }).abort?.();
+          },
+          settled
+        };
       }
     };
   }
