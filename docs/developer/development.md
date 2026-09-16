@@ -242,3 +242,15 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 - 提交/分支/PR 规范：[贡献指南](./contributing.md)
 - 文档同步、docs impact 和 closeout：[文档生命周期](./documentation-lifecycle.md)
 - 当前验证快照和发布阻断：[产品状态](../product/status.md)
+
+## Run 生命周期回归
+
+`pnpm --filter @marginalia/pi-server test -- run-recovery.test.ts run-process.test.ts provider-chat.test.ts approval-flow.test.ts` 使用临时 SQLite/workspace、隔离 HOME 和可控 Agent 验证旧 Run 归一、历史保留、下一条输入、新权限与文件内容、SSE 断连、SIGTERM、server SIGKILL 和应用所有者 SIGKILL。无需模型网络或真实凭据。
+
+`pnpm verify:screenshots -- --scenario run-recovery` 在真实 Electron 中操作停止、强杀该测试 server、用键盘激活 Retry，并在同 Session 发送新的 Run。它也是 `pnpm verify:visual` 的默认场景，新增 `server-stopped` 与 `server-restarted` 两张截图；仍需逐张判断差异。测试使用脚本 Agent，不声称模拟回复已持久化为真实 pi history。
+
+`MARGINALIA_PARENT_PID` 仅由 Electron 注入用于存活检查，server 读取后从环境移除。独立启动 server 不需要该变量；退出处理接受 SIGTERM/SIGINT，最多等待 2 秒。
+
+进程身份探测依赖 Unix 系统的 `/bin/ps` 或 Windows 自带 Windows PowerShell。测试不得把当前 PID 冒充旧进程而省略启动时间；PID 复用回归应给出不同的历史启动时间。
+
+Bash 崩溃回归：`pnpm --filter @marginalia/pi-server test -- run-process.test.ts supervised-bash.test.ts`。使用真实 pi Session 和 Bash，仅替换模型流；验证 Ask 批准前无写入、Read-only 无 Bash，以及 server SIGKILL 后重启的新文件不会被旧 shell 延迟覆盖。不要用停在 fake approval 的测试替代活动工具进程测试。

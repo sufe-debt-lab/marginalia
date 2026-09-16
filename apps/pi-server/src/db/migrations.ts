@@ -91,6 +91,10 @@ const migrations: ReadonlyArray<{ version: number; sql: string }> = [
         updated_at INTEGER NOT NULL
       );
     `
+  },
+  {
+    version: 3,
+    sql: "ALTER TABLE runs ADD COLUMN owner_pid INTEGER; ALTER TABLE runs ADD COLUMN owner_started_at TEXT;"
   }
 ];
 

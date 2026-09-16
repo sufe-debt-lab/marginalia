@@ -159,3 +159,9 @@ Electron 当前会在 main 状态中持有 token，并通过 preload status brid
 - 存储位置与环境变量：[配置](../user/configuration.md)
 - 发布阻断与验证基线：[产品状态](../product/status.md)
 - PR 验证和文档影响：[贡献指南](./contributing.md)
+
+## 执行进程退出
+
+开发环境的 system Node 子进程与 packaged utility process 均接收 Electron 的 `MARGINALIA_PARENT_PID`。正常退出/重启先等待 server 退出；server 在父进程消失时中止执行、写入终态后退出。强杀 server 的记录在下一次启动归一。当前自动化覆盖开发 Electron 和 system Node；签名安装包、Windows/macOS packaged utility-process 退出行为仍需发行 smoke test，不能由开发截图替代。
+
+Bash 的 `bash-worker` 随 pi-server 的 `dist` 一起打包。工作进程使用现有 Electron 可执行文件的 Run-as-Node 模式，不依赖客户机 Node；打包时必须保留 Electron 的 RunAsNode fuse。发行 smoke test 应覆盖真实 Bash 的 stdout、停止及 server 强杀清理。无需为工作进程新增 SQLite ABI 构建步骤。

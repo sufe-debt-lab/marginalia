@@ -18,6 +18,9 @@ export const en = {
     chinese: "中文",
     close: "Close",
     retry: "Retry",
+    serverUnavailable: "The local service is unavailable. Retry to restart it.",
+    serverStopped:
+      "The local service stopped. Restart it to continue. Saved messages and files are kept.",
     selectWorkspace: "Select workspace…",
     newWorkspaceEllipsis: "New workspace…",
     showMore: "Show more",
@@ -297,6 +300,8 @@ export const zh = {
     chinese: "中文",
     close: "关闭",
     retry: "重试",
+    serverUnavailable: "本地服务暂不可用，请重试以重启服务。",
+    serverStopped: "本地服务已停止，请重启服务后继续。已保存的消息和文件会保留。",
     selectWorkspace: "选择工作区…",
     newWorkspaceEllipsis: "新建工作区…",
     showMore: "显示更多",

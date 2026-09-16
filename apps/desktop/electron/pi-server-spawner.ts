@@ -116,6 +116,8 @@ type StartOptions = {
   timeoutMs?: number;
   capabilityToken?: string;
   allowedOrigin?: string;
+  onSpawn?: (process: PiServerProcess) => void;
+  onExit?: (status: Extract<PiServerStatus, { status: "failed" }>) => void;
 };
 
 /**
@@ -131,9 +133,11 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
   const capabilityToken = options.capabilityToken ?? randomBytes(32).toString("base64url");
   const childEnv = {
     MARGINALIA_CAPABILITY_TOKEN: capabilityToken,
+    MARGINALIA_PARENT_PID: String(process.pid),
     ...(options.allowedOrigin ? { MARGINALIA_ALLOWED_ORIGIN: options.allowedOrigin } : {})
   };
   const child = launch(scriptPath, cwd, childEnv);
+  options.onSpawn?.(child);
   const parser = createReadyLineParser();
   const logs: string[] = [];
   const pushLog = (source: "stdout" | "stderr", chunk: Buffer) => {
@@ -142,16 +146,21 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
     if (logs.length > 20) logs.shift();
   };
 
+  let readySeen = false;
+  let timedOut = false;
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
-      child.kill();
-      resolve({ status: "failed", error: "pi-server startup timed out", logs });
+      timedOut = true;
+      const finish = () =>
+        resolve({ status: "failed", error: "pi-server startup timed out", logs });
+      void stopPiServer(child).then(finish, finish);
     }, options.timeoutMs ?? 10_000);
 
     child.stdout?.on("data", (chunk: Buffer) => {
       pushLog("stdout", chunk);
       const ready = parser.push(chunk.toString());
-      if (ready) {
+      if (ready && !timedOut) {
+        readySeen = true;
         clearTimeout(timeout);
         resolve({
           status: "ready",
@@ -165,7 +174,29 @@ export async function startPiServer(options: StartOptions = {}): Promise<PiServe
     child.stderr?.on("data", (chunk: Buffer) => pushLog("stderr", chunk));
     child.once("exit", () => {
       clearTimeout(timeout);
-      resolve({ status: "failed", error: "pi-server exited before ready", logs });
+      const status = {
+        status: "failed" as const,
+        error: timedOut
+          ? "pi-server startup timed out"
+          : readySeen
+            ? "pi-server exited"
+            : "pi-server exited before ready",
+        logs
+      };
+      options.onExit?.(status);
+      resolve(status);
     });
+  });
+}
+
+/** A restart must not overlap the old process's execution or reconciliation. */
+export function stopPiServer(child: PiServerProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("pi-server shutdown timed out")), 4000);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    child.kill();
   });
 }

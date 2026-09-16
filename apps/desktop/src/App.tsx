@@ -59,34 +59,37 @@ export function App() {
       : { status: "failed", error: "desktop bridge unavailable", logs: [] }
   );
 
-  async function loadHealth(status: PiServerStatus) {
-    if (status.status !== "ready") {
-      setServer(status);
-      return;
-    }
-    try {
-      const response = await fetch(`${status.url}/health`);
-      if (!response.ok) throw new Error(`health check failed: ${response.status}`);
-      const health = (await response.json()) as Health;
-      setServer({ ...status, health });
-    } catch (err) {
-      setServer({ status: "failed", error: (err as Error).message, logs: [] });
-    }
-  }
+  const [restartAttempt, setRestartAttempt] = useState(0);
 
   useEffect(() => {
     if (!bridge) return;
     const desktopBridge = bridge;
     let canceled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    let healthyUrl: string | null = null;
 
-    async function refreshStatus() {
+    async function refreshStatus(restart = false) {
       try {
-        const status = await desktopBridge.getPiServerStatus();
+        const status = restart
+          ? await desktopBridge.restartPiServer()
+          : await desktopBridge.getPiServerStatus();
         if (canceled) return;
-        await loadHealth(status);
-        if (!canceled && status.status === "starting") {
-          pollTimer = setTimeout(refreshStatus, 250);
+        if (status.status === "ready" && healthyUrl !== status.url) {
+          const response = await fetch(`${status.url}/health`);
+          if (!response.ok) throw new Error(`health check failed: ${response.status}`);
+          const health = (await response.json()) as Health;
+          if (canceled) return;
+          healthyUrl = status.url;
+          setServer({ ...status, health });
+        } else if (status.status !== "ready") {
+          healthyUrl = null;
+          setServer(status);
+        }
+        if (!canceled && status.status !== "failed") {
+          pollTimer = setTimeout(
+            () => void refreshStatus(),
+            status.status === "starting" ? 250 : 1000
+          );
         }
       } catch (err) {
         if (!canceled) {
@@ -95,17 +98,16 @@ export function App() {
       }
     }
 
-    void refreshStatus();
+    void refreshStatus(restartAttempt > 0);
     return () => {
       canceled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [bridge]);
+  }, [bridge, restartAttempt]);
 
-  async function retry() {
-    if (!bridge) return;
+  function retry() {
     setServer({ status: "starting" });
-    await loadHealth(await bridge.restartPiServer());
+    setRestartAttempt((attempt) => attempt + 1);
   }
 
   if (server.status === "starting") {
@@ -114,7 +116,11 @@ export function App() {
   if (server.status === "failed") {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm">
-        <p className="text-destructive">{server.error}</p>
+        <p role="alert" className="text-destructive">
+          {server.error === "pi-server exited"
+            ? t("common.serverStopped")
+            : t("common.serverUnavailable")}
+        </p>
         <Button onClick={retry}>{t("common.retry")}</Button>
       </div>
     );

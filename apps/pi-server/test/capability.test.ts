@@ -60,6 +60,7 @@ describe("run capability", () => {
       });
 
       expect(response.status).toBe(testCase.status);
+      if (testCase.status === 200) await response.text();
       if (testCase.status === 401)
         await expect(response.json()).resolves.toEqual({ error: "unauthorized" });
       if (testCase.status === 403)
