@@ -122,3 +122,7 @@ Windows 路径分隔符及大小写别名。HTTP/SSE 使用可控 Agent 执行�
 
 完整 gate 与视觉裁决结果在本次实施计划中记录；真实模型、Windows/Linux 实机、签名打包及任意恶意
 同权限进程隔离不因 macOS 的本地验证被视为通过。P0-SEC-002/005 保持 in-progress，发布 NO-GO 不变。
+
+Issue #5 PR review 补充：有效 Skill 的隐式正文读取与显式注入门槛已分离；已准入 Skill 目录内
+引用资源经共享文件边界按需只读，显式选择变化使运行缓存失效。非 UTF-8/NUL 文件的文本改稿
+在审批前拒绝，避免有损 exact 预览。跨平台与 OS 隔离限制未改变。

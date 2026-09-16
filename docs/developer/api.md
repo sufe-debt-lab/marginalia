@@ -508,3 +508,11 @@ Chromium 直接消费响应流，文件切换由原生资源生命周期及 PDF.
 ### 面板布局与文件接口
 
 面板开合、拖宽及应用内全屏不创建 HTTP/SSE 或 IPC 协议；继续使用现有文件列表、正文与 raw URL。当前文件组件在同 workspace 的布局切换中保留，布局偏好使用 renderer 既有本地存储；文件正文不写入该存储。
+
+### Skill 读取与文本审批限制
+
+管理 API 的 preview 仍为冻结内容且最多 256 KiB，显式选择上限仍为 512 KiB；运行时隐式正文
+可读取最多 10 MiB，超过时 candidate 为 invalid，诊断为 `read_too_large`。这些限制不新增 HTTP route。
+生产 `read_skill` 还可读取本轮准入 Skill 根目录内的引用资源，使用与 workspace 相同的文件边界；
+普通 workspace 文件接口不因此开放外部路径。文本 write/edit 对非法 UTF-8 或含 NUL 的现有目标
+返回原始 pi tool error，不产生审批记录或文件副作用；有效文本的审批和 toolCallId 合同不变。

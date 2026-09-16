@@ -108,7 +108,7 @@ UTF-8。这些限制在 JSON decode/selection 去重的相应边界前执行。�
 （包含 block 间空行），合计最多 2 MiB。Catalog 保存和内容接口返回的 preview 最多 256 KiB；非法
 UTF-8 文件标为 invalid，不会把 replacement characters 截断后的内容静默发送给 agent。正文含 XML 1.0
 非法 control character，或 name/canonical path/base directory 含这类字符或 CR/LF 时，文件仍可在管理页
-显示诊断和 preview，但不能显式选择；普通正文换行不受影响。
+显示诊断和 preview，但不能显式选择；普通正文换行不受影响。隐式正文读取独立于该限制，最大 10 MiB；超过读取上限的 Skill 显示 Invalid，不宣告给模型。
 
 ### Skills 管理 API 与当前可用性
 
@@ -228,3 +228,7 @@ UI 的 Standard Access 对应已有 `ask` 请求值；Full/Read-only 请求值�
 
 原生文件 binding 随依赖交付，不使用运行时下载或用户 Python。缺失/不兼容时文件操作拒绝执行，不能
 用环境变量将 production WorkspaceFiles 降级为 JavaScript pathname 写入。各平台保证见[系统架构](../developer/architecture.md#workspace-文件操作与审批)。
+
+启用的隐式 Skill 与本轮显式选择的 Skill 可读取其自身目录内的引用资源；正文使用本轮冻结内容，
+引用资源按需读取当前文件。资源访问不跟随 symlink、不允许越出 Skill 目录，也不授予写入或脚本执行权限。
+文本 write/edit 不支持覆盖非法 UTF-8 或含 NUL 的文件，会在审批前拒绝并保留原文件。

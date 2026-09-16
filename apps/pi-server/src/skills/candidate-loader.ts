@@ -173,7 +173,8 @@ function parsedCandidate(
   parsed: LoadSkillsResult
 ): ParsedSkillCandidate {
   const validUtf8 = isUtf8(content);
-  const parsedSkill = validUtf8 ? (parsed.skills[0] ?? null) : null;
+  const readTooLarge = content.byteLength > 10 * 1024 * 1024;
+  const parsedSkill = validUtf8 && !readTooLarge ? (parsed.skills[0] ?? null) : null;
   const canonicalBaseDir = path.dirname(canonicalPath);
   const diagnostics = parsed.diagnostics.map(piDiagnostic);
   const tooLarge = content.byteLength > SKILL_EXPLICIT_BYTES;
@@ -185,6 +186,14 @@ function parsedCandidate(
       (validUtf8 && hasUnsupportedXmlChar(content.toString("utf8"))))
   );
 
+  if (readTooLarge) {
+    diagnostics.push({
+      code: "read_too_large",
+      level: "error",
+      message: "Skill exceeds 10 MiB read limit",
+      path: canonicalPath
+    });
+  }
   if (tooLarge) {
     diagnostics.push({
       code: "too_large",
@@ -212,9 +221,8 @@ function parsedCandidate(
 
   const explicitEligible = parsedSkill !== null && !tooLarge && !unsupportedXmlCharacter;
   const preview = decodeUtf8WithinByteBudget(content, SKILL_PREVIEW_BYTES);
-  const rawContent = explicitEligible
-    ? decodeUtf8WithinByteBudget(content, SKILL_EXPLICIT_BYTES).content
-    : null;
+  // Explicit message wrapping and on-demand reading have different eligibility rules.
+  const rawContent = parsedSkill ? content.toString("utf8") : null;
   return {
     ...descriptor,
     canonicalPath,

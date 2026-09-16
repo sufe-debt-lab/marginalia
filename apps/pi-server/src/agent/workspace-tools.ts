@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isUtf8 } from "node:buffer";
 import {
   createReadToolDefinition,
   createWriteToolDefinition,
@@ -21,6 +22,14 @@ function textResult(text: string) {
     content: [{ type: "text" as const, text: truncated.content }],
     details: { truncation: truncated }
   };
+}
+
+function textSnapshot(bytes: Buffer): string {
+  if (!isUtf8(bytes) || bytes.includes(0))
+    throw new Error(
+      "Only UTF-8 text files can be changed with write/edit; binary or invalid UTF-8 targets are unsupported."
+    );
+  return bytes.toString("utf8");
 }
 
 function imageMime(bytes: Buffer): string | undefined {
@@ -80,6 +89,7 @@ export async function createWorkspaceTools(
     async execute(id, args, signal) {
       const relative = files.relative(args.path);
       const snapshot = await files.snapshot(relative);
+      const before = snapshot ? textSnapshot(snapshot.content) : "";
       const effect: ToolEffect = {
         kind: snapshot ? "overwrite" : "create",
         target: path.join(cwd, relative)
@@ -94,7 +104,7 @@ export async function createWorkspaceTools(
             kind: "file_edit",
             path: effect.target,
             mode: "write",
-            ...previewContent(relative, snapshot?.content.toString("utf8") ?? "", args.content)
+            ...previewContent(relative, before, args.content)
           }
         },
         signal
@@ -120,6 +130,7 @@ export async function createWorkspaceTools(
       const relative = files.relative(args.path);
       const snapshot = await files.snapshot(relative);
       if (!snapshot) throw new Error("File not found");
+      const before = textSnapshot(snapshot.content);
       let proposed: string | undefined;
       // pi computes its own replacement semantics against a frozen snapshot. No disk side effects yet.
       const native = createEditToolDefinition(cwd, {
@@ -144,7 +155,7 @@ export async function createWorkspaceTools(
             kind: "file_edit",
             path: effect.target,
             mode: "edit",
-            ...previewContent(relative, snapshot.content.toString("utf8"), proposed)
+            ...previewContent(relative, before, proposed)
           }
         },
         signal
@@ -247,19 +258,50 @@ export async function createWorkspaceTools(
   };
   const tools = [read, grep, find, ls, write, edit, bash];
   if (Object.keys(skillContents).length) {
+    const skillRoots = await Promise.all(
+      [...new Set(Object.keys(skillContents).map((file) => path.dirname(file)))].map((directory) =>
+        WorkspaceFiles.open(directory)
+      )
+    );
     const readSkill: ReturnType<typeof createReadToolDefinition> = {
       ...createReadToolDefinition(cwd),
       name: "read_skill",
       label: "read_skill",
       description:
-        "Read an available Skill from the frozen catalog. The path is its exact location in available_skills, not arbitrary filesystem access.",
+        "Read a frozen admitted Skill body, or a resource beneath its directory. Use the absolute catalog path or resolve references relative to that Skill directory. Resource reads reject symlinks and parent traversal; they do not authorize execution or writes.",
       async execute(id, args, signal, update, ctx) {
-        if (!Object.hasOwn(skillContents, args.path))
-          throw new Error("Skill is not in this run catalog");
-        await authorizeRead("read_skill", id, args.path, signal);
-        const bytes = Buffer.from(skillContents[args.path]!);
+        await gateway.authorize(
+          sessionId,
+          {
+            toolName: "read_skill",
+            toolCallId: id,
+            effect: { kind: "read", target: args.path }
+          },
+          signal
+        );
+        let bytes: Buffer;
+        if (Object.hasOwn(skillContents, args.path)) bytes = Buffer.from(skillContents[args.path]!);
+        else {
+          if (!path.isAbsolute(args.path) || args.path.split(/[\\/]/).includes(".."))
+            throw new Error("Skill resource is not in this run catalog");
+          const root = skillRoots.find((root) => {
+            const relative = path.relative(root.rootDir, args.path);
+            return (
+              relative !== "" &&
+              relative !== ".." &&
+              !relative.startsWith(`..${path.sep}`) &&
+              !path.isAbsolute(relative)
+            );
+          });
+          if (!root) throw new Error("Skill resource is not in this run catalog");
+          bytes = await root.read(path.relative(root.rootDir, args.path));
+        }
         return createReadToolDefinition(cwd, {
-          operations: { access: async () => {}, readFile: async () => bytes }
+          operations: {
+            access: async () => {},
+            readFile: async () => bytes,
+            detectImageMimeType: async () => imageMime(bytes)
+          }
         }).execute(id, args, signal, update, ctx);
       }
     };

@@ -60,7 +60,7 @@ export class PiCodingAgentClient implements AgentClient {
       }),
       appendSystemPromptOverride: (base) => [
         ...base,
-        "File tools accept workspace-relative paths only. Use read_skill for locations in available_skills; those are catalog identities, not permission to read arbitrary files."
+        "File tools accept workspace-relative paths only. Use read_skill for admitted Skill bodies and files referenced beneath their directories (including explicitly selected Skills). Resolve references against the Skill directory; this grants no write or execute permission."
       ],
       extensionFactories: []
     });
@@ -91,7 +91,7 @@ export class PiCodingAgentClient implements AgentClient {
       agentSessionPath: input.agentSessionPath ?? null,
       resourceRevision: input.runtimeSkills.effectiveRevision,
       runtimeRevision: JSON.stringify([
-        "workspace-access-v1",
+        "workspace-access-v2",
         input.piProviderId,
         input.modelId,
         input.permission === "readonly" ? "readonly" : "default"

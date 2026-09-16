@@ -225,3 +225,30 @@ it("refuses mutations in Read-only even if a tool handle was obtained earlier", 
   expect(existsSync(path.join(root, "new.md"))).toBe(false);
   expect(gateway.pendingIds("s")).toEqual([]);
 });
+
+it.each(["write", "edit"])(
+  "rejects non-text %s targets before approval and preserves their bytes",
+  async (name) => {
+    const { root, gateway, execute } = await setup();
+    let approvals = 0;
+    gateway.onEvent("s", (event) => {
+      if (event.type === "approval_requested") {
+        approvals++;
+        gateway.resolve(event.approvalId, { approved: false });
+      }
+    });
+    for (const bytes of [Buffer.from([97, 255, 98]), Buffer.from("a\0b")]) {
+      writeFileSync(path.join(root, "data.bin"), bytes);
+      await expect(
+        execute(
+          name,
+          name === "write"
+            ? { path: "data.bin", content: "replacement" }
+            : { path: "data.bin", edits: [{ oldText: "a", newText: "replacement" }] }
+        )
+      ).rejects.toThrow("UTF-8 text");
+      expect(readFileSync(path.join(root, "data.bin"))).toEqual(bytes);
+    }
+    expect(approvals).toBe(0);
+  }
+);

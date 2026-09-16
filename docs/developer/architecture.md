@@ -264,7 +264,7 @@ bytes 必须是合法 UTF-8，否则发布 `invalid_utf8` error 并把 candidate
 限制始终按 Buffer bytes 判断。显式调用的原始 `SKILL.md` 文件上限为 512 KiB（边界包含），preview 上限
 为 256 KiB；超过文件上限，正文含 XML 1.0 不允许的字符，或 name、canonical path、canonical base
 directory 含 XML 1.0 不允许的字符或 CR/LF 时，candidate 仍保留 Pi metadata 和 preview，但
-`explicitEligible: false`、`rawContent: null`。`disable-model-invocation` 直接映射为 `explicitOnly`，
+`explicitEligible: false`。有效候选保留最多 10 MiB 的完整 `rawContent` 供隐式读取；超过读取上限则为 invalid，并产生 `read_too_large` 诊断。`disable-model-invocation` 直接映射为 `explicitOnly`，
 完整稳定内容用 SHA-256 `contentHash` 标识。Preference、canonical identity 去重、同名 collision 和
 effective winner 由下一阶段 Catalog reducer 处理。
 
@@ -472,9 +472,18 @@ ApprovalGateway.authorize，不允许只在 UI 或 tool_call 预检查。未知�
 Agent find/grep 在受限 walker 上用固定 ignore 7.0.5 解析根目录及子目录 `.gitignore`，跳过被忽略子树；
 文件树界面保留原来的枚举规则。
 
-Skills 保留 Catalog 作为唯一准入边界。`read_skill` 按本轮 immutable Catalog 的 exact path 取冻结正文，
-不按该 path 重新访问磁盘；普通 read 仍拒绝绝对路径。相关 Skill metadata/正文变化继续使 effectiveRevision
-变化并重建缓存 session。explicit-only 不通过隐式 catalog reader 暴露。
+Skills 保留 Catalog 作为唯一准入边界。`read_skill` 对本轮 admitted Skill 的 exact path 返回冻结正文，
+不按该 path 重新读取正文；隐式正文读取与 512 KiB/XML 显式 wrapper 门槛分开，读取上限为 10 MiB。
+准入包括 effective 且可隐式调用的 Skill，以及本轮已通过 preflight 的 explicit-only 选择。
+显式选择集合进入 runtime revision，移除选择后不能复用仍持有其资源权限的 session。
+
+Skill 根目录在工具准备时经 WorkspaceFiles 固定。`read_skill` 可按需读取该目录内的资源，使用同一
+native 操作边界和 10 MiB 单文件上限；拒绝父路径段、symlink、目录替换与根目录外目标。
+资源读取返回当前文件内容，不宣称它是冻结正文的一部分；不递归复制资源、不增加正文数据库。
+普通 read/write/edit 仍只访问 workspace，资源准入不授权写入或执行，bash 仍遵守现有 execute 策略。
+
+文本 write/edit 在生成预览前拒绝非法 UTF-8 或含 NUL 的目标，不请求审批也不改动原始字节。
+不猜测编码、不自动转码、不提供二进制 diff；有效 UTF-8 文本继续使用准确 diff 与版本核对。
 
 原生 binding 防止 pathname 被换成 symlink 后把发布重定向到外部；它不是 OS 隔离，也不是跨进程
 expected-inode CAS。macOS/Windows 的同权限恶意目录移动仍属于上游明确的 best-effort 范围，Linux 原生

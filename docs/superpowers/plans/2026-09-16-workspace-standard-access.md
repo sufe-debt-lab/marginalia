@@ -121,3 +121,18 @@ pi-server 341 passed / 1 skipped、desktop 478 passed；格式、lint、typechec
 逐张裁决：workspace-access/overwrite-pending 的悬停状态与 diff 字形渲染不同；
 workspace-access/stale-approval 的聊天滚动位置不同，拒绝及过期错误均可见；三张 Skills 为
 worktree 路径换行与悬停背景差异。实际交互及文件字节断言均通过，无布局或内容回归，保留现有基线。
+
+## PR review 后续修复
+
+三项评论均经实际 Catalog 和生产工具复现：隐式有效 Skill 不可读、外部 Skill 引用资源不可读、
+非 UTF-8 字节有损解码后仍标记 exact。新增行为测试首先 5 failed，然后修复。
+正文保留与显式 wrapper 资格分离，最大 10 MiB；引用资源复用 WorkspaceFiles 的已固定 Skill 根目录，
+按需只读，explicit-only 仅本轮选择后准入并改变缓存身份；不增加平行状态或递归资源快照。
+文本 write/edit 在审批前拒绝非法 UTF-8/NUL 目标，保留原字节。针对性 79 tests 通过。
+
+最终 `pnpm verify` 通过：docs 30、chat-core 38、pi-server 347 passed / 1 skipped、desktop 478 passed；
+全部包 typecheck、format、lint、build 通过。`pnpm docs:check -- --base origin/main` 通过。
+首次并行视觉验证在构建触发 HMR 后丢失审批按钮；构建结束后单独重跑 `pnpm verify:visual` 成功，
+六场景 44 张截图，39 unchanged、5 changed、0 new/orphan/errors。逐张核对两张 workspace-access
+仅悬停/字形渲染不同，三张 Skills 仅 worktree 路径与悬停不同，无布局或内容回归，不改基线。
+正常审批、拒绝、过期恢复、真实落盘、重开历史及面板交互均通过；未使用外部模型或真实凭据。

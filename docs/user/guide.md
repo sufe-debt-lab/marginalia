@@ -147,7 +147,7 @@ catalog refresh 或显示普通 Retry。普通 Retry 只属于已经收到 `run_
 
 Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。可显式调用的原始
 `SKILL.md` 文件最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB，内容预览最多 256 KiB；
-非法 UTF-8 文件显示为 Invalid，不会被发送。Skill 正文中的 XML 1.0 非法 control character，以及
+非法 UTF-8 文件显示为 Invalid，不会被发送。隐式读取可使用最多 10 MiB 的有效 Skill 正文，不受显式 wrapper 门槛影响；超过读取上限则为 Invalid。Skill 正文中的 XML 1.0 非法 control character，以及
 name/path 中的 CR/LF 也会阻止显式发送并保留诊断；普通正文换行仍可使用。选择失效和 payload 超限分别返回稳定的
 409/413；其他 run preparation 内部失败只返回通用 500，不包含内部 path、byte count 或异常消息。
 Shadowed selection 的 409 会额外返回当前 winner 的 canonical `winnerPath`；其他失败原因不包含该字段。
@@ -194,3 +194,7 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 普通开合使用宽度与透明度过渡，拖动时直接跟手；系统减少动态效果设置取消非必要过渡。布局偏好保存在本机。文档编辑仍未启用，当前不承诺未保存 Markdown 编辑或跨重启恢复文件标签。
 
 文件读取失败时保留当前标签和错误信息；点击文档工具栏“刷新”重新读取本地文件，成功后恢复预览。刷新会同时更新文件列表并加载磁盘上的最新已保存内容。没有打开文件时也可在筛选框旁刷新列表；列表失败会提示并允许重试。关闭再打开面板会重新读取列表，保留当前标签与预览。
+
+Skill 中引用的资料可从该 Skill 目录内按需读取；仅限已启用的隐式 Skill 或本轮明确选择的 Skill。
+引用资源不会自动获得写入、执行或访问其他目录的权限。Agent 文本改稿遇到非法 UTF-8 或含 NUL 的
+目标文件时会明确失败，原文件保留，不展示有损文本审批预览。
