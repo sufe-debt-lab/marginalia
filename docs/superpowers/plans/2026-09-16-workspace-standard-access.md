@@ -91,3 +91,17 @@ docs_impact:
 这不是跨平台安全验收全部结束：当前实机证据仅来自 macOS；Windows/Linux、打包原生 binding 与同权限
 恶意跨进程操作尚未完成验证。P0-SEC-002/005 和本规格/计划保持 active，不能据本轮结果宣称 OS sandbox
 或跨进程 expected-inode CAS，也不关闭 GitHub Issue #5。
+
+## Rebase 与 PR 交付（2026-09-16）
+
+按用户要求将分支 rebase 到远端 main `950f732`，保留 #21 面板功能、两个默认验证场景及双方正式文档。
+rebase 后 `pnpm verify` 再次通过：docs 30、chat-core 38、pi-server 302 passed / 1 skipped、desktop 452 passed；
+`pnpm docs:check -- --base origin/main` 通过。
+
+`pnpm verify:visual` 六个非 live 场景通过，共 44 张：36 unchanged、8 changed、0 new/orphan/error。
+逐张重新检查 permission-menu、两张 pending approval、两张 workspace-access，确认是 Standard Access
+与 #21 新布局的预期组合并更新这五张基线；三个 Skills 截图仅 worktree 路径不同，保留 main 基线。
+新建、拒绝、过期审批、重试、重开历史及桌面面板实际交互均通过。
+
+本次用户已授权提交、推送及创建 PR；前文未提交说明仅记录前一轮交付状态。PR 关联 #5 而不自动关闭，
+跨平台实机、打包和跨进程安全限制保持不变。
