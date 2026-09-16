@@ -13,6 +13,10 @@ export const en = {
     toggleRightPanel: "Toggle right panel",
     sessionInfo: "Session info",
     documentPanel: "Document panel",
+    sidebar: "Sidebar",
+    expandPanel: "Expand document panel",
+    restorePanel: "Restore document panel",
+    closePanel: "Close document panel",
     language: "Language",
     english: "English",
     chinese: "中文",
@@ -218,6 +222,7 @@ export const en = {
     filterFiles: "Filter files…",
     noFiles: "No files",
     refresh: "Refresh",
+    loadFilesFailed: "Could not load files",
     filesSuffix: "files · local index only",
     toggleTree: "Toggle file tree",
     addTab: "Add tab",
@@ -284,6 +289,10 @@ type MessageShape<T> = {
 
 export const zh = {
   common: {
+    sidebar: "侧栏",
+    expandPanel: "全屏查看文档面板",
+    restorePanel: "还原文档面板",
+    closePanel: "关闭文档面板",
     newChat: "新建聊天",
     settings: "设置",
     workspaces: "工作区",
@@ -499,6 +508,7 @@ export const zh = {
     filterFiles: "过滤文件…",
     noFiles: "没有文件",
     refresh: "刷新",
+    loadFilesFailed: "无法加载文件列表",
     filesSuffix: "个文件 · 仅本地索引",
     toggleTree: "切换文件树",
     addTab: "添加标签",

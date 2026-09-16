@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/app-store.js";
@@ -7,6 +7,7 @@ import { AppShell } from "./AppShell.js";
 describe("AppShell", () => {
   beforeEach(() => {
     cleanup();
+    Object.defineProperty(window, "innerWidth", { value: 1024, configurable: true });
     useAppStore.setState({
       view: "new-thread",
       settingsEntryTab: "general",
@@ -91,6 +92,149 @@ describe("AppShell", () => {
     render(<AppShell serverUrl="http://x" />);
     const aside = screen.getByRole("complementary", { name: /document panel/i });
     expect(aside).toHaveStyle({ width: "420px" });
+  });
+
+  it("refreshes the file list on reopen while keeping the current file", async () => {
+    useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", leftSidebarCollapsed: true });
+    const files = [{ path: "notes.md", name: "notes.md", kind: "file" }];
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.endsWith("/files")
+        ? files
+        : url.includes("/files/content")
+          ? { path: "notes.md", mime: "text/markdown", text: "# Saved notes", truncated: false }
+          : [{ id: "ws-1", name: "Research", rootDir: "/repo" }];
+      return new Response(JSON.stringify(body), {
+        headers: { "content-type": "application/json" }
+      });
+    });
+    render(<AppShell serverUrl="http://x" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Open notes.md" }));
+    expect(await screen.findByRole("button", { name: "Attach to chat" })).toBeInTheDocument();
+    files.push({ path: "new.md", name: "new.md", kind: "file" });
+    await userEvent.click(screen.getByRole("button", { name: /toggle right panel/i }));
+    await userEvent.click(screen.getByRole("button", { name: /toggle right panel/i }));
+    expect(screen.getByRole("button", { name: "Attach to chat" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open new.md" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Saved notes" })).toBeInTheDocument();
+  });
+
+  it("restores panel width and focus after application fullscreen and Escape", async () => {
+    useAppStore.setState({
+      view: "chat",
+      activeWorkspaceId: "ws-1",
+      rightPanelWidth: 420,
+      leftSidebarCollapsed: true
+    });
+    render(<AppShell serverUrl="http://x" />);
+    const expand = screen.getByRole("button", { name: "Expand document panel" });
+    await userEvent.click(expand);
+    const panel = screen.getByRole("dialog", { name: "Document panel" });
+    expect(panel).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("button", { name: "Restore document panel" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Document panel" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
+      width: "420px"
+    });
+    expect(expand).toHaveFocus();
+  });
+
+  it("includes shadow-root controls in fullscreen focus boundaries", async () => {
+    useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", leftSidebarCollapsed: true });
+    render(<AppShell serverUrl="http://x" />);
+    await userEvent.click(screen.getByRole("button", { name: "Expand document panel" }));
+    const panel = screen.getByRole("dialog", { name: "Document panel" });
+    // The file-tree web component renders its tabbable tree item in an open shadow root.
+    const tree = document.createElement("div");
+    const root = tree.attachShadow({ mode: "open" });
+    const item = document.createElement("button");
+    item.textContent = "notes.md";
+    root.append(item);
+    panel.append(tree);
+    const filter = screen.getByRole("textbox", { name: /filter/i });
+    filter.focus();
+    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(true);
+    expect(filter).toHaveFocus();
+
+    const restore = screen.getByRole("button", { name: "Restore document panel" });
+    restore.focus();
+    fireEvent.keyDown(restore, { key: "Tab", shiftKey: true });
+    expect(root.activeElement).toBe(item);
+    fireEvent.keyDown(item, { key: "Tab", composed: true });
+    expect(restore).toHaveFocus();
+  });
+
+  it("normalizes a previously saved narrow document width when opening", async () => {
+    localStorage.setItem(
+      "marginalia-app",
+      JSON.stringify({ version: 1, state: { rightPanelWidth: 280 } })
+    );
+    await useAppStore.persist.rehydrate();
+    useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", leftSidebarCollapsed: true });
+    render(<AppShell serverUrl="http://x" />);
+    expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
+      width: "360px"
+    });
+  });
+
+  it("preserves document width in a narrow window with the widest sidebar", () => {
+    useAppStore.setState({
+      view: "chat",
+      activeWorkspaceId: "ws-1",
+      leftSidebarWidth: 480,
+      rightPanelWidth: 520
+    });
+    Object.defineProperty(window, "innerWidth", { value: 960, configurable: true });
+    render(<AppShell serverUrl="http://x" />);
+    expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
+      width: "520px"
+    });
+    const resize = screen
+      .getByRole("complementary", { name: "Document panel" })
+      .querySelector('[role="separator"]')!;
+    fireEvent.pointerDown(resize, { clientX: 555, pointerId: 1 });
+    expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
+      width: "520px"
+    });
+    fireEvent.pointerUp(resize, { clientX: 555, pointerId: 1 });
+    Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+    fireEvent(window, new Event("resize"));
+    expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
+      width: "520px"
+    });
+  });
+
+  it("keeps a wide intermediate document width after drag release", async () => {
+    global.fetch = vi.fn(
+      async (input: RequestInfo | URL) =>
+        new Response(
+          JSON.stringify(
+            String(input).endsWith("/workspaces")
+              ? [{ id: "ws-1", name: "Research", rootDir: "/repo" }]
+              : []
+          ),
+          { headers: { "content-type": "application/json" } }
+        )
+    );
+    Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+    useAppStore.setState({
+      view: "chat",
+      activeWorkspaceId: "ws-1",
+      leftSidebarWidth: 275,
+      rightPanelWidth: 420
+    });
+    render(<AppShell serverUrl="http://x" />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const panel = screen.getByRole("complementary", { name: "Document panel" });
+    const handle = panel.querySelector('[role="separator"][aria-orientation="vertical"]')!;
+    fireEvent.pointerDown(handle, { clientX: 860, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 380, pointerId: 1 });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await waitFor(() => expect(panel).toHaveStyle({ width: "900px" }));
+    fireEvent.pointerUp(handle, { clientX: 380, pointerId: 1 });
+    expect(panel).toHaveStyle({ width: "900px" });
+    expect(useAppStore.getState().rightPanelWidth).toBe(900);
   });
 
   it("passes only an active workspace resolved from the loaded workspace list to Skills", async () => {

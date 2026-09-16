@@ -433,7 +433,7 @@ export function Composer(props: Props) {
             "min-h-[40px] max-h-[260px]"
           )}
         />
-        <div className="mt-2 flex items-center gap-1">
+        <div className="mt-2 flex flex-wrap items-center gap-1">
           <Button
             variant="ghost"
             size="icon"

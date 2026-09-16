@@ -2914,3 +2914,10 @@ renderer 不再持有 bearer，启用 sandbox，通过受限 preload 访问。�
 - 限制：Windows/Linux packaged、签名安装、干净客户机、真实模型未验证；Provider keychain (#4)、
   workspace 工具隔离 (#5)、Run reconciliation (#6) 不在本任务范围，保持原有未完成状态。
 - 实现引用：基于 0105cbf 的 `codex/issue-3-loopback-boundary` 分支；最终复查通过后按维护者授权提交、推送并创建 PR，不合并或关闭 Issue。
+
+### PR #34 合并 main 后验证
+
+- 合并 main 的 950f732，保留 #21 的面板焦点与内容生命周期，同时保留 #3 的无 renderer bearer 接口。
+- 更新新增 AppShell 测试的调用签名。面板截图场景的 page.route 拦截不适用于 main-owned HTTP，改用临时移走 fixture 文件/目录触发真实读取失败，并在 finally 恢复，保持失败恢复验收。
+- AppShell focused 17 tests 通过；完整 pnpm verify 通过（docs 30、chat-core 38、pi-server 334、desktop 478；1 live skipped）。
+- pnpm verify:visual：42 张，39 unchanged、3 changed、0 new/orphan/errors。逐张检查 skills-settings、skills-global-only、skill-diagnostics，差异仅在隔离 worktree 路径换行；#21 面板真实失败恢复、全屏焦点、宽度和内容保留均通过。不更新基线。

@@ -164,3 +164,7 @@ protocol 代理 JSON、SSE 和 raw/Range 请求，并在代理层注入 bearer �
 `smoke:packaged` 使用环境 allowlist、临时 HOME/USERPROFILE 和 Pi agent 目录，不继承模型凭据，
 只注入现有可控 Agent。除了公开健康和认证请求，还检查实际 sandbox preferences、真实文件流、
 图片解码、拒绝跨窗口读取，以及 server 重启后 workspace 持久化。不会调用外部模型。
+
+## 桌面窗口布局
+
+Electron 主窗口继续使用 macOS 原生窗口按钮，位置为 x=14、y=16，与 46px 顶栏垂直中心对齐。文档面板全屏属于 renderer 内布局，不调用系统全屏或切换 Space；原生最小化、关闭和系统全屏仍由 Electron 窗口处理。面板布局回归使用隔离 Electron 验证，不代表安装包签名、公证或发布验收完成。

@@ -23,7 +23,7 @@ export type ProviderFormValues = {
 };
 
 const inputCls =
-  "h-9 rounded-lg border-border bg-surface text-[13px] shadow-none transition-[border-color,box-shadow] duration-150 focus-visible:border-brand focus-visible:ring-[3px] focus-visible:ring-brand-soft focus-visible:ring-offset-0";
+  "h-9 rounded-lg border-border bg-surface text-[13px] shadow-none transition-[border-color,box-shadow] duration-150 focus-visible:border-border-strong focus-visible:ring-0 focus-visible:ring-offset-0";
 
 function Field({
   id,

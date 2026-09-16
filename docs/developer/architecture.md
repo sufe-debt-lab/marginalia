@@ -446,3 +446,11 @@ Chromium 直接消费响应流，文件切换由原生资源生命周期及 PDF.
 IPC 请求由发起它的 renderer 生命周期拥有；主 frame reload、renderer crash 或销毁会中止尚未完成的
 传输，server 仍按既有断连规则取消 execution 和审批。普通 React 页面切换不触发该清理。
 启动 stderr/stdout 按完整行脱敏，跨 chunk 的 bearer 也不进入诊断日志。
+
+## 桌面面板生命周期
+
+`apps/desktop/src/app/AppShell.tsx` 保持当前 workspace 的 DocumentPanel 实例，关闭面板及同项目视图切换只隐藏并设置 inert，不卸载文件标签/预览。workspace key 改变时重建组件，避免跨项目文件身份混用。布局宽度及开合继续复用 `marginalia-app` 的 Zustand persist；应用内全屏及拖动恢复宽度只在组件中保留临时交互状态。文件正文仍通过现有文件接口读取，本票不改变 ChatEntry 或 Run 的生命周期。
+
+全屏面板覆盖 renderer 区域，顶端预留原生窗口控件；背景 inert、Tab 焦点限制、Escape 与还原操作由 shell 负责。原生 BrowserWindow 的系统全屏状态不改变。现有编辑入口尚禁用，后续编辑缓冲应留在此内容生命周期内。
+
+文件面板的可见状态传给 `useFileTree`：重新可见时通过既有 files API 读取列表，手动刷新同时更新列表与当前正文，失败保留已有预览并可重试。外侧面板拖动、释放和恢复使用相同的窗口宽度上限；内部文件树从实际 DOM 宽度开始拖动。全屏焦点边界包含文件树的 open Shadow Root，内部导航仍由原生 Tab 与文件树组件处理。
