@@ -41,6 +41,7 @@ afterEach(async () => {
   const active = executions.splice(0);
   for (const { controller } of active) controller.abort();
   await Promise.all(active.map(({ settled }) => settled));
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -97,4 +98,13 @@ it("preserves pi's timeout error and does not execute an already-aborted command
     bash.exec("echo late > artifact.md", root, { signal: controller.signal, onData() {} })
   ).rejects.toThrow("aborted");
   expect(fs.existsSync(path.join(root, "artifact.md"))).toBe(false);
+});
+
+it("does not leak the worker bootstrap flag into the default shell environment", async () => {
+  vi.stubEnv("ELECTRON_RUN_AS_NODE", undefined);
+  const chunks: Buffer[] = [];
+  await trackedOperations().exec('printf "%s" "${ELECTRON_RUN_AS_NODE-unset}"', workspace(), {
+    onData: (chunk) => chunks.push(chunk)
+  });
+  expect(Buffer.concat(chunks).toString()).toBe("unset");
 });

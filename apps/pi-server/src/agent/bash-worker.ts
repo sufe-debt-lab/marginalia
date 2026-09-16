@@ -1,5 +1,8 @@
 import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
 
+// This bootstraps Electron as Node; it must not change commands run by the shell.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 // One command per worker. The IPC channel is the owner's lifetime, including
 // SIGKILL: this process remains alive long enough to abort pi's shell group.
 export type BashWorkerInput = {

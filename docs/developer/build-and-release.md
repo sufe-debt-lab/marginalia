@@ -165,3 +165,7 @@ Electron 当前会在 main 状态中持有 token，并通过 preload status brid
 开发环境的 system Node 子进程与 packaged utility process 均接收 Electron 的 `MARGINALIA_PARENT_PID`。正常退出/重启先等待 server 退出；server 在父进程消失时中止执行、写入终态后退出。强杀 server 的记录在下一次启动归一。当前自动化覆盖开发 Electron 和 system Node；签名安装包、Windows/macOS packaged utility-process 退出行为仍需发行 smoke test，不能由开发截图替代。
 
 Bash 的 `bash-worker` 随 pi-server 的 `dist` 一起打包。工作进程使用现有 Electron 可执行文件的 Run-as-Node 模式，不依赖客户机 Node；打包时必须保留 Electron 的 RunAsNode fuse。发行 smoke test 应覆盖真实 Bash 的 stdout、停止及 server 强杀清理。无需为工作进程新增 SQLite ABI 构建步骤。
+
+## 桌面窗口布局
+
+Electron 主窗口继续使用 macOS 原生窗口按钮，位置为 x=14、y=16，与 46px 顶栏垂直中心对齐。文档面板全屏属于 renderer 内布局，不调用系统全屏或切换 Space；原生最小化、关闭和系统全屏仍由 Electron 窗口处理。面板布局回归使用隔离 Electron 验证，不代表安装包签名、公证或发布验收完成。

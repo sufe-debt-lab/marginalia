@@ -214,4 +214,8 @@ SQLite 的 `runs.owner_pid` 与 `owner_started_at` 记录执行进程 PID 和操
 
 Electron 内部为 server 注入 `MARGINALIA_PARENT_PID`，用于应用退出/崩溃后的存活检查；它不是用户配置项，不需要手动设置。应用内重启等待旧 server 退出，再启动新进程。开发者独立运行 server 时没有桌面所有者，仍可通过 SIGTERM/SIGINT 正常关闭。
 
-活动 Bash 使用短生命周期工作进程，父 IPC 断开时停止 shell。`ELECTRON_RUN_AS_NODE` 仅用于内部工作进程启动，不要求用户配置；命令自身仍接收原 Bash 环境。pi 的 shellPath、commandPrefix、超时与现有权限策略保持有效。
+活动 Bash 使用短生命周期工作进程，父 IPC 断开时停止 shell。`ELECTRON_RUN_AS_NODE` 仅用于内部工作进程启动，不要求用户配置；worker 启动后即移除该内部标志，命令自身仍接收原 Bash 环境。pi 的 shellPath、commandPrefix、超时与现有权限策略保持有效。
+
+## 面板布局偏好
+
+既有本地 UI 存储保存左右栏宽度和开合状态。新安装左栏默认 275px，文档面板默认 388px；升级保留已有偏好。应用内全屏是临时状态，还原不会将全屏宽度保存成偏好。窗口变窄只限制显示宽度，不覆盖已保存的宽度。文件标签与预览保留在当前 renderer 生命周期中，不保存另一份文档正文。

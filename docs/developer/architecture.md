@@ -414,4 +414,12 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 
 `apps/pi-server/src/agent/supervised-bash.ts` 使用 pi 原生工具扩展点替换 Bash 的执行后端。每次调用启动 `bash-worker`，复用 `createLocalBashOperations` 处理 shell、stdout/stderr、退出码、超时和进程树中止。工作进程以 Node IPC 的存活作为 server 所有权；父连接断开时中止命令并退出，不承担后台任务或 Session 状态。这样 server 被强杀后，仍有存活进程负责清理活动命令。
 
-Ask 审批仍在执行器调用前运行，Read-only 不注册该工具；shellPath 与 commandPrefix 沿用 pi settings。生产运行编译后的工作进程；system Node 使用同一个 Node 可执行文件，Electron utility process 使用其可执行文件的 `ELECTRON_RUN_AS_NODE` 模式。没有新依赖、聊天协议或文档正文副本。
+Ask 审批仍在执行器调用前运行，Read-only 不注册该工具；shellPath 与 commandPrefix 沿用 pi settings。生产运行编译后的工作进程；system Node 使用同一个 Node 可执行文件，Electron utility process 使用其可执行文件的 `ELECTRON_RUN_AS_NODE` 模式。worker 启动后清除该内部标志，避免未显式传入环境的 shell 调用继承它。没有新依赖、聊天协议或文档正文副本。
+
+## 桌面面板生命周期
+
+`apps/desktop/src/app/AppShell.tsx` 保持当前 workspace 的 DocumentPanel 实例，关闭面板及同项目视图切换只隐藏并设置 inert，不卸载文件标签/预览。workspace key 改变时重建组件，避免跨项目文件身份混用。布局宽度及开合继续复用 `marginalia-app` 的 Zustand persist；应用内全屏及拖动恢复宽度只在组件中保留临时交互状态。文件正文仍通过现有文件接口读取，本票不改变 ChatEntry 或 Run 的生命周期。
+
+全屏面板覆盖 renderer 区域，顶端预留原生窗口控件；背景 inert、Tab 焦点限制、Escape 与还原操作由 shell 负责。原生 BrowserWindow 的系统全屏状态不改变。现有编辑入口尚禁用，后续编辑缓冲应留在此内容生命周期内。
+
+文件面板的可见状态传给 `useFileTree`：重新可见时通过既有 files API 读取列表，手动刷新同时更新列表与当前正文，失败保留已有预览并可重试。外侧面板拖动、释放和恢复使用相同的窗口宽度上限；内部文件树从实际 DOM 宽度开始拖动。全屏焦点边界包含文件树的 open Shadow Root，内部导航仍由原生 Tab 与文件树组件处理。

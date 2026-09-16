@@ -489,3 +489,7 @@ HTTP API 之外，renderer 通过 `window.marginalia`（`apps/desktop/electron/p
 - provider 预设、存储位置、读取限制：[配置](../user/configuration.md)
 
 Bash 的工具 schema、审批 hook、结果截断和 raw pi 事件不变。通过 pi 的 `BashOperations` 把每个活动命令交给短生命周期工作进程执行；server 与该进程之间的 Node IPC 断开（包括 server SIGKILL）会触发 AbortSignal，由 pi 原生执行器终止 shell 进程组。Run 的 SQLite 归一与工具进程清理分别负责元数据与实际副作用，不能互相替代。
+
+### 面板布局与文件接口
+
+面板开合、拖宽及应用内全屏不创建 HTTP/SSE 或 IPC 协议；继续使用现有文件列表、正文与 raw URL。当前文件组件在同 workspace 的布局切换中保留，布局偏好使用 renderer 既有本地存储；文件正文不写入该存储。

@@ -62,7 +62,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
       <div className="space-y-1 p-2">
         <Button
           variant="ghost"
-          className="w-full justify-start gap-2 rounded-md active:scale-[0.99]"
+          className="icon-action h-[34px] w-full justify-start gap-2 "
           onClick={newChat}
           aria-label={t("common.newChat")}
         >
@@ -76,9 +76,9 @@ export function Sidebar({ api }: { api: ApiClient }) {
           type="button"
           onClick={newWorkspace}
           aria-label={t("common.newWorkspace")}
-          className="rounded-md p-1 active:scale-95 [@media(hover:hover)]:hover:bg-accent"
+          className="icon-action"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" />
         </button>
       </div>
       <ScrollArea className="flex-1 px-2 pb-2">
@@ -109,7 +109,7 @@ export function Sidebar({ api }: { api: ApiClient }) {
         <Button
           variant="ghost"
           className={cn(
-            "w-full justify-start gap-2 rounded-md active:scale-[0.99]",
+            "icon-action h-[34px] w-full justify-start gap-2 ",
             view === "settings" && "bg-select text-foreground"
           )}
           onClick={() => openSettings("general")}

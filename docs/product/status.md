@@ -117,3 +117,21 @@ Next milestone: M0 - Trustworthy Local Alpha
 ### Issue #6 review 修复
 
 复核发现旧强杀测试只停在审批阶段，未覆盖正在运行的 Bash；已添加真实 pi/HTTP 强杀复现并接入随父 IPC 断开而 abort 的 Bash 工作进程。修复先确认红灯后通过真实 Bash 强杀/重启、输出、停止、超时、Ask 和 Read-only 测试。macOS Electron utilityProcess 的编译 worker 正常输出及 SIGKILL 后文件保护均实测通过；这不等同于 Windows/Linux 或完整安装包验证。最终 `pnpm verify` 通过；视觉复跑 38 unchanged、3 changed、0 new/orphan/errors，逐张对比确认仅 Skills 路径及悬停差异，保留原基线。活动 Bash 治理不承诺任意已脱离的后台进程沙箱。
+
+## Issue #21 面板切片（2026-09-16，候选工作树已验证）
+
+候选工作树已实现 46px 顶栏、默认 275px 左栏、文档面板拖动和应用内全屏/还原、同项目布局切换保留文件标签及预览、键盘焦点与既有布局偏好持久化。focused tests 76 项及 useDocumentContent 3 项、全部包 typecheck、`pnpm verify` 和真实 Electron 面板交互通过。完整视觉比较为 38 changed、3 new、1 unchanged，全部逐张裁决并按预期变更更新基线，最终完整复验 42 unchanged、0 changed/new/error；详见[验证与视觉裁决](../developer/issues/2026-09-16-desktop-panels-verification.md)。
+
+此切片不改变上方历史验证快照或 Alpha NO-GO；未实现真实右侧摘要、Markdown 手工编辑或跨重启标签恢复，不以原型模拟能力作为已交付证据。
+
+后续 review 的五项问题已修复：列表重开刷新与失败重试、Shadow DOM 焦点、释放宽度一致、窄窗文档动作和内部树拖动。复验 66 项 focused、desktop 全量 452 项及完整 `pnpm verify` 通过；本轮视觉 5 changed、37 unchanged 经逐张裁决更新基线，同批截图重比 42 unchanged。详细红绿与 Electron 证据见上方验证记录。
+
+### PR #36 review 与 main 集成
+
+合入 `950f732` 的 Issue #21 面板实现，保留两票截图场景和正式文档。Review 的环境变量意见在执行后端省略 `env` 时成立：真实 Bash 回归先读到内部标志 `1`，修复后 worker 清除 `ELECTRON_RUN_AS_NODE` 再执行 shell；正常 pi 工具本来就显式传入命令环境。
+
+Unix 秒级启动时间不能区分“旧 server 在启动所在秒内创建 Run、退出、同 PID 又被分配”的极端情况。该边界可能延迟旧记录归一，但不会恢复工具或放行旧执行；当前没有实际复现，不据此新增原生依赖、跨平台探测层或持久化格式兼容逻辑。
+
+合并后的 `pnpm verify` 通过：docs 30、chat-core 38、pi-server 310、desktop 457，共 835 项，1 项外部模型测试跳过。focused 11 项及最新 main 的文档影响检查通过。
+
+完整 Electron 视觉复跑覆盖 44 张：40 unchanged、4 changed、0 new/orphan/errors。逐张对比后，只更新 `run-recovery/server-restarted` 基线以采用已合入的 275px 左栏、46px 顶栏及文档面板操作区；恢复消息与行为保持不变。其余三张 Skills 差异仅为 worktree 路径和悬停状态，接受且保留 main 基线。更新后同批截图重比为 41 unchanged、3 changed；真实面板与 Run 恢复交互均通过。首次与构建并行的捕获因 HMR 清空 fake Agent 内存消息而作废，未据此改审批基线；独立复跑该截图 unchanged。

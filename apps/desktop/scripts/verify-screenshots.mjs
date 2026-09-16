@@ -96,6 +96,14 @@ const SCENARIOS = {
     expected: ["server-stopped", "server-restarted"],
     run: scenarioRunRecovery
   },
+  "desktop-panels": {
+    description:
+      "Real Electron pane dragging, fullscreen, keyboard, persistence and file retention.",
+    default: true,
+    env: { MARGINALIA_FAKE_AGENT: "1" },
+    expected: ["panels-file", "panels-fullscreen", "panels-narrow"],
+    run: scenarioDesktopPanels
+  },
   "minimax-live": {
     live: true,
     description: "Opt-in real MiniMax run with prompt, streaming and final result screenshots.",
@@ -1301,6 +1309,274 @@ async function scenarioSkillsFlow(ctx) {
     .getByRole("button", { name: /open skills settings|前往技能设置/i })
     .waitFor({ timeout: 5000 });
   await capture(ctx, "skills-flow", "skill-precondition-blocked");
+}
+
+async function scenarioDesktopPanels(ctx) {
+  const { page, app } = ctx;
+  const seed = await ensureSeededWorkspace(ctx);
+  await resetUiState(page);
+  await updatePersistedUiState(page, { leftSidebarWidth: 275, rightPanelWidth: 420 });
+  await reloadApp(page);
+  await page
+    .locator('aside[aria-label="Sidebar"]')
+    .getByRole("button", { name: /Design review thread/ })
+    .click();
+  await waitForDocumentPanelReady(page);
+  const panel = page.getByRole("complementary", { name: "Document panel" });
+  const sidebar = page.getByRole("complementary", { name: "Sidebar", exact: true });
+  assert.equal(
+    await page.locator("header").evaluate((el) => el.getBoundingClientRect().height),
+    46
+  );
+  async function drag(handle, dx) {
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const box = await handle.boundingBox();
+    assert.ok(box);
+    await page.mouse.move(box.x + box.width / 2, box.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + 100, { steps: 12 });
+    await page.mouse.up();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+  }
+  await drag(sidebar.getByRole("separator"), 400);
+  assert.equal(Math.round((await sidebar.boundingBox()).width), 480);
+  await drag(sidebar.getByRole("separator"), -400);
+  assert.equal(Math.round((await sidebar.boundingBox()).width), 180);
+  await drag(sidebar.getByRole("separator"), 95);
+  // The empty panel must include the Shadow DOM tree in its focus loop.
+  await page.getByRole("button", { name: "Expand document panel" }).click();
+  const emptyFull = page.getByRole("dialog", { name: "Document panel" });
+  await emptyFull.getByRole("button", { name: "Refresh", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  const treeHasFocus = () =>
+    page.evaluate(() => {
+      let active = document.activeElement;
+      while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+      return active?.getAttribute("role") === "treeitem";
+    });
+  assert.equal(await treeHasFocus(), true, "Tab reaches the real file tree");
+  await page.keyboard.press("Tab");
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Restore document panel" })
+      .evaluate((el) => el === document.activeElement),
+    true
+  );
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await treeHasFocus(), true, "reverse Tab returns to the tree");
+  await page.keyboard.press("Escape");
+  await emptyFull.waitFor({ state: "hidden" });
+
+  await drag(panel.getByRole("separator").first(), -480);
+  assert.equal(
+    Math.round((await panel.boundingBox()).width),
+    900,
+    "wide drag stays at its released width"
+  );
+  await drag(panel.getByRole("separator").first(), 480);
+  // Fail one public HTTP read, then reopen the same real file to recover.
+  await page.route(
+    "**/files/content?path=README.md",
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "fixture read unavailable" })
+      }),
+    { times: 1 }
+  );
+  await panel.getByRole("treeitem", { name: /README/ }).click();
+  await panel.getByText(/fixture read unavailable/).waitFor();
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  await panel.getByText(/fixture read unavailable/).waitFor();
+  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  await panel.getByRole("heading", { name: "Demo Workspace" }).waitFor();
+
+  await panel.getByRole("button", { name: "Attach to chat" }).waitFor();
+  await capture(ctx, "desktop-panels", "panels-file");
+  const treeHandle = panel.getByRole("separator").last();
+  const treeWidth = () =>
+    treeHandle.evaluate((el) => el.parentElement.getBoundingClientRect().width);
+  const initialTreeWidth = await treeWidth();
+  await drag(treeHandle, -20);
+  assert.equal(
+    Math.round(await treeWidth()),
+    Math.round(initialTreeWidth - 20),
+    "tree drag starts at rendered width"
+  );
+  await drag(treeHandle, 20);
+  await writeFile(path.join(seed.workspace.rootDir, "new-panel-file.md"), "# New local file\n");
+
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  await panel.getByRole("button", { name: "Attach to chat" }).waitFor();
+  await panel.getByRole("treeitem", { name: /new-panel-file/ }).waitFor();
+  // Listing refresh failure keeps the open preview and can be retried.
+  await page.route(
+    "**/files",
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "unavailable" })
+      }),
+    { times: 1 }
+  );
+  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  await panel.getByRole("alert").waitFor();
+  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  await panel.getByRole("alert").waitFor({ state: "hidden" });
+  await panel.getByRole("heading", { name: "Demo Workspace" }).waitFor();
+  await rm(path.join(seed.workspace.rootDir, "new-panel-file.md"));
+  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  await panel.getByRole("treeitem", { name: /new-panel-file/ }).waitFor({ state: "hidden" });
+  await panel.getByRole("heading", { name: "Demo Workspace" }).waitFor();
+  await drag(panel.getByRole("separator").first(), -100);
+  const before = (await panel.boundingBox()).width;
+  assert.equal(Math.round(before), 520);
+  await page.getByRole("button", { name: "Expand document panel" }).click();
+  const full = page.getByRole("dialog", { name: "Document panel" });
+  assert.equal((await full.boundingBox()).width, await page.evaluate(() => innerWidth));
+  assert.equal(
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()),
+    false
+  );
+  assert.equal(await page.locator("main").evaluate((el) => el.inert), true);
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(await full.evaluate((el) => el.contains(document.activeElement)), true);
+  for (let i = 0; i < 16; i++) {
+    await page.keyboard.press("Tab");
+    assert.equal(await full.evaluate((el) => el.contains(document.activeElement)), true);
+  }
+  await page.getByRole("button", { name: "Restore document panel" }).focus();
+  const outline = await page
+    .getByRole("button", { name: "Restore document panel" })
+    .evaluate((el) => getComputedStyle(el).outlineStyle);
+  assert.equal(outline, "solid");
+  if (process.platform === "darwin") {
+    assert.deepEqual(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getWindowButtonPosition()
+      ),
+      { x: 14, y: 16 }
+    );
+  }
+  await capture(ctx, "desktop-panels", "panels-fullscreen");
+  await page.keyboard.press("Escape");
+  await full.waitFor({ state: "hidden" });
+  assert.equal((await panel.boundingBox()).width, before);
+  await panel.getByRole("button", { name: "Attach to chat" }).waitFor();
+  await drag(panel.getByRole("separator").first(), -1000);
+  await full.waitFor();
+  await page.keyboard.press("Escape");
+  await full.waitFor({ state: "hidden" });
+  assert.equal((await panel.boundingBox()).width, before);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 600));
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  const bounds = await panel.boundingBox();
+  assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 961);
+  for (const name of ["Expand document panel", "Close document panel", "Attach to chat"]) {
+    const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+    assert.ok(box && box.x >= bounds.x && box.x + box.width <= 961, `${name} remains reachable`);
+  }
+  const sendBounds = await page.getByRole("button", { name: "Send", exact: true }).boundingBox();
+  assert.ok(
+    sendBounds && sendBounds.x + sendBounds.width <= bounds.x,
+    "narrow chat send stays reachable"
+  );
+  const modelBounds = await page.getByRole("button", { name: /Select model/ }).boundingBox();
+  assert.ok(
+    modelBounds && modelBounds.x + modelBounds.width <= bounds.x,
+    "narrow model picker stays reachable"
+  );
+  await capture(ctx, "desktop-panels", "panels-narrow");
+  await drag(sidebar.getByRole("separator"), 205);
+  assert.equal(Math.round((await sidebar.boundingBox()).width), 480);
+  const attachBounds = await panel.getByRole("button", { name: "Attach to chat" }).boundingBox();
+  assert.ok(
+    attachBounds && attachBounds.x >= 0 && attachBounds.x + attachBounds.width <= 960,
+    "document action fits with the widest sidebar"
+  );
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 800));
+  await page.waitForTimeout(100);
+  await drag(sidebar.getByRole("separator"), -205);
+  assert.equal(Math.round((await sidebar.boundingBox()).width), 275);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 600));
+  await page.waitForTimeout(100);
+
+  await page.evaluate(() => delete document.documentElement.dataset.motion);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const frames = await page.evaluate(async () => {
+    const pane = document.querySelector('aside[aria-label="Document panel"]');
+    document.querySelector("[data-panel-toggle]").click();
+    const samples = [];
+    for (let i = 0; i < 18; i++) {
+      await new Promise(requestAnimationFrame);
+      samples.push({
+        width: pane.getBoundingClientRect().width,
+        opacity: Number(getComputedStyle(pane).opacity)
+      });
+    }
+    return samples;
+  });
+  assert.ok(
+    frames.some(
+      (frame) => frame.width > 0 && frame.width < 520 && frame.opacity > 0 && frame.opacity < 1
+    )
+  );
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.ok(
+    await panel.evaluate((el) => parseFloat(getComputedStyle(el).transitionDuration) <= 0.001)
+  );
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  const hiddenPanel = page.locator('aside[aria-label="Document panel"]');
+  assert.equal(await hiddenPanel.evaluate((el) => getComputedStyle(el).transitionDuration), "0s");
+  assert.equal(await hiddenPanel.evaluate((el) => getComputedStyle(el).transitionDelay), "0s");
+  await page.getByRole("button", { name: "Toggle right panel" }).click();
+  await page.evaluate(() => {
+    document.documentElement.dataset.motion = "off";
+  });
+
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+b" : "Control+b");
+  assert.equal(
+    await page.locator('aside[aria-label="Sidebar"]').getAttribute("aria-hidden"),
+    "true"
+  );
+  await reloadApp(page);
+  assert.equal(
+    await page.locator('aside[aria-label="Sidebar"]').getAttribute("aria-hidden"),
+    "true"
+  );
+  const stored = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("marginalia-app")).state
+  );
+  assert.equal(stored.leftSidebarWidth, 275);
+  assert.equal(stored.rightPanelWidth, 520);
+  await writeFile(
+    path.join(outRoot, "panels-verification.json"),
+    JSON.stringify(
+      {
+        dragging: "passed",
+        fullscreen: "application only",
+        focus: "contained, including empty-panel Shadow DOM tree",
+        wideDragRelease: "900px retained",
+        treeDrag: "rendered width follows pointer",
+        fileListRefresh: "reopen and failure retry passed",
+        restoreWidth: before,
+        fileRetention: "passed",
+        narrowWindow: "passed",
+        persistence: "passed",
+        readFailureRecovery: "passed",
+        motion: "intermediate width and opacity frames; reduced-motion verified",
+        nativeControls: "position (14,16), app fullscreen leaves system fullscreen false"
+      },
+      null,
+      2
+    )
+  );
 }
 
 async function scenarioMinimaxLive(ctx) {
