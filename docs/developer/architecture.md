@@ -435,3 +435,13 @@ pi AuthStorage 使用 in-memory storage，模型请求只消费 runtime key。Te
 截图模式将 SQLite 和凭据同时置于进程内存，不打开默认数据库，也忽略 `MARGINALIA_DB_PATH`。
 每个截图服务进程重新通过 HTTP 建立 fixture，退出后两类状态一起释放。打包资源的原生 smoke 另在独立 namespace 使用合成值，并在 finally
 清理该测试项。原生服务说明见 [keyring-node](https://github.com/Brooooooklyn/keyring-node)。
+
+Run 在异步准备及 `run_started` 写出后、实际启动模型前重新读取系统凭据，避免恢复准备期间已替换或清空的旧 key。此时凭据缺失或拒绝访问通过既有 `run_failed` 终结已接受的 Run，不启动模型；不增加凭据版本或平行认证状态。
+
+## 桌面面板生命周期
+
+`apps/desktop/src/app/AppShell.tsx` 保持当前 workspace 的 DocumentPanel 实例，关闭面板及同项目视图切换只隐藏并设置 inert，不卸载文件标签/预览。workspace key 改变时重建组件，避免跨项目文件身份混用。布局宽度及开合继续复用 `marginalia-app` 的 Zustand persist；应用内全屏及拖动恢复宽度只在组件中保留临时交互状态。文件正文仍通过现有文件接口读取，本票不改变 ChatEntry 或 Run 的生命周期。
+
+全屏面板覆盖 renderer 区域，顶端预留原生窗口控件；背景 inert、Tab 焦点限制、Escape 与还原操作由 shell 负责。原生 BrowserWindow 的系统全屏状态不改变。现有编辑入口尚禁用，后续编辑缓冲应留在此内容生命周期内。
+
+文件面板的可见状态传给 `useFileTree`：重新可见时通过既有 files API 读取列表，手动刷新同时更新列表与当前正文，失败保留已有预览并可重试。外侧面板拖动、释放和恢复使用相同的窗口宽度上限；内部文件树从实际 DOM 宽度开始拖动。全屏焦点边界包含文件树的 open Shadow Root，内部导航仍由原生 Tab 与文件树组件处理。

@@ -288,6 +288,86 @@ it.each(["disabled", "missing", "busy-run", "missing-run", "invalid-skills"] as 
   }
 );
 
+it.each(["rotated-key", ""])(
+  "uses current credentials after preparation (%s)",
+  async (replacement) => {
+    const { root, db, credentialStore } = fixture();
+    const authStorage = AuthStorage.inMemory();
+    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    const model = modelRegistry.find("openai", "gpt-4o")!;
+    let entered!: () => void;
+    let resume!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resumePromise = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const keys: Array<string | undefined> = [];
+    const fake = new FakeAgentClient();
+    const agentClient: AgentClient = {
+      resolveApproval: () => false,
+      cancelPending: () => 0,
+      prepare: async (input) => {
+        entered();
+        await resumePromise;
+        const prepared = await fake.prepare(input);
+        return {
+          ...prepared,
+          start: (message) => {
+            const execution = prepared.start(message);
+            return {
+              ...execution,
+              events: {
+                async *[Symbol.asyncIterator]() {
+                  const result = await modelRegistry.getApiKeyAndHeaders(model);
+                  keys.push(result.ok ? result.apiKey : undefined);
+                  yield* execution.events;
+                }
+              }
+            };
+          }
+        };
+      }
+    };
+    const app = createApp({
+      db,
+      credentialStore,
+      authStorage,
+      modelRegistry,
+      agentClient,
+      capability: { token: "test-token", allowedOrigins: new Set<string>() }
+    });
+    const provider = await (
+      await json(app, "/providers", { name: "OpenAI", apiKey: "old-key", defaultModel: "gpt-4o" })
+    ).json();
+    const workspace = await (
+      await json(app, "/workspaces", { name: "Test", rootDir: root })
+    ).json();
+    const session = await (
+      await json(app, "/sessions", { workspaceId: workspace.id, title: "Test" })
+    ).json();
+    const request = json(app, `/sessions/${session.id}/runs`, {
+      providerId: provider.id,
+      message: "hello"
+    });
+    await enteredPromise;
+    try {
+      expect(
+        (await json(app, `/providers/${provider.id}`, { apiKey: replacement }, "PATCH")).status
+      ).toBe(200);
+    } finally {
+      resume();
+    }
+    const body = await (await request).text();
+    expect(keys).toEqual(replacement ? [replacement] : []);
+    expect(body).toContain(replacement ? "run_completed" : "credential_missing");
+    expect(db.prepare("select status from runs").get()).toEqual({
+      status: replacement ? "completed" : "failed"
+    });
+  }
+);
+
 it("preserves Provider lifecycle and uses the stored key after reopening; missing credentials reject before a run", async () => {
   const { root, db, credentialStore, reopen } = fixture();
   const authStorage = AuthStorage.inMemory();

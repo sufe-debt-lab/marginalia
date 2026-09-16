@@ -573,7 +573,10 @@ export function createApp(options: AppOptions = {}) {
       try {
         await emit("run_started", { model: modelId });
         // Rejected/preflight-failed requests must not mutate active authentication.
-        authStorage.setRuntimeApiKey(piProviderId(provider.name), key);
+        // Preparation yields to Settings updates; read the authority again at use time.
+        const currentKey = credentialStore.read(provider.apiKeyRef);
+        if (!currentKey) throw new Error("credential_missing");
+        authStorage.setRuntimeApiKey(piProviderId(provider.name), currentKey);
         execution = preparedRun.start(agentMessage);
 
         let abortRequested = false;

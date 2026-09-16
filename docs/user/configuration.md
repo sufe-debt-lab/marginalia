@@ -219,3 +219,7 @@ CORS 不再反射任意来源，但 workspace、provider、文件、审批等既
 - [产品状态](../product/status.md)
 - [系统架构](../developer/architecture.md)
 - [打包与发布](../developer/build-and-release.md)
+
+## 面板布局偏好
+
+既有本地 UI 存储保存左右栏宽度和开合状态。新安装左栏默认 275px，文档面板默认 388px；升级保留已有偏好。应用内全屏是临时状态，还原不会将全屏宽度保存成偏好。窗口变窄只限制显示宽度，不覆盖已保存的宽度。文件标签与预览保留在当前 renderer 生命周期中，不保存另一份文档正文。

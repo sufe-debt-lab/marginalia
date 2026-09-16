@@ -262,3 +262,7 @@ pnpm verify:visual
 真实模型 smoke 现在还要求显式 `MARGINALIA_LIVE_SMOKE=1`，仅存在 `MINIMAX_CN_API_KEY`
 不再触发网络请求。系统凭据 packaged smoke 与普通测试分开，命令及平台边界见
 [打包与发布](./build-and-release.md)。不要并行运行 packaging 与测试/开发的 native ABI 切换。
+
+## 面板交互回归
+
+`pnpm --filter @marginalia/desktop verify:screenshots --scenario desktop-panels` 使用既有 Electron 启动器、隔离 profile、临时 workspace/SQLite 和可控 Agent，实际执行外侧拖动、文件开合、应用内全屏、Escape、焦点限制、窄窗口和重载后的偏好恢复。它也是 `pnpm verify:visual` 的默认场景。截图与交互记录位于 `output/desktop-screenshots/`，必须逐张检查 changed/new；测试不使用真实 Provider 凭据或外部模型。

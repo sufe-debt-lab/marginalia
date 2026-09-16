@@ -1,6 +1,6 @@
 # 使用指南
 
-Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工具权限还不是安全沙箱，Provider key 也没有加密；重要限制见[产品状态](../product/status.md)。开发、测试和打包命令见[本地开发指南](../developer/development.md)。
+Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工具权限还不是安全沙箱；Provider key 由操作系统凭据库保存；重要限制见[产品状态](../product/status.md)。开发、测试和打包命令见[本地开发指南](../developer/development.md)。
 
 ## 基本流程
 
@@ -38,7 +38,7 @@ Settings -> Providers 提供 OpenAI、智谱 GLM、MiniMax、小米 MiMo 四个�
 
 自定义 Base URL 目前只会保存和显示，没有进入实际模型请求。Test 按钮只读检查所选账户的本地 provider/model 注册和凭据，不改变正在运行任务的账户，不会验证 key 是否有效，也不会向服务商发送真实请求。需要确认真实连通性时只能发起对话，并留意它可能产生费用。
 
-Provider API key 当前以明文保存在本机 SQLite。删除 provider 会同时删除它的 key 和关联 run 历史。完整配置边界见[配置](./configuration.md)。
+Provider API key 保存在操作系统凭据库，SQLite 仅保存不透明引用。删除 provider 会同时删除它的 key 和关联 run 历史。完整配置边界见[配置](./configuration.md)。
 
 ## 文件上下文
 
@@ -95,8 +95,8 @@ symlink component，但仍存在检查到写入之间的竞态边界；保存到
 | Data             | Location                               | Current behavior                                        |
 | ---------------- | -------------------------------------- | ------------------------------------------------------- |
 | SQLite           | `~/.marginalia/db.sqlite`              | 保存 workspace、session、provider、run、approval 等记录 |
-| Provider API key | SQLite `env_vars`                      | 明文保存，启动时注册到 pi 运行时                        |
-| pi AuthStorage   | `~/.marginalia/auth.json`              | 与独立 pi CLI 目录分开                                  |
+| Provider API key | 操作系统凭据库                         | SQLite 仅保存不透明引用，运行时读取凭据                 |
+| pi AuthStorage   | 进程内存                               | 不写入 auth.json，与独立 pi CLI 存储分开                |
 | UI preferences   | Electron localStorage `marginalia-app` | 保存语言、布局、权限、推理档位和模型选择                |
 
 本机 pi-server 监听随机 loopback 端口。每个 Electron server 进程会生成独立 capability token，
@@ -195,3 +195,13 @@ Provider key 由系统凭据库保存。禁用不会删除 key；删除 Provider
 迁移完成后 Test/发送出现 `credential_store_unavailable` 时解锁/授权后重试，出现
 `credential_missing` 时在 Provider 编辑页重新输入 key。Test 仍只做本地可用性检查，不联网验 key。
 详细存储与隐私边界见[配置](./configuration.md)。
+
+## 桌面面板
+
+顶栏高 46px，保留原生窗口控件。左栏默认 275px，可拖动到 180–480px；Cmd+B（macOS）或 Ctrl+B 可开合侧栏。文档面板默认 388px，拖动下限 360px；显示宽度以窗口为上限；较宽的文档面板可覆盖背景区域，释放拖动后保持选定宽度。
+
+文档面板顶部的全屏按钮将内容铺满应用窗口；也可以把外侧分隔线拖到窗口左缘。还原按钮或 Escape 恢复进入前宽度。此模式不切换系统桌面，背景暂不可操作，Tab 焦点留在面板内。关闭面板会返回顶部文件开关，重开保留当前文件、标签和预览状态。同一项目切换会话或设置保留面板；切换项目重置文件浏览，避免串用。
+
+普通开合使用宽度与透明度过渡，拖动时直接跟手；系统减少动态效果设置取消非必要过渡。布局偏好保存在本机。文档编辑仍未启用，当前不承诺未保存 Markdown 编辑或跨重启恢复文件标签。
+
+文件读取失败时保留当前标签和错误信息；点击文档工具栏“刷新”重新读取本地文件，成功后恢复预览。刷新会同时更新文件列表并加载磁盘上的最新已保存内容。没有打开文件时也可在筛选框旁刷新列表；列表失败会提示并允许重试。关闭再打开面板会重新读取列表，保留当前标签与预览。

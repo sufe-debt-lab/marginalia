@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FolderOpen, FolderTree, Paperclip, Pencil, RotateCw, Search } from "lucide-react";
 import type { ApiClient } from "@/api/client.js";
 import { ResizeHandle } from "@/components/ResizeHandle.js";
@@ -29,19 +29,22 @@ function clampTreeWidth(width: number): number {
 export function DocumentPanel({
   api,
   workspaceId,
-  workspaceName
+  workspaceName,
+  visible = true
 }: {
   api: ApiClient;
   workspaceId: string;
   workspaceName?: string | null;
+  visible?: boolean;
 }) {
   const { t } = useTranslation();
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(true);
   const [treeWidth, setTreeWidth] = useState(240);
+  const treeColumnRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState("");
-  const tree = useFileTree(api, workspaceId);
+  const tree = useFileTree(api, workspaceId, visible);
   const doc = useDocumentContent(api, workspaceId, activeTab);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const view = useAppStore((s) => s.view);
@@ -112,14 +115,15 @@ export function DocumentPanel({
 
   const treeColumn = (
     <div
+      ref={treeColumnRef}
       className={cn(
         "relative flex min-h-0 flex-col bg-surface-2 text-xs",
         hasTab ? "shrink-0 border-r border-border-soft" : "flex-1"
       )}
-      style={hasTab ? { width: treeWidth } : undefined}
+      style={hasTab ? { width: treeWidth, maxWidth: "45%" } : undefined}
     >
-      <div className="px-3 pb-2 pt-3">
-        <div className="flex h-9 items-center gap-2 rounded-[14px] border border-border bg-surface px-3 text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow,background-color] focus-within:border-border-strong focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(0,0,0,0.035)]">
+      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
+        <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-border bg-surface px-3 text-text-muted shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow,background-color] focus-within:border-border-strong focus-within:bg-white ">
           <Search className="h-4 w-4 shrink-0 text-text-subtle" strokeWidth={1.8} />
           <input
             type="text"
@@ -130,7 +134,22 @@ export function DocumentPanel({
             className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-[13px] text-foreground shadow-none outline-none ring-0 placeholder:text-text-subtle focus:border-0 focus:shadow-none focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0"
           />
         </div>
+        {!hasTab && (
+          <button
+            type="button"
+            aria-label={t("docPanel.refresh")}
+            onClick={tree.refresh}
+            className="icon-action"
+          >
+            <RotateCw className="h-3 w-3" />
+          </button>
+        )}
       </div>
+      {tree.error && (
+        <p role="alert" className="px-3 py-2 text-xs text-text-muted">
+          {t("docPanel.loadFilesFailed")}
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-2">
         {tree.loading ? (
           <p className="px-2 py-1 text-text-muted">{t("docPanel.loading")}</p>
@@ -180,7 +199,7 @@ export function DocumentPanel({
       {hasTab && (
         <ResizeHandle
           side="right"
-          getWidth={() => treeWidth}
+          getWidth={() => treeColumnRef.current!.getBoundingClientRect().width}
           onWidth={(next) => setTreeWidth(clampTreeWidth(next))}
         />
       )}
@@ -206,14 +225,18 @@ export function DocumentPanel({
             type="button"
             aria-label={t("docPanel.toggleTree")}
             onClick={() => setTreeOpen((v) => !v)}
-            className={cn("rounded p-1 hover:bg-accent", treeOpen && "bg-accent text-foreground")}
+            className={cn("icon-action", treeOpen && "bg-accent text-foreground")}
           >
             <FolderTree className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             aria-label={t("docPanel.refresh")}
-            className="rounded p-1 hover:bg-accent"
+            onClick={() => {
+              tree.refresh();
+              doc.refresh();
+            }}
+            className="icon-action"
           >
             <RotateCw className="h-3 w-3" />
           </button>
@@ -233,7 +256,7 @@ export function DocumentPanel({
                 fileUrl={activeFileUrl}
               />
             </div>
-            <div className="flex items-center gap-2 border-t border-border-soft bg-surface px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 border-t border-border-soft bg-surface px-3 py-2">
               <Button
                 variant="secondary"
                 size="sm"

@@ -503,3 +503,9 @@ Provider 的既有外键继续引用该行，避免重建 Provider/Run 表；新
 再以 `secure_delete` 事务原子清空旧值和写入保留的 v4 数据迁移标记。清理失败或事务失败均保留源值。
 失败会阻止启动并允许重试；v4 不是常规 SQL migration，后续 schema 版本从 v5 开始。
 Provider 写入/删除遇到 SQLite 事务失败会恢复原系统凭据；不宣称 OS store 与 SQLite 跨系统原子提交。
+
+Run 在异步准备及 `run_started` 写出后、实际启动模型前重新读取系统凭据，避免恢复准备期间已替换或清空的旧 key。此时凭据缺失或拒绝访问通过既有 `run_failed` 终结已接受的 Run，不启动模型；不增加凭据版本或平行认证状态。
+
+### 面板布局与文件接口
+
+面板开合、拖宽及应用内全屏不创建 HTTP/SSE 或 IPC 协议；继续使用现有文件列表、正文与 raw URL。当前文件组件在同 workspace 的布局切换中保留，布局偏好使用 renderer 既有本地存储；文件正文不写入该存储。

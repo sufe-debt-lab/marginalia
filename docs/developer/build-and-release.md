@@ -179,3 +179,7 @@ smoke 只使用 `works.marginalia.credential-smoke` namespace、随机 reference
 清理自己的测试项；不会列举或读取开发者现有系统凭据。失败只输出固定诊断；清理失败保留
 reference 供人工处理。macOS/Windows 必须在各自原生 runner 通过；Linux 要求已解锁的持久化
 Secret Service，在具备该服务的桌面环境单独验收，不接受 keyutils 或明文 fallback。
+
+## 桌面窗口布局
+
+Electron 主窗口继续使用 macOS 原生窗口按钮，位置为 x=14、y=16，与 46px 顶栏垂直中心对齐。文档面板全屏属于 renderer 内布局，不调用系统全屏或切换 Space；原生最小化、关闭和系统全屏仍由 Electron 窗口处理。面板布局回归使用隔离 Electron 验证，不代表安装包签名、公证或发布验收完成。

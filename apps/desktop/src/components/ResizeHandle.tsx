@@ -6,9 +6,10 @@ interface Props {
   getWidth: () => number;
   onWidth: (next: number) => void;
   onCommit?: (next: number) => void;
+  onStart?: () => void;
 }
 
-export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
+export function ResizeHandle({ side, getWidth, onWidth, onCommit, onStart }: Props) {
   const dragging = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
@@ -66,6 +67,7 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
       window.removeEventListener("pointerup", cancel);
       window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("blur", cancel);
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
       if (dragging.current) clearGlobals();
     };
   }, [clearGlobals, endDrag]);
@@ -75,6 +77,7 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
       role="separator"
       aria-orientation="vertical"
       onPointerDown={(e) => {
+        onStart?.();
         dragging.current = true;
         startX.current = e.clientX;
         startWidth.current = getRef.current();
@@ -94,8 +97,8 @@ export function ResizeHandle({ side, getWidth, onWidth, onCommit }: Props) {
       onPointerCancel={() => endDrag()}
       onLostPointerCapture={() => endDrag()}
       className={cn(
-        "group absolute top-0 z-30 h-full w-[10px] cursor-col-resize touch-none select-none app-no-drag",
-        side === "right" ? "-right-[5px]" : "-left-[5px]"
+        "group absolute top-0 z-30 h-full w-[6px] cursor-col-resize touch-none select-none app-no-drag",
+        side === "right" ? "right-0" : "left-0"
       )}
     >
       <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-accent/40 group-active:bg-accent/70" />

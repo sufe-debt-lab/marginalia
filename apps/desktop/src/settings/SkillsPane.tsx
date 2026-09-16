@@ -228,7 +228,7 @@ export function SkillsPane({ api, workspace }: SkillsPaneProps) {
               onChange={(event) => setQuery(event.target.value)}
               aria-label={t("settings.skillsSearch")}
               placeholder={t("settings.skillsSearchPlaceholder")}
-              className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-[13px] text-text focus-visible:border-brand focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-soft"
+              className="h-10 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-[13px] text-text focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-0"
             />
           </label>
 

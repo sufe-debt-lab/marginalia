@@ -74,8 +74,7 @@ interface AppState {
 
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 480;
-const MIN_RIGHT_WIDTH = 280;
-const MAX_RIGHT_WIDTH = 640;
+const MIN_RIGHT_WIDTH = 360;
 
 const localStorageAdapter: StateStorage = {
   getItem: (name) => getLocalStorage()?.getItem(name) ?? null,
@@ -137,7 +136,7 @@ export const useAppStore = create<AppState>()(
       leftSidebarCollapsed: false,
       rightPanelCollapsed: false,
       pinnedWorkspaceIds: [],
-      leftSidebarWidth: 238,
+      leftSidebarWidth: 275,
       rightPanelWidth: 388,
       composerProviderId: null,
       composerModel: null,
@@ -256,7 +255,7 @@ export const useAppStore = create<AppState>()(
         set({ leftSidebarWidth: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(px))) }),
       setRightPanelWidth: (px) =>
         set({
-          rightPanelWidth: Math.max(MIN_RIGHT_WIDTH, Math.min(MAX_RIGHT_WIDTH, Math.round(px)))
+          rightPanelWidth: Math.max(MIN_RIGHT_WIDTH, Math.round(px))
         }),
       setComposerModel: (providerId, model) =>
         set({ composerProviderId: providerId, composerModel: model }),

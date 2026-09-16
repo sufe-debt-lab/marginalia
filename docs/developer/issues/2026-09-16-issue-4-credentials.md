@@ -121,3 +121,13 @@
 重新读取 Issue #4/#2 与原生阻塞关系，远端 main 仍为 `0105cbf`，没有新增前置。
 需求与代码设计两路独立复查均无阻塞发现；主审核实调用链、改动范围与验证记录。
 修正开发文档中截图 runner 仍设置磁盘数据库路径的旧描述；代码未再变更，沿用上一节完整验证与逐张视觉裁决结果。
+
+## PR #35 review 与主干合并
+
+两条 review 均有效：异步准备期间 Settings 可更新凭据，旧快照在 start 前写回会撤销更新；用户指南仍保留 SQLite 明文和磁盘 AuthStorage 的旧声明。
+修复在实际模型 start 前同步重新读取权威凭据；清空/拒绝访问沿用已接受 Run 的失败与清理路径，不新增版本锁或状态系统。
+受控 prepare 暂停期间经真实 PATCH 替换/清空 key，两个回归在旧代码均读到 old-key 而失败，再修复实现。
+合并 main `950f732` 的面板功能，冲突仅为翻译键与文档追加章节，保留双方意图。双方内容均已保留。
+
+验证：`pnpm verify` exit 0，817 tests passed（server 323、desktop 456、chat-core 38），1 项真实模型 smoke skipped；两个新增测试先红后绿。最新 main 的 docs diff check 和 git diff check 通过。
+`pnpm verify:visual` exit 0，43 张图中 39 unchanged、4 changed。逐张裁决：凭据缺失提示图（1.925%）继承主干 275px 侧栏/46px 顶栏，toast 正常，使用带 reason 的比较命令更新这一张基线；Skills settings/global-only/diagnostics（0.234%/0.189%/0.222%）仅路径文本变化，不更新。新增主干面板交互场景通过。
