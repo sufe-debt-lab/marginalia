@@ -36,7 +36,11 @@ Marginalia 是一个本地优先的桌面应用，由三个 pnpm workspace 包�
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Renderer 不直接加载 Node API。Workspace 文件和 LLM 请求主要经过 pi-server；系统目录选择、外部链接和导出 `.md` 走 preload 到 Electron main 的 IPC。pi-server 只监听 `127.0.0.1`。每次启动生成的进程 capability 只保护 run 和后续 Skills API；其余既有 API 仍未认证。
+Renderer 不直接加载 Node API。Workspace 文件和 LLM 请求经受限 preload capability 与流式 IPC 进入
+Electron main，再代理到只监听 `127.0.0.1` 的 pi-server；`marginalia://pi-server` 只是 renderer 内部的
+逻辑 URL，不注册成可由页面直接 fetch 的协议。系统目录选择、外部链接和导出 `.md` 也走受限 preload
+IPC。除公开健康检查外，所有 HTTP route 都要求每进程 Loopback Access bearer 与 exact Origin，实际
+loopback URL 和 bearer 不进入 renderer。
 
 ## 进程模型
 
@@ -50,6 +54,9 @@ main 进程通过 `ipcMain.handle` 暴露给 renderer 的桥接：
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `pi-server:status`          | 查询 pi-server 当前状态                                                                                                                            | `apps/desktop/electron/main.ts#pi-server:status`          |
 | `pi-server:restart`         | 杀掉并重启 pi-server                                                                                                                               | `apps/desktop/electron/main.ts#pi-server:restart`         |
+| `pi-server:request`         | 接收 preload 限定的 path/method/header/body，验证 sender 后代理请求                                                                                | `apps/desktop/electron/main.ts#pi-server:request`         |
+| `pi-server:response`        | 把 status/header/body chunk 流式返回 preload；支持 JSON、SSE 和 raw bytes                                                                          | `apps/desktop/electron/main.ts#forwardPiServerRequest`    |
+| `pi-server:cancel`          | renderer abort 时取消对应的 main-owned request                                                                                                     | `apps/desktop/electron/main.ts#pi-server:cancel`          |
 | `workspace:pick-directory`  | 打开系统目录选择框                                                                                                                                 | `apps/desktop/electron/main.ts#workspace:pick-directory`  |
 | `marginalia:open-external`  | 在系统浏览器打开 HTTP(S) URL                                                                                                                       | `apps/desktop/electron/main.ts#marginalia:open-external`  |
 | `marginalia:save-text-file` | 弹出保存对话框，写入 .md 文件；成功返回 `{ saved: true, path }`，取消返回 `{ saved: false }`，写盘失败返回 `{ saved: false, error }` 而不是 reject | `apps/desktop/electron/main.ts#marginalia:save-text-file` |
@@ -64,9 +71,18 @@ Electron 截图验证不再通过 renderer IPC；统一由
 
 pi-server 是一个独立的 Node 进程，入口 `apps/pi-server/src/index.ts`：用 `@hono/node-server` 在 `127.0.0.1:0`（端口 0 = 由系统分配空闲端口）起服务，就绪后向 stdout 打印一行 JSON `{"type":"ready","port":<n>}`。
 
-main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）每次启动用 32 字节随机数生成 base64url capability token，通过 child environment 的 `MARGINALIA_CAPABILITY_TOKEN` 注入；开发模式还只把经过 loopback 校验的 Vite URL `.origin` 作为 `MARGINALIA_ALLOWED_ORIGIN` 注入。pi-server 入口在 agent client、Pi loader 或工具初始化前把两者复制进进程内 capability policy，并立即从 `process.env` 删除；之后启动的 Bash 工具子进程不会继承它们。token 不进入 ready stdout、日志或 SQLite。解析 ready 行后，main 内部状态变为 `{ status: "ready", url: "http://127.0.0.1:<port>", capabilityToken, process }`，经 preload 序列化给 renderer 时移除 `process`、保留 token。10 秒内未就绪则判定 `failed`。
+main 进程的 `startPiServer()`（`apps/desktop/electron/pi-server-spawner.ts#startPiServer`）每次启动用 32
+字节随机数生成 base64url bearer，通过 child environment 的 `MARGINALIA_LOOPBACK_BEARER` 注入；开发
+模式只允许经过 loopback 校验的 Vite URL `.origin`，packaged 模式固定使用 `null` Origin。pi-server 入口
+在 agent client、Pi loader 或工具初始化前把两者复制进进程内 Loopback Access policy，并立即从
+`process.env` 删除；之后启动的 Bash 工具子进程不会继承它们。bearer 不进入 ready stdout、普通日志、
+错误详情或 SQLite。解析 ready 行后，main 内部持有实际 URL、bearer 和 process；preload 只发布
+`{ status: "ready", url: "marginalia://pi-server" }`。preload 的 request capability 只接受业务请求字段；
+main 验证 IPC sender、逻辑 scheme/host、有限 HTTP method/header，丢弃 renderer Authorization/Cookie，
+再注入自己的 bearer/Origin。响应 body 以 chunk 经 preload 回传，从而保留 SSE 和二进制流。10 秒内未就绪
+则判定 `failed`。
 
-删除 Node 的 `process.env` 只保证后续子进程不再继承变量，不是对父进程地址空间或操作系统启动环境的安全擦除保证。尤其在 Linux 上，`/proc/<pid>/environ` 可能仍暴露进程启动时的原始环境字节，具体取决于 runtime 与 kernel 行为；因此 capability 仍按短生命周期 bearer 处理，不能把环境清理描述成彻底抹除 secret。
+删除 Node 的 `process.env` 只保证后续子进程不再继承变量，不是对父进程地址空间或操作系统启动环境的安全擦除保证。尤其在 Linux 上，`/proc/<pid>/environ` 可能仍暴露进程启动时的原始环境字节，具体取决于 runtime 与 kernel 行为；因此 Loopback Access bearer 仍按短生命周期 secret 处理，不能把环境清理描述成彻底抹除。
 
 当前 exit listener 只解决“启动前退出”。进程在 ready 后崩溃时，main 中的 `serverStatus` 可能继续显示 ready，直到普通 API 调用失败；完整恢复见 readiness issue `P1-RECOVERY-001`。
 
@@ -85,16 +101,22 @@ React 应用入口 `apps/desktop/src/main.tsx` → `App.tsx`。`App` 负责启�
 2. server `ready` 后请求 `GET /health` 做一次健康校验（`apps/desktop/src/App.tsx#loadHealth`）。
 3. 通过则渲染 `AppShell`，否则显示错误 + 重试按钮（重试走 `pi-server:restart`）。
 
-`AppShell`（`apps/desktop/src/app/AppShell.tsx#AppShell`）接收可信的 server URL 与 capability token，并据此构造 `ApiClient`。它是三栏布局：左 `Sidebar`（workspace/session 树）、中主区（`ChatView` / `SettingsView` / `FirstRunView` / `NewThreadView` 按 `view` 状态切换）、右 `DocumentPanel`（仅在 chat 视图且有活跃 workspace 时显示）。视图状态由 zustand store `apps/desktop/src/store/app-store.ts` 管理。
+`AppShell`（`apps/desktop/src/app/AppShell.tsx#AppShell`）只接收逻辑 transport URL，并据此构造使用
+preload request capability 的 `ApiClient`；不接收 bearer。它是三栏布局：左 `Sidebar`（workspace/session 树）、中主区（`ChatView` /
+`SettingsView` / `FirstRunView` / `NewThreadView` 按 `view` 状态切换）、右 `DocumentPanel`（仅在 chat
+视图且有活跃 workspace 时显示）。视图状态由 zustand store `apps/desktop/src/store/app-store.ts` 管理。
 
 ## 请求数据流
 
-renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调用 pi-server。`useApi(serverUrl, capabilityToken)`（`apps/desktop/src/hooks/useApi.ts`）用 main 进程拿到的 server URL 与 token 实例化它；普通 workspace/provider/document API 不发送 token，run 和后续 Skills API 才使用 bearer。各 `use*` hook（`useWorkspaces`、`useSessions`、`useMessages`、`useProviders`、`useSkillCatalog`、`useStreamingChat` 等）在其上封装数据获取与状态。
+renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调用受限 preload transport。
+`useApi(serverUrl)`（`apps/desktop/src/hooks/useApi.ts`）以 preload 返回的逻辑 URL 和
+`desktopPiServerFetch` 实例化它；所有 route 的 bearer 与 Origin 都由 main transport 注入。各 `use*` hook（`useWorkspaces`、`useSessions`、`useMessages`、
+`useProviders`、`useSkillCatalog`、`useStreamingChat` 等）在其上封装数据获取与状态。
 
 一次对话的完整链路：
 
-1. renderer 调 `ApiClient.runChat(sessionId, …)`（`apps/desktop/src/api/client.ts#runChat`），携带进程 bearer → `POST /sessions/:sessionId/runs`。
-2. pi-server 路由（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）按 capability auth → session/workspace lookup → request decode/validation（含 provider）顺序建立请求上下文。随后通过 `SessionRunLeases`（`apps/pi-server/src/run/session-run-leases.ts#SessionRunLeases`）取得该 session 的进程内 single-flight lease；重叠请求返回 `409 session_busy`，且不创建 run。
+1. renderer 调 `ApiClient.runChat(sessionId, …)`（`apps/desktop/src/api/client.ts#runChat`）访问 private transport；main 注入 bearer/Origin 后代理到 `POST /sessions/:sessionId/runs`。
+2. pi-server 路由（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）按 loopback access auth → session/workspace lookup → request decode/validation（含 provider）顺序建立请求上下文。随后通过 `SessionRunLeases`（`apps/pi-server/src/run/session-run-leases.ts#SessionRunLeases`）取得该 session 的进程内 single-flight lease；重叠请求返回 `409 session_busy`，且不创建 run。
 3. lease 内先由 `buildAgentMessage`（`apps/pi-server/src/agent/agent-message.ts#buildAgentMessage`）构造附件信封，再调 `agentClient.prepare(...)`（`PiCodingAgentClient`，`apps/pi-server/src/agent/pi-coding-agent-client.ts`）取得已配置的 session。两步都成功后才创建 `runs` 记录并打开 SSE。
 4. SSE 先发 `run_started`，再以 `start(message)` 驱动 `@earendil-works/pi-coding-agent`。agent 产出的**原始 pi 事件**被原样包进 `agent_event` 逐条推回（`apps/pi-server/src/app.ts#agent_event`）。
 5. 正常结束时发 `run_completed`，出错发 `run_failed`，并完成 `runs` 表记录（`apps/pi-server/src/app.ts#completeRun`）。SSE disconnect 或事件异常会请求 `execution.abort()` 并立即拒绝挂起审批；request abort listener 保持安装直到 `execution.settled` 完成，随后 route 才执行幂等的审批清理、释放 lease。正常事件结束不会额外 abort。
@@ -298,7 +320,7 @@ retarget 后，旧 canonical selection 不再命中新 snapshot。
 
 `createApp()`（`apps/pi-server/src/app.ts#createApp`）允许注入 `SkillCatalogService`；正常启动在数据库
 migration 后用 `createSkillPreferenceStore()` 构造默认 Catalog。`GET /skills`、
-`PATCH /skills/state` 和 `GET /skills/content` 都先执行进程 capability 与 exact-Origin 判定，再读取
+`PATCH /skills/state` 和 `GET /skills/content` 都先执行进程 Loopback Access 与 exact-Origin 判定，再读取
 query/body、查询 workspace 或调用 Catalog。缺失 `workspaceId` 固定解析为 global-only input，只扫描
 三个 user roots；提供 ID 时只通过 `getWorkspace()` 取得 server-owned root，客户端不能指定 root。
 
@@ -321,7 +343,7 @@ Settings → Skills 修复。
 
 ## Agent session 与资源
 
-每个 run 先在 capability auth 后以 bounded stream 读取最多 4 MiB body；declared/actual oversize 和
+每个 run 先在 loopback access auth 后以 bounded stream 读取最多 4 MiB body；declared/actual oversize 和
 stream read failure 都会 best-effort cancel，reader 始终释放 lock。随后在持有 per-session lease 后
 刷新一次 workspace Catalog，即使请求没有显式 Skill selection也一样。`prepareSkillTurn()`
 （`apps/pi-server/src/skills/turn-preflight.ts#prepareSkillTurn`）先在去重前限制 16 个 raw selections 和
@@ -372,13 +394,13 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 
 下面几项是已确认的 Alpha 限制，不应在其他文档中描述成已解决：
 
-- run 和后续 Skills API 有每进程 capability 与 exact-Origin 检查，CORS 不再反射任意来源；但其他既有 loopback 路由仍未认证。这个局部边界不关闭 `P0-SEC-001`，随机 loopback 端口也不是授权边界。
-- BrowserWindow 使用 context isolation 和 `nodeIntegration: false`，但 `sandbox: false`。
+- 只有 `GET /health` 公开，其余接口统一验证进程 bearer 和 exact Origin；未配置策略时默认拒绝。随机端口不是授权边界；该机制不抵御可读取同用户进程内存或控制 main 的恶意软件。
+- BrowserWindow 使用 context isolation、`nodeIntegration: false` 和 `sandbox: true`。
 - Full 和 Ask 使用 pi 默认 coding tools。Workspace 只作为 cwd，工具可接收绝对路径，bash 使用宿主用户权限。
 - HTTP 文件接口检查 lexical path、已存在目标 realpath，以及新目标最近存在祖先的 realpath；预先存在或
   断裂的 symlink component 会被拒绝。检查与最终 open/write 之间仍存在 TOCTOU，Agent coding tools 也未
   复用该边界。
-- Skill discovery 沿用 Pi symlink 语义，不要求 canonical target 留在 source root。持有 capability 的调用方
+- Skill discovery 沿用 Pi symlink 语义，不要求 canonical target 留在 source root。持有 Loopback Access bearer 的调用方
   只有在外部 target 已通过预先存在、可发现的 Skill symlink 成为当前 snapshot member 时才能取得其
   snapshot preview；单独提交任意 path 不会触发读取，content route 也不重读 target。
 - Catalog admission 只提供两个 active build、20 个 waiter 与 30 秒排队等待的有界 fail-closed；无法取消的
@@ -409,3 +431,18 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - 数据模型、HTTP 路由、SSE 事件格式：[API 参考](./api.md)
 - 打包时如何处理 better-sqlite3 原生 ABI：[打包与发布](./build-and-release.md)
 - 环境变量、provider、存储位置：[配置](../user/configuration.md)
+
+## Issue #3 的流式预览边界
+
+JSON 和 SSE 复用受限 preload IPC；原始 pi 事件和 ChatEntry 不变。二进制预览使用
+`marginalia-file://pi-server`，只代理 GET/HEAD 的 workspace raw-file 路由；Electron webRequest
+仅允许应用主 frame 的资源请求，拒绝其他窗口、子 frame 和页面导航。main 注入 bearer/Origin，
+Chromium 直接消费响应流，文件切换由原生资源生命周期及 PDF.js destroy 取消请求，不创建整文件 Blob。
+浏览器直接打开 Vite 页面没有这些能力；验收必须启动 Electron。
+
+`createApp` 不提供无认证测试旁路。功能测试使用显式测试 bearer；边界测试调用真实 HTTP 路由，
+覆盖拒绝、重新认证和 SQLite 重开。进程重启生成新 bearer，旧 bearer 失效；应用数据与文件不受影响。
+
+IPC 请求由发起它的 renderer 生命周期拥有；主 frame reload、renderer crash 或销毁会中止尚未完成的
+传输，server 仍按既有断连规则取消 execution 和审批。普通 React 页面切换不触发该清理。
+启动 stderr/stdout 按完整行脱敏，跨 chunk 的 bearer 也不进入诊断日志。

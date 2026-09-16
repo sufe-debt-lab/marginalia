@@ -67,16 +67,15 @@ describe("ApiClient Skills API", () => {
     >();
   });
 
-  it("lists a workspace catalog with an encoded workspace query and bearer", async () => {
+  it("lists a workspace catalog through the desktop transport", async () => {
     const fetchMock = stubJson(snapshot);
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await expect(api.listSkills("workspace / &")).resolves.toEqual(snapshot);
 
     const query = new URLSearchParams({ workspaceId: "workspace / &" });
     expect(fetchMock).toHaveBeenCalledWith(`http://server/skills?${query}`, {
       headers: {
-        authorization: "Bearer secret-token",
         "content-type": "application/json"
       }
     });
@@ -84,16 +83,16 @@ describe("ApiClient Skills API", () => {
 
   it("omits the workspace query for the global catalog", async () => {
     const fetchMock = stubJson({ ...snapshot, workspaceId: null });
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await api.listSkills(null);
 
     expect(fetchMock).toHaveBeenCalledWith("http://server/skills", expect.anything());
   });
 
-  it("sends an exact state patch with the bearer", async () => {
+  it("sends an exact state patch through the desktop transport", async () => {
     const fetchMock = stubJson(snapshot);
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await api.setSkillEnabled({
       path: "/canonical/pdf/SKILL.md",
@@ -104,7 +103,6 @@ describe("ApiClient Skills API", () => {
     expect(fetchMock).toHaveBeenCalledWith("http://server/skills/state", {
       method: "PATCH",
       headers: {
-        authorization: "Bearer secret-token",
         "content-type": "application/json"
       },
       body: JSON.stringify({
@@ -117,7 +115,7 @@ describe("ApiClient Skills API", () => {
 
   it("omits a null workspace from the exact state patch", async () => {
     const fetchMock = stubJson({ ...snapshot, workspaceId: null });
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await api.setSkillEnabled({
       path: "/canonical/pdf/SKILL.md",
@@ -132,7 +130,7 @@ describe("ApiClient Skills API", () => {
     });
   });
 
-  it("reads encoded Skill content with the bearer", async () => {
+  it("reads encoded Skill content through the desktop transport", async () => {
     const content = {
       path: "/canonical/pdf & notes/SKILL.md",
       content: "# PDF",
@@ -140,7 +138,7 @@ describe("ApiClient Skills API", () => {
       bytesTotal: 5
     };
     const fetchMock = stubJson(content);
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await expect(
       api.readSkillContent({ path: content.path, workspaceId: "workspace / &" })
@@ -152,7 +150,6 @@ describe("ApiClient Skills API", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(`http://server/skills/content?${query}`, {
       headers: {
-        authorization: "Bearer secret-token",
         "content-type": "application/json"
       }
     });
@@ -166,7 +163,7 @@ describe("ApiClient Skills API", () => {
         })
     );
     vi.stubGlobal("fetch", fetchMock);
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
     const skills = [
       { name: "pdf", path: "/canonical/pdf/SKILL.md" },
       { name: "slides", path: "/canonical/slides/SKILL.md" }
@@ -197,7 +194,7 @@ describe("ApiClient Skills API", () => {
       ]
     };
     stubJson(body, 409);
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await expect(
       api.runChat("s1", {
@@ -217,7 +214,7 @@ describe("ApiClient Skills API", () => {
   it("preserves a 413 run error without inventing details", async () => {
     const body = { error: "skill_payload_too_large" };
     stubJson(body, 413);
-    const api = new ApiClient("http://server", "secret-token");
+    const api = new ApiClient("http://server");
 
     await expect(
       api.runChat("s1", { providerId: "p1", message: "summarize" })

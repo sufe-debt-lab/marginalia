@@ -1,6 +1,6 @@
-import { consumeCapabilityEnvironment } from "./security/capability.js";
+import { consumeLoopbackAccessEnvironment } from "./security/loopback-access.js";
 
-const capability = consumeCapabilityEnvironment(process.env);
+const loopbackAccess = consumeLoopbackAccessEnvironment(process.env);
 const [{ serve }, { createApp }, { ScriptedFakeAgentClient }] = await Promise.all([
   import("@hono/node-server"),
   import("./app.js"),
@@ -14,7 +14,7 @@ const agentClient =
 
 const app = createApp({
   agentClient,
-  capability
+  loopbackAccess
 });
 
 const server = serve(

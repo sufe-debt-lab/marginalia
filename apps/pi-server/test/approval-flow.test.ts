@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { migrate } from "../src/db/migrations.js";
 import {
   createProvider,
@@ -14,6 +14,7 @@ import type { AgentRunEvent, ApprovalRequestedEvent } from "../src/agent/agent-c
 const dbs: Database.Database[] = [];
 const runHeaders = {
   authorization: "Bearer test-token",
+  origin: "null",
   "content-type": "application/json"
 };
 afterEach(() => {
@@ -31,7 +32,7 @@ function setup() {
   const app = createApp({
     db,
     agentClient: fake,
-    capability: { token: "test-token", allowedOrigins: new Set<string>() }
+    loopbackAccess: { bearer: "test-token", allowedOrigins: new Set(["null"]) }
   });
   return { db, session, provider, fake, app };
 }
@@ -90,7 +91,7 @@ describe("approval flow over SSE", () => {
         const decide = await app.request(`/sessions/${session.id}/approvals/ap-1`, {
           method: "POST",
           body: JSON.stringify({ approved: true }),
-          headers: { "content-type": "application/json" }
+          headers: runHeaders
         });
         expect(decide.status).toBe(200);
       }
@@ -110,7 +111,7 @@ describe("approval flow over SSE", () => {
     const res = await app.request(`/sessions/${session.id}/approvals/nope`, {
       method: "POST",
       body: JSON.stringify({ approved: true }),
-      headers: { "content-type": "application/json" }
+      headers: runHeaders
     });
     expect(res.status).toBe(404);
   });
@@ -158,7 +159,7 @@ describe("approval flow over SSE", () => {
       payload: { kind: "command", command: "x", cwd: "/" }
     });
     decideApproval(db, "x", "denied", "no");
-    const res = await app.request(`/sessions/${session.id}/approvals`);
+    const res = await app.request(`/sessions/${session.id}/approvals`, { headers: runHeaders });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject([{ id: "x", status: "denied", reason: "no" }]);
   });
