@@ -3,7 +3,7 @@ type: spec
 record_id: SPEC-P1-CHAT-CORE-001
 status: active
 created: 2026-07-08
-updated: 2026-07-11
+updated: 2026-09-16
 target_milestone: M0-trustworthy-local-alpha
 owner: repository-maintainers
 docs_impact:
@@ -23,6 +23,8 @@ docs_impact:
 日期：2026-07-08 · 状态：已与用户逐节确认，并经独立评审修订（v2）
 
 ## Current Progress
+
+2026-09-16：Issue #21 面板切片候选实现已完成验证，见[实施计划](../plans/2026-09-16-desktop-panels.md)。以父规格 #2 的新版布局要求为准；未扩大到 Markdown 编辑、摘要数据或 Run 所有权任务。
 
 截至 2026-07-11（验证提交 `1199645`）：
 

@@ -12,6 +12,8 @@
 | `SPEC-P2-SKILLS-001`    | spec | active | [Codex 风格 Skills 集成设计](./specs/2026-07-18-skills-integration-design.md) |
 | `PLAN-P2-SKILLS-001`    | plan | active | [Codex 风格 Skills 集成计划](./plans/2026-07-18-skills-integration.md)        |
 
+| `PLAN-DESKTOP-PANELS-021` | plan | active | [Issue #21 桌面面板](./plans/2026-09-16-desktop-panels.md) |
+
 <!-- active-records:end -->
 
 ## Rules

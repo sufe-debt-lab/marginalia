@@ -90,7 +90,7 @@ async function createWindow() {
     minHeight: 600,
     backgroundColor: "#fafafa",
     titleBarStyle: isMac ? "hiddenInset" : "default",
-    trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
+    trafficLightPosition: isMac ? { x: 14, y: 16 } : undefined,
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
       contextIsolation: true,

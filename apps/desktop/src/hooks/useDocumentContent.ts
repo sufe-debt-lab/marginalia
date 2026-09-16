@@ -4,6 +4,7 @@ import type { ApiClient, DocumentContent } from "@/api/client.js";
 export function useDocumentContent(api: ApiClient, workspaceId: string, path: string | null) {
   const cacheRef = useRef<Map<string, DocumentContent>>(new Map());
   const [content, setContent] = useState<DocumentContent | null>(null);
+  const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -41,7 +42,13 @@ export function useDocumentContent(api: ApiClient, workspaceId: string, path: st
     return () => {
       active = false;
     };
-  }, [api, workspaceId, path]);
+  }, [api, workspaceId, path, revision]);
 
-  return { content, loading, error };
+  function refresh() {
+    if (!path) return;
+    cacheRef.current.delete(`${workspaceId}::${path}`);
+    setRevision((value) => value + 1);
+  }
+
+  return { content, loading, error, refresh };
 }

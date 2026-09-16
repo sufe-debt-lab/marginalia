@@ -135,14 +135,18 @@
   /* Collapsible sidebar column: slides to width 0, then drops out of the
      a11y/tab order via delayed visibility (kept in the DOM for the animation). */
   .sidebar-pane {
+    opacity: 1;
     transition:
       width var(--motion-panel) var(--ease-out),
+      opacity var(--motion-panel) var(--ease-out),
       visibility 0s linear;
   }
   .sidebar-pane[data-collapsed="true"] {
     visibility: hidden;
+    opacity: 0;
     transition:
       width var(--motion-panel) var(--ease-in),
+      opacity var(--motion-panel) var(--ease-in),
       visibility 0s linear var(--motion-panel);
   }
 
@@ -409,4 +413,50 @@ html[data-resizing-panels] * {
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
+}
+
+/* Keep content mounted through pane transitions, including application fullscreen. */
+.document-pane {
+  display: flex;
+  flex-direction: column;
+}
+@layer components {
+  .icon-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    min-width: 34px;
+    padding: 6px;
+    border-radius: 9px;
+    color: var(--text-muted);
+  }
+  .icon-action svg {
+    width: 16px;
+    height: 16px;
+  }
+  .icon-action:hover,
+  .icon-action[aria-expanded="true"] {
+    background: hsl(var(--accent));
+    color: hsl(var(--foreground));
+  }
+  .icon-action:active {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-pane,
+  .sidebar-pane[data-collapsed="true"],
+  .pane-width-transition {
+    transition: none !important;
+  }
+}
+html[data-resizing-panels] .sidebar-pane {
+  transition: none;
+}
+
+.icon-action:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+  box-shadow: none;
 }

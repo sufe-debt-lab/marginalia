@@ -22,7 +22,7 @@ export function Topbar({ title }: { title: string }) {
   const toggleRight = useAppStore((s) => s.toggleRightPanel);
 
   return (
-    <header className="app-drag flex h-11 shrink-0 items-stretch border-b border-border-soft bg-background">
+    <header className="app-drag flex h-[46px] shrink-0 items-stretch bg-background">
       {/* Sidebar segment — tinted like the sidebar so the two read as one column. */}
       <div
         style={{ width: leftCollapsed ? COLLAPSED_SEGMENT_WIDTH : leftWidth }}
@@ -35,7 +35,7 @@ export function Topbar({ title }: { title: string }) {
         <Button
           variant="ghost"
           size="icon"
-          className="app-no-drag h-7 w-7 shrink-0 text-text-muted active:scale-95"
+          className="icon-action h-[34px] w-[34px] app-no-drag shrink-0 "
           aria-pressed={!leftCollapsed}
           aria-label={t("common.toggleLeftSidebar")}
           onClick={toggleLeft}
@@ -51,7 +51,7 @@ export function Topbar({ title }: { title: string }) {
             <Button
               variant="ghost"
               size="icon"
-              className="app-no-drag h-6 w-6 text-text-faint active:scale-95"
+              className="icon-action h-[34px] w-[34px] app-no-drag "
               aria-label={t("common.sessionInfo")}
             >
               <Info className="h-3.5 w-3.5" />
@@ -65,10 +65,11 @@ export function Topbar({ title }: { title: string }) {
               variant="ghost"
               size="icon"
               className={cn(
-                "app-no-drag h-7 w-7 text-text-muted active:scale-95",
+                "icon-action h-[34px] w-[34px] app-no-drag ",
                 !rightCollapsed && "bg-surface-3 text-foreground"
               )}
               aria-pressed={!rightCollapsed}
+              data-panel-toggle
               aria-label={t("common.toggleRightPanel")}
               onClick={toggleRight}
             >

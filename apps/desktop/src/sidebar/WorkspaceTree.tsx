@@ -69,9 +69,9 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent"
+          className="flex min-w-0 w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/80  [@media(hover:hover)]:hover:bg-accent"
         >
-          <Folder className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+          <Folder className="h-4 w-4 shrink-0 text-text-muted" />
           <span className="min-w-0 flex-1 truncate text-left" title={workspace.name}>
             {workspace.name}
           </span>
@@ -102,7 +102,7 @@ export function WorkspaceTree({ api, workspace, onDelete }: Props) {
                 type="button"
                 onClick={() => selectSession(s.id, s.title)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md py-1.5 pl-[30px] pr-2 text-left text-sm text-foreground/70 active:scale-[0.99] [@media(hover:hover)]:hover:bg-accent",
+                  "flex w-full items-center gap-2 rounded-md py-1.5 pl-[30px] pr-2 text-left text-sm text-foreground/70  [@media(hover:hover)]:hover:bg-accent",
                   activeSessionId === s.id && "bg-select text-foreground"
                 )}
               >
