@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAppStore } from "@/store/app-store.js";
 import { App } from "./App.js";
 
 vi.mock("@/api/desktop-transport.js", () => ({
@@ -10,6 +11,7 @@ vi.mock("@/api/desktop-transport.js", () => ({
 describe("App", () => {
   beforeEach(() => {
     cleanup();
+    useAppStore.setState({ locale: "en" });
     vi.useRealTimers();
     window.marginalia = undefined;
     window.history.replaceState({}, "", "/");
@@ -43,7 +45,9 @@ describe("App", () => {
   it("shows an error when the desktop bridge is unavailable", async () => {
     render(<App />);
 
-    expect(screen.getByText("desktop bridge unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("The local service is unavailable. Retry to restart it.")
+    ).toBeInTheDocument();
     expect(window.marginalia).toBeUndefined();
   });
 
@@ -83,7 +87,7 @@ describe("App", () => {
     };
 
     render(<App />);
-    await screen.findByText("boom");
+    await screen.findByText("The local service is unavailable. Retry to restart it.");
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
@@ -103,7 +107,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText(/health check failed/i);
+    await screen.findByText("The local service is unavailable. Retry to restart it.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
@@ -116,17 +120,21 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByText("desktop bridge unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("The local service is unavailable. Retry to restart it.")
+    ).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
     expect(new URLSearchParams(window.location.search).has("capabilityToken")).toBe(false);
   });
 
-  it("requires both the browser debug server query and token fragment", async () => {
+  it("does not enable browser access from the server query alone", async () => {
     window.history.replaceState({}, "", "/?serverUrl=http://127.0.0.1:4312");
 
     render(<App />);
 
-    expect(screen.getByText("desktop bridge unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("The local service is unavailable. Retry to restart it.")
+    ).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -139,11 +147,55 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByText("desktop bridge unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("The local service is unavailable. Retry to restart it.")
+    ).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
     expect(new URLSearchParams(window.location.search).get("serverUrl")).toBe(
       "http://127.0.0.1:4312"
     );
     expect(window.location.hash).toBe("");
+  });
+  it("notices a server exit after ready and restarts through Retry", async () => {
+    let failed = false;
+    window.marginalia = {
+      getPiServerStatus: vi.fn(async () =>
+        failed
+          ? { status: "failed" as const, error: "pi-server exited", logs: [] }
+          : { status: "ready" as const, url: "marginalia://pi-server" }
+      ),
+      restartPiServer: vi.fn(async () => {
+        failed = false;
+        return {
+          status: "ready" as const,
+          url: "marginalia://pi-server"
+        };
+      })
+    };
+    render(<App />);
+    await screen.findByRole("main");
+    failed = true;
+    await screen.findByText(
+      "The local service stopped. Restart it to continue. Saved messages and files are kept.",
+      {},
+      { timeout: 2500 }
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByRole("main");
+    expect(window.marginalia.restartPiServer).toHaveBeenCalledTimes(1);
+  });
+  it("localizes shutdown errors instead of showing raw IPC diagnostics", async () => {
+    useAppStore.setState({ locale: "zh" });
+    window.marginalia = {
+      getPiServerStatus: vi.fn(async () => ({
+        status: "failed" as const,
+        error: "pi-server shutdown timed out",
+        logs: []
+      })),
+      restartPiServer: vi.fn()
+    };
+    render(<App />);
+    await screen.findByText("本地服务暂不可用，请重试以重启服务。");
+    expect(screen.queryByText("pi-server shutdown timed out")).not.toBeInTheDocument();
   });
 });

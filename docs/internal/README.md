@@ -8,6 +8,8 @@
 
 | Record ID                       | Outcome               | Archived   | Document                                                                 |
 | ------------------------------- | --------------------- | ---------- | ------------------------------------------------------------------------ |
+| `SPEC-RUN-LIFECYCLE-006`        | completed             | 2026-09-16 | [Run 终态治理](./specs/2026-09-16-run-lifecycle.md)                      |
+| `PLAN-RUN-LIFECYCLE-006`        | completed             | 2026-09-16 | [Run 终态治理实施记录](./plans/2026-09-16-run-lifecycle.md)              |
 | `SPEC-DOC-LIFECYCLE-001`        | completed             | 2026-07-11 | [文档生命周期设计](./specs/2026-07-11-documentation-lifecycle-design.md) |
 | `PLAN-DOC-LIFECYCLE-001`        | completed             | 2026-07-11 | [文档生命周期实施记录](./plans/2026-07-11-documentation-lifecycle.md)    |
 | `PLAN-P1-APPROVAL-BACKBONE-001` | completed             | 2026-07-11 | [P1-A 审批权限骨架](./plans/2026-07-08-approval-backbone.md)             |

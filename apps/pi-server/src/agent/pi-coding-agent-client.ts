@@ -1,6 +1,10 @@
 import { homedir } from "node:os";
 import path from "node:path";
-import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultResourceLoader,
+  SettingsManager,
+  createBashToolDefinition
+} from "@earendil-works/pi-coding-agent";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type {
   AgentClient,
@@ -11,6 +15,7 @@ import type {
 } from "./agent-client.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import type { ApprovalGateway } from "./approval-gateway.js";
+import { supervisedBashOperations } from "./supervised-bash.js";
 import { createApprovalExtension } from "./approval-extension.js";
 
 /** Resolves a pi `Model` for the given provider/model id; returns null when unavailable. */
@@ -66,7 +71,16 @@ export class PiCodingAgentClient implements AgentClient {
     await loader.reload();
 
     // Map composer permission/reasoning onto createAgentSession options.
-    const config: Record<string, unknown> = { model, resourceLoader: loader };
+    const settingsManager = SettingsManager.create(input.workspaceRoot);
+    const config: Record<string, unknown> = { model, resourceLoader: loader, settingsManager };
+    if (input.permission !== "readonly") {
+      config.customTools = [
+        createBashToolDefinition(input.workspaceRoot, {
+          operations: supervisedBashOperations(settingsManager.getShellPath()),
+          commandPrefix: settingsManager.getShellCommandPrefix()
+        })
+      ];
+    }
     if (input.permission === "readonly") config.tools = READONLY_TOOLS;
     if (input.reasoning) config.thinkingLevel = input.reasoning;
 

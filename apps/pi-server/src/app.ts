@@ -27,6 +27,7 @@ import { migrate } from "./db/migrations.js";
 import { openDatabase } from "./db/connection.js";
 import {
   completeRun,
+  reconcileRuns,
   createApproval,
   createMessage,
   createProvider,
@@ -134,8 +135,11 @@ export function createApp(options: AppOptions = {}) {
     allowedOrigins: new Set<string>()
   };
   const runLeases = new SessionRunLeases();
+  let shuttingDown = false;
+  const activeRuns = new Map<string, { stop(reason: string): void; settled: Promise<void> }>();
 
   migrate(db);
+  reconcileRuns(db);
   syncProviderKeys(db, authStorage);
   const skillCatalog =
     options.skillCatalog ??
@@ -434,6 +438,8 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post("/sessions/:sessionId/runs", async (c) => {
+    if (shuttingDown) return c.json({ error: "server_shutting_down" }, 503);
+
     const sessionId = c.req.param("sessionId");
     const session = getSession(db, sessionId);
     if (!session) return c.json({ error: "session not found" }, 404);
@@ -506,6 +512,7 @@ export function createApp(options: AppOptions = {}) {
         reasoning: body.reasoning ?? null,
         runtimeSkills: skillTurn.runtime
       });
+      if (shuttingDown) throw new Error("server_shutting_down");
       if (prepared.sessionFile) setAgentSessionPath(db, sessionId, prepared.sessionFile);
       run = createRun(db, { sessionId, providerId: provider.id, model: modelId });
     } catch (error) {
@@ -547,25 +554,38 @@ export function createApp(options: AppOptions = {}) {
       };
       let failed = false;
       let execution: AgentRunExecution | null = null;
+      let stopReason: string | null = null;
+      let finish!: () => void;
+      const settled = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const stop = (reason: string) => {
+        if (stopReason !== null) return;
+        stopReason = reason;
+        completeRun(db, run.id, "failed", reason);
+        expirePendingApprovals(db, run.id);
+        execution?.abort();
+        agentClient.cancelPending(sessionId);
+      };
+      const onAbort = () => stop("connection_closed");
+      activeRuns.set(run.id, { stop, settled });
+      sse.onAbort(onAbort);
+      c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
       try {
-        await emit("run_started", { model: modelId });
-        execution = preparedRun.start(agentMessage);
-
-        let abortRequested = false;
-        const onAbort = () => {
-          if (abortRequested) return;
-          abortRequested = true;
-          execution?.abort();
-          agentClient.cancelPending(sessionId);
-        };
-        c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
         if (c.req.raw.signal.aborted) onAbort();
+        if (shuttingDown) stop("app_shutdown");
+        if (stopReason !== null) return;
+        await emit("run_started", { model: modelId });
+        if (stopReason !== null) return;
+        execution = preparedRun.start(agentMessage);
+        if (stopReason !== null) execution.abort();
 
         try {
           // Single source of truth: forward raw pi events; the client derives all
           // UI (bubbles, deltas, tool cards, thinking) from them. Only the run-level
           // envelope (started/failed/completed) is added on top.
           for await (const event of execution.events) {
+            if (stopReason !== null) break;
             const type = (event as { type?: string }).type;
             if (type === "approval_requested") {
               const approval = event as ApprovalRequestedEvent;
@@ -594,14 +614,15 @@ export function createApp(options: AppOptions = {}) {
             };
             if (e?.type === "message_end" && e.message?.stopReason === "error") {
               const msg = e.message.errorMessage ?? "agent failed";
-              await emit("run_failed", { error: msg });
               completeRun(db, run.id, "failed", msg);
+              await emit("run_failed", { error: msg });
               failed = true;
               break;
             }
           }
         } catch (failure) {
-          onAbort();
+          execution.abort();
+          agentClient.cancelPending(sessionId);
           throw failure;
         } finally {
           if (c.req.raw.signal.aborted) onAbort();
@@ -612,31 +633,41 @@ export function createApp(options: AppOptions = {}) {
           }
         }
 
-        if (!failed) {
-          await emit("run_completed");
+        if (!failed && stopReason === null) {
           completeRun(db, run.id, "completed");
+          await emit("run_completed");
         }
       } catch (error) {
-        const msg = (error as Error).message;
+        const msg = stopReason ?? (error as Error).message;
+        completeRun(db, run.id, "failed", msg);
         try {
           await emit("run_failed", { error: msg });
         } catch {
           // The client may already be disconnected; DB completion still matters.
         }
-        completeRun(db, run.id, "failed", msg);
       } finally {
         try {
           if (execution === null) preparedRun.release();
           agentClient.cancelPending(sessionId);
           expirePendingApprovals(db, run.id);
         } finally {
+          c.req.raw.signal.removeEventListener("abort", onAbort);
+          activeRuns.delete(run.id);
           lease.release();
+          finish();
         }
       }
     });
   });
 
-  return app;
+  return Object.assign(app, {
+    async shutdown() {
+      shuttingDown = true;
+      const runs = [...activeRuns.values()];
+      for (const run of runs) run.stop("app_shutdown");
+      await Promise.all(runs.map((run) => run.settled));
+    }
+  });
 }
 
 function storedMessageToChatEntry(message: Message): ChatEntry {

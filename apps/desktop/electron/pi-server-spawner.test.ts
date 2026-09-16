@@ -119,7 +119,8 @@ describe("startPiServer", () => {
 
     expect(launch).toHaveBeenCalledWith("/res/pi-server/dist/index.js", "/res/pi-server", {
       MARGINALIA_ALLOWED_ORIGIN: "http://127.0.0.1:5173",
-      MARGINALIA_LOOPBACK_BEARER: "fixed-token"
+      MARGINALIA_LOOPBACK_BEARER: "fixed-token",
+      MARGINALIA_PARENT_PID: String(process.pid)
     });
 
     const result = await promise;
@@ -147,7 +148,8 @@ describe("startPiServer", () => {
     child.emit("exit", 1);
 
     expect(launch).toHaveBeenCalledWith("/tmp/pi-server/dist/server.js", "/tmp/pi-server", {
-      MARGINALIA_LOOPBACK_BEARER: "fixed-token"
+      MARGINALIA_LOOPBACK_BEARER: "fixed-token",
+      MARGINALIA_PARENT_PID: String(process.pid)
     });
     await expect(promise).resolves.toMatchObject({
       status: "failed",
@@ -162,6 +164,78 @@ describe("startPiServer", () => {
     expect("selectNodePath" in mod).toBe(false);
     expect("collectNodePathCandidates" in mod).toBe(false);
   });
+});
+
+it("reports a ready server's later exit without leaking its capability", async () => {
+  const child = new FakeChild();
+  const onExit = vi.fn();
+  const starting = startPiServer({
+    launch: () => child as never,
+    scriptPath: "/tmp/pi-server/dist/index.js",
+    bearer: "private-token",
+    onExit
+  });
+  child.stdout.emit("data", Buffer.from('{"type":"ready","port":4321}\n'));
+  expect((await starting).status).toBe("ready");
+  child.emit("exit", 1);
+  expect(onExit).toHaveBeenCalledWith({
+    status: "failed",
+    error: "pi-server exited",
+    logs: expect.any(Array)
+  });
+  expect(JSON.stringify(onExit.mock.calls)).not.toContain("private-token");
+});
+
+it("waits for process exit before allowing a replacement server", async () => {
+  const { stopPiServer } = await import("./pi-server-spawner.js");
+  const child = new FakeChild();
+  child.kill = () => {
+    child.killed = true;
+    return true;
+  };
+  let stopped = false;
+  const stopping = stopPiServer(child as never).then(() => {
+    stopped = true;
+  });
+  await Promise.resolve();
+  expect(child.killed).toBe(true);
+  expect(stopped).toBe(false);
+  child.emit("exit", 0);
+  await stopping;
+  expect(stopped).toBe(true);
+});
+
+it("keeps a timed-out startup owned until exit and ignores late ready output", async () => {
+  vi.useFakeTimers();
+  try {
+    const child = new FakeChild();
+    child.kill = () => {
+      child.killed = true;
+      return true;
+    };
+    const onSpawn = vi.fn();
+    let result: unknown = null;
+    const promise = startPiServer({
+      launch: () => child as never,
+      scriptPath: "/tmp/pi-server/dist/index.js",
+      timeoutMs: 10,
+      onSpawn
+    }).then((value) => {
+      result = value;
+      return value;
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(child.killed).toBe(true);
+    expect(result).toBeNull();
+    expect(onSpawn).toHaveBeenCalledWith(child);
+    child.stdout.emit("data", Buffer.from('{"type":"ready","port":4321}\n'));
+    await Promise.resolve();
+    expect(result).toBeNull();
+    child.emit("exit", 0);
+    expect(await promise).toMatchObject({ status: "failed", error: "pi-server startup timed out" });
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("redacts the process bearer from startup diagnostics even across chunks", async () => {

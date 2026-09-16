@@ -259,6 +259,14 @@ realpath 检查；预先存在、指向 workspace 外或已经断裂的 symlink 
 
 ## 运行对话（SSE 流式）
 
+### 进程所有权与终态
+
+数据库 migration 3 为 `runs` 增加可空 `owner_pid` 和 `owner_started_at`；新 Run 使用当前 pi-server PID 与 OS 进程启动时间，旧版本记录为空。`createApp` 在 migration 后、处理请求前进行事务 reconciliation：只有 `running` 且 owner 身份为空、OS 确认其不存在（ESRCH）或启动时间不符才归为 `failed`，诊断 `run_owner_unavailable`；权限错误保守视为可能存活。使用 PID 与启动时间识别进程实例，不发送终止信号。Unix 读取 `/bin/ps` 的 `lstart`（固定 C locale），Windows 读取 PowerShell 的进程 StartTime UTC ticks；不能读取当前实例身份时拒绝创建 Run，无法探测其他所有者时保守保留。已有终态和 `completed_at` 不变，重复执行幂等；只同步过期关联 pending approvals，不重写消息、Session 路径或文件。
+
+`completeRun` 仅更新 `running`；正常完成先持久化再发送 `run_completed`，避免传输故障改写成功结果。停止与 SSE disconnect 持久化 `failed / connection_closed`；应用关闭持久化 `failed / app_shutdown`，请求 abort 并过期审批。lease 仍保持到 execution 清理完成。`createApp().shutdown()` 停止接受新 Run（`503 server_shutting_down`），并等待活跃执行清理；进程退出等待最多 2 秒。SIGKILL 无法执行清理，下一次启动负责归一。
+
+恢复不调用 Agent、不重放工具。下一次 POST 使用现有 Session 路径，但总是新建 Run；文件上下文、Skills 和权限重新经过原有 preparation。无 Interrupted 状态、新聊天事件类型或自动恢复协议。PID 被复用但启动时间不符的记录会归一；并发启动多个 server 的全局 single-flight 不在本切片内。
+
 ### `POST /sessions/:sessionId/runs`
 
 发起一次 agent run，以 **Server-Sent Events** 流式返回（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）。
@@ -443,17 +451,17 @@ approval 被重复提交；请求失败时恢复控件，成功时等待对应 `
 
 schema 见 `apps/pi-server/src/db/migrations.ts`。存储位置和 secret 边界见[配置](../user/configuration.md)。
 
-| 表                  | 关键列                                                                                                   |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `workspaces`        | `id, name, root_dir, last_opened_at, created_at, updated_at`                                             |
-| `sessions`          | `id, workspace_id, title, origin, model, agent_session_path, created_at, updated_at`                     |
-| `messages`          | `id, session_id, role, content, created_at`                                                              |
-| `providers`         | `id, name, api_key_ref→env_vars, base_url, default_model, enabled, config, …`                            |
-| `runs`              | `id, session_id, provider_id, model, status, error, created_at, completed_at`                            |
-| `approvals`         | `id, session_id, run_id, tool_call_id, tool_name, kind, payload, status, reason, created_at, decided_at` |
-| `env_vars`          | `id, key, value, scope, workspace_id, created_at`（存 provider API key 等）                              |
-| `skill_preferences` | `skill_path, enabled, updated_at`；`enabled` 只能为 `0` 或 `1`                                           |
-| `schema_migrations` | `version, applied_at`                                                                                    |
+| 表                  | 关键列                                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `workspaces`        | `id, name, root_dir, last_opened_at, created_at, updated_at`                                               |
+| `sessions`          | `id, workspace_id, title, origin, model, agent_session_path, created_at, updated_at`                       |
+| `messages`          | `id, session_id, role, content, created_at`                                                                |
+| `providers`         | `id, name, api_key_ref→env_vars, base_url, default_model, enabled, config, …`                              |
+| `runs`              | `id, session_id, provider_id, model, status, error, created_at, completed_at, owner_pid, owner_started_at` |
+| `approvals`         | `id, session_id, run_id, tool_call_id, tool_name, kind, payload, status, reason, created_at, decided_at`   |
+| `env_vars`          | `id, key, value, scope, workspace_id, created_at`（存 provider API key 等）                                |
+| `skill_preferences` | `skill_path, enabled, updated_at`；`enabled` 只能为 `0` 或 `1`                                             |
+| `schema_migrations` | `version, applied_at`                                                                                      |
 
 数据库迁移按版本顺序分别在 `BEGIN IMMEDIATE` transaction 中执行，并在取得写锁后重新检查版本，
 因此多个连接并发启动不会重复应用同一版本。全新数据库在 v1 transaction 内完成既有 DDL 和
@@ -484,6 +492,8 @@ HTTP API 之外，renderer 通过 `window.marginalia`（`apps/desktop/electron/p
 
 - 数据流与事件转发设计：[系统架构](./architecture.md)
 - provider 预设、存储位置、读取限制：[配置](../user/configuration.md)
+
+Bash 的工具 schema、审批 hook、结果截断和 raw pi 事件不变。通过 pi 的 `BashOperations` 把每个活动命令交给短生命周期工作进程执行；server 与该进程之间的 Node IPC 断开（包括 server SIGKILL）会触发 AbortSignal，由 pi 原生执行器终止 shell 进程组。Run 的 SQLite 归一与工具进程清理分别负责元数据与实际副作用，不能互相替代。
 
 ## Issue #3 的流式预览边界
 

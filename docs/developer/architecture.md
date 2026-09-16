@@ -84,7 +84,7 @@ main 验证 IPC sender、逻辑 scheme/host、有限 HTTP method/header，丢弃
 
 删除 Node 的 `process.env` 只保证后续子进程不再继承变量，不是对父进程地址空间或操作系统启动环境的安全擦除保证。尤其在 Linux 上，`/proc/<pid>/environ` 可能仍暴露进程启动时的原始环境字节，具体取决于 runtime 与 kernel 行为；因此 Loopback Access bearer 仍按短生命周期 secret 处理，不能把环境清理描述成彻底抹除。
 
-当前 exit listener 只解决“启动前退出”。进程在 ready 后崩溃时，main 中的 `serverStatus` 可能继续显示 ready，直到普通 API 调用失败；完整恢复见 readiness issue `P1-RECOVERY-001`。
+exit listener 同时处理启动前和 ready 后退出。main 将失败写入 `serverStatus`，renderer 在 ready 后每秒查询一次状态并显示恢复入口。重试等待旧进程 exit；同一启动过程复用 Promise，避免重叠启动。退出应用也等待启动/关闭过程。server 每秒检查 Electron 注入的父 PID 与其启动时记录的进程身份，应用被强杀后执行有界 shutdown，避免成为后台 daemon。
 
 **启动策略按 dev / packaged 区分**（见 `apps/desktop/electron/pi-server-spawner.ts#defaultLaunch`）：
 
@@ -98,7 +98,7 @@ main 验证 IPC sender、逻辑 scheme/host、有限 HTTP method/header，丢弃
 React 应用入口 `apps/desktop/src/main.tsx` → `App.tsx`。`App` 负责启动期状态机（`apps/desktop/src/App.tsx#App`）：
 
 1. 轮询 `pi-server:status`，`starting` 时显示 `LoadingSplash`，每 250ms 再查（`apps/desktop/src/App.tsx#refreshStatus`）。
-2. server `ready` 后请求 `GET /health` 做一次健康校验（`apps/desktop/src/App.tsx#loadHealth`）。
+2. server `ready` 后请求 `GET /health` 做一次健康校验（`apps/desktop/src/App.tsx#App`）。
 3. 通过则渲染 `AppShell`，否则显示错误 + 重试按钮（重试走 `pi-server:restart`）。
 
 `AppShell`（`apps/desktop/src/app/AppShell.tsx#AppShell`）只接收逻辑 transport URL，并据此构造使用
@@ -119,7 +119,7 @@ renderer 通过 `ApiClient`（`apps/desktop/src/api/client.ts#ApiClient`）调�
 2. pi-server 路由（`apps/pi-server/src/app.ts#/sessions/:sessionId/runs`）按 loopback access auth → session/workspace lookup → request decode/validation（含 provider）顺序建立请求上下文。随后通过 `SessionRunLeases`（`apps/pi-server/src/run/session-run-leases.ts#SessionRunLeases`）取得该 session 的进程内 single-flight lease；重叠请求返回 `409 session_busy`，且不创建 run。
 3. lease 内先由 `buildAgentMessage`（`apps/pi-server/src/agent/agent-message.ts#buildAgentMessage`）构造附件信封，再调 `agentClient.prepare(...)`（`PiCodingAgentClient`，`apps/pi-server/src/agent/pi-coding-agent-client.ts`）取得已配置的 session。两步都成功后才创建 `runs` 记录并打开 SSE。
 4. SSE 先发 `run_started`，再以 `start(message)` 驱动 `@earendil-works/pi-coding-agent`。agent 产出的**原始 pi 事件**被原样包进 `agent_event` 逐条推回（`apps/pi-server/src/app.ts#agent_event`）。
-5. 正常结束时发 `run_completed`，出错发 `run_failed`，并完成 `runs` 表记录（`apps/pi-server/src/app.ts#completeRun`）。SSE disconnect 或事件异常会请求 `execution.abort()` 并立即拒绝挂起审批；request abort listener 保持安装直到 `execution.settled` 完成，随后 route 才执行幂等的审批清理、释放 lease。正常事件结束不会额外 abort。
+5. 正常结束先完成 `runs` 表记录再发 `run_completed`，出错持久化失败后发 `run_failed`（`apps/pi-server/src/app.ts#completeRun`）。SSE disconnect 或事件异常会请求 `execution.abort()` 并立即拒绝挂起审批；request abort listener 保持安装直到 `execution.settled` 完成，随后 route 才执行幂等的审批清理、释放 lease。正常事件结束不会额外 abort。
 6. renderer 端 `streamSse`（`apps/desktop/src/api/sse-stream.ts`）解析流。`useStreamingChat` 只在首个
    `run_started` 追加 optimistic user entry，并把完整 turn snapshot 标记为 accepted；在此之前的 HTTP/流
    失败不清草稿。只有显式 `run_completed` 才完成本轮；started 前后的意外 EOF 分别以未接受/已接受失败
@@ -180,7 +180,7 @@ assistant 和 tool-result entry ID 清理旧输出，不只删除最后一个 as
 
 服务端 single-flight 防止同一进程内两个请求并发驱动相同 session；不同 session 不共享 lease。该
 lease 不跨 pi-server 重启持久化，renderer 的 `sendingRef` 也仍只保护当前 hook 实例；ChatView
-卸载后的主动停止和崩溃恢复仍属于 readiness issue `P0-RUN-001` / `P1-RECOVERY-001` 的剩余范围。
+跨视图连续性仍属于后续运行层任务。启动 reconciliation 根据 `runs.owner_pid` 和 `owner_started_at` 保留存活进程的执行、归一失去所有者的旧 Run；停止、SSE 断连和 shutdown 复用既有 abort/approval/lease 清理，不增加平行聊天状态。
 
 ### 单一事实源（single source of truth）
 
@@ -386,7 +386,7 @@ execution settled 边界内阻止同 session 的第二次 refresh 或 acquire。
 
 Registry 的 20 项 LRU 是 idle-session soft cap：淘汰只选择未被 reservation pin 的 handle；所有候选都在
 运行或已 preparation 时允许暂时超出上限，release 后再从最旧 idle entry 收敛。显式 shutdown 仍可
-`disposeAll()`；这个进程内保护不关闭跨进程所有权与崩溃恢复的 `P0-RUN-001`。
+`disposeAll()`；这个进程内保护与 Run PID reconciliation 分工，不提供跨进程全局 single-flight。
 
 Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provider.name)` 和 model ID 调用 `getModel()`，没有把该 URL 注入请求。Provider Test 只检查本地 ModelRegistry 和是否配置凭据，不验证 key 或网络。
 
@@ -431,6 +431,12 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - 数据模型、HTTP 路由、SSE 事件格式：[API 参考](./api.md)
 - 打包时如何处理 better-sqlite3 原生 ABI：[打包与发布](./build-and-release.md)
 - 环境变量、provider、存储位置：[配置](../user/configuration.md)
+
+### 活动 Bash 的进程生命周期
+
+`apps/pi-server/src/agent/supervised-bash.ts` 使用 pi 原生工具扩展点替换 Bash 的执行后端。每次调用启动 `bash-worker`，复用 `createLocalBashOperations` 处理 shell、stdout/stderr、退出码、超时和进程树中止。工作进程以 Node IPC 的存活作为 server 所有权；父连接断开时中止命令并退出，不承担后台任务或 Session 状态。这样 server 被强杀后，仍有存活进程负责清理活动命令。
+
+Ask 审批仍在执行器调用前运行，Read-only 不注册该工具；shellPath 与 commandPrefix 沿用 pi settings。生产运行编译后的工作进程；system Node 使用同一个 Node 可执行文件，Electron utility process 使用其可执行文件的 `ELECTRON_RUN_AS_NODE` 模式。worker 启动后清除该内部标志，避免未显式传入环境的 shell 调用继承它。没有新依赖、聊天协议或文档正文副本。
 
 ## Issue #3 的流式预览边界
 

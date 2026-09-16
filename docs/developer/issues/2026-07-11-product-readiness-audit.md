@@ -36,10 +36,10 @@ Frontmatter 的 `verified_commit` 是本轮未提交修复所基于的 commit；
 | P0-SEC-004        | P0       | resolved    | 2026-07-19    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`、`apps/pi-server/src/agent/pi-coding-agent-client.ts`                            |
 | P0-SEC-005        | P0       | open        | 2026-08-13    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`、`apps/pi-server/test/files-write.test.ts`                    |
 | P0-SEC-006        | P0       | open        | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
-| P0-RUN-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
+| P0-RUN-001        | P0       | in-progress | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
 | P1-PROVIDER-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts`                                    |
 | P1-DOCUMENT-001   | P1       | open        | 2026-07-11    | post-M0                    | `apps/pi-server/src/files/document-reader.ts`、`apps/desktop/src/documents/DocumentViewer.tsx`                                        |
-| P1-RECOVERY-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/electron/pi-server-spawner.ts`、`apps/desktop/electron/main.ts`                                                         |
+| P1-RECOVERY-001   | P1       | resolved    | 2026-09-16    | M0-trustworthy-local-alpha | `apps/desktop/electron/pi-server-spawner.ts`、`apps/desktop/electron/main.ts`                                                         |
 | P1-DATA-001       | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`                                                                                               |
 | P1-UX-001         | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src/chat/MessageStream.tsx`、`apps/desktop/src/chat/Composer/Composer.tsx`、`apps/desktop/src/settings/GeneralPane.tsx` |
 | P1-MESSAGE-001    | P1       | open        | 2026-07-11    | post-M0                    | `docs/internal/plans/2026-07-10-message-stream.md`                                                                                    |
@@ -129,7 +129,7 @@ renderer sandbox、context isolation 和窄 preload API。
 
 ## P0-RUN-001: Run 缺少跨进程稳定所有权与完整恢复
 
-pi-server 已通过进程内 per-session lease 拒绝同一进程里的并发 run，并等待 execution `settled` 后才释放；不同进程之间仍没有稳定所有权。切换视图或重新挂载后也没有 cleanup 自动 abort 旧请求，server crash/restart 后缺少旧 run 的完整恢复语义。
+pi-server 通过进程内 per-session lease 拒绝重叠 run，并等待 execution `settled` 后释放。Issue #6 增加 PID 与启动时间的实例所有权、启动归一、退出/断连终态和审批过期。不同进程的全局 single-flight、跨视图运行连续性仍未交付，因此本项保持 in-progress。
 
 修复目标：在跨进程边界建立稳定 run 所有权，并定义 start、stop、disconnect、replace、crash 和 restart 的状态转换。
 
@@ -153,7 +153,7 @@ PDF、图片、音视频和 Office 文件被标记为 `rawOnly`。PDF 可在 ren
 
 ## P1-RECOVERY-001: Server 和 run 恢复不完整
 
-`startPiServer()` 的 exit listener 只负责启动 promise。进程已经 ready 后再退出，main 里的 `serverStatus` 仍可能保持 ready。UI 因此在普通 API 调用处才看到失败。Run 也没有可查询的活动状态或重连协议。
+Issue #6 已补齐 ready 后 exit 监听、renderer 状态轮询、键盘 Retry 和重启前等待旧进程退出。server 监视桌面 owner，启动归一失去所有者的运行；正常终态不变，不恢复旧进程、不重放工具。自动测试覆盖独立子进程与开发 Electron。Run 查询/跨视图订阅属于后续运行层任务，本项不声明该能力已交付。
 
 修复目标：ready 后持续监听进程退出，保存最近日志并暴露受控重启；定义 run 查询和恢复边界。
 

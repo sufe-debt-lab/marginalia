@@ -1,3 +1,4 @@
+import { currentProcessIdentity, processIdentity } from "../run/process-owner.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import type { PiMessageCore } from "@marginalia/chat-core";
@@ -346,8 +347,17 @@ export function createRun(
   const timestamp = now();
   const id = randomUUID();
   db.prepare(
-    "insert into runs (id, session_id, provider_id, model, status, created_at) values (?, ?, ?, ?, ?, ?)"
-  ).run(id, input.sessionId, input.providerId, input.model, "running", timestamp);
+    "insert into runs (id, session_id, provider_id, model, status, created_at, owner_pid, owner_started_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(
+    id,
+    input.sessionId,
+    input.providerId,
+    input.model,
+    "running",
+    timestamp,
+    process.pid,
+    currentProcessIdentity()
+  );
   return {
     id,
     sessionId: input.sessionId,
@@ -364,12 +374,9 @@ export function completeRun(
   status: "completed" | "failed",
   error?: string
 ) {
-  db.prepare("update runs set status = ?, error = ?, completed_at = ? where id = ?").run(
-    status,
-    error ?? null,
-    now(),
-    id
-  );
+  db.prepare(
+    "update runs set status = ?, error = ?, completed_at = ? where id = ? and status = 'running'"
+  ).run(status, error ?? null, now(), id);
 }
 
 export function deleteWorkspace(db: Database.Database, id: string): boolean {
@@ -516,4 +523,23 @@ export function expirePendingApprovals(db: Database.Database, runId: string): nu
     )
     .run(now(), runId);
   return result.changes;
+}
+
+export function reconcileRuns(db: Database.Database) {
+  db.transaction(() => {
+    const running = db
+      .prepare("select id, owner_pid, owner_started_at from runs where status = 'running'")
+      .all() as { id: string; owner_pid: number | null; owner_started_at: string | null }[];
+    const identities = new Map<number, string | null | undefined>();
+    for (const run of running) {
+      if (run.owner_pid !== null && run.owner_started_at !== null) {
+        if (!identities.has(run.owner_pid))
+          identities.set(run.owner_pid, processIdentity(run.owner_pid));
+        const identity = identities.get(run.owner_pid);
+        if (identity === undefined || identity === run.owner_started_at) continue;
+      }
+      completeRun(db, run.id, "failed", "run_owner_unavailable");
+      expirePendingApprovals(db, run.id);
+    }
+  }).immediate();
 }

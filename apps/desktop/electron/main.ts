@@ -14,11 +14,16 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isExternalUrl } from "./external-url.js";
 import {
+  startPiServer,
+  stopPiServer,
+  type PiServerProcess,
+  type PiServerStatus
+} from "./pi-server-spawner.js";
+import {
   createLoopbackProxyHandler,
   PI_SERVER_RENDERER_URL,
   probeLoopbackAccess
 } from "./loopback-proxy.js";
-import { startPiServer, type PiServerStatus } from "./pi-server-spawner.js";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -51,29 +56,58 @@ if (!app.isPackaged && isScreenshotVerify && process.env.MARGINALIA_USER_DATA_DI
   app.setPath("userData", process.env.MARGINALIA_USER_DATA_DIR);
 }
 
+let serverProcess: PiServerProcess | null = null;
 let windowRef: BrowserWindow | null = null;
 let serverStatus: PiServerStatus = { status: "starting" };
 let rendererOrigin = "null";
 const activePiServerRequests = new Map<string, AbortController>();
 
-async function bootServer() {
-  serverStatus = { status: "starting" };
-  rendererOrigin = devServerUrl()?.origin ?? "null";
-  serverStatus = await startPiServer({
-    isPackaged: app.isPackaged,
-    allowedOrigin: rendererOrigin
-  });
-  return serializeStatus(serverStatus);
+let bootPromise: Promise<ReturnType<typeof serializeStatus>> | null = null;
+let quitting = false;
+let quitReady = false;
+
+function bootServer() {
+  if (bootPromise) return bootPromise;
+  bootPromise = (async () => {
+    if (serverProcess) await stopPiServer(serverProcess);
+    serverStatus = { status: "starting" };
+    rendererOrigin = devServerUrl()?.origin ?? "null";
+    let exited: PiServerStatus | null = null;
+    let launched: PiServerProcess | null = null;
+    const result = await startPiServer({
+      isPackaged: app.isPackaged,
+      allowedOrigin: rendererOrigin,
+      onSpawn(child) {
+        launched = child;
+        serverProcess = child;
+      },
+      onExit(status) {
+        if (serverProcess !== launched) return;
+        serverProcess = null;
+        exited = status;
+        serverStatus = status;
+      }
+    });
+    serverStatus = exited ?? result;
+    return serializeStatus(serverStatus);
+  })()
+    .catch((error: unknown) => {
+      if (serverStatus.status === "ready") throw error;
+      serverStatus = {
+        status: "failed",
+        error: error instanceof Error ? error.message : "pi-server startup failed",
+        logs: []
+      };
+      return serializeStatus(serverStatus);
+    })
+    .finally(() => {
+      bootPromise = null;
+    });
+  return bootPromise;
 }
 
 function bootServerInBackground() {
-  void bootServer().catch((error: unknown) => {
-    serverStatus = {
-      status: "failed",
-      error: error instanceof Error ? error.message : "pi-server startup failed",
-      logs: []
-    };
-  });
+  if (!quitting) void bootServer();
 }
 
 function serializeStatus(status: PiServerStatus) {
@@ -229,10 +263,9 @@ async function createWindow() {
 }
 
 ipcMain.handle("pi-server:status", () => serializeStatus(serverStatus));
-ipcMain.handle("pi-server:restart", async () => {
-  if (serverStatus.status === "ready") serverStatus.process.kill();
-  return bootServer();
-});
+ipcMain.handle("pi-server:restart", () =>
+  quitting ? serializeStatus(serverStatus) : bootServer()
+);
 ipcMain.on("pi-server:request", (event, value: unknown) => {
   if (
     event.sender !== windowRef?.webContents ||
@@ -364,8 +397,22 @@ ipcMain.handle("marginalia:save-text-file", async (_event, input: unknown) => {
   }
 });
 
-app.on("before-quit", () => {
-  if (serverStatus.status === "ready") serverStatus.process.kill();
+app.on("before-quit", (event) => {
+  if (quitReady) return;
+  event.preventDefault();
+  if (quitting) return;
+  quitting = true;
+  void (async () => {
+    await bootPromise;
+    if (serverProcess) await stopPiServer(serverProcess);
+  })()
+    .finally(() => {
+      quitReady = true;
+      app.quit();
+    })
+    .catch(() => {
+      /* The server's parent watchdog also handles forced app exit. */
+    });
 });
 
 app.whenReady().then(createWindow);

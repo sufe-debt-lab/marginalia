@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -87,6 +88,13 @@ const SCENARIOS = {
       "skill-precondition-blocked"
     ],
     run: scenarioSkillsFlow
+  },
+  "run-recovery": {
+    description: "Stop, server crash, Retry and a fresh Run in the Electron app.",
+    default: true,
+    env: { MARGINALIA_FAKE_AGENT: "1" },
+    expected: ["server-stopped", "server-restarted"],
+    run: scenarioRunRecovery
   },
   "desktop-panels": {
     description:
@@ -1146,6 +1154,81 @@ async function scenarioApprovalFlow(ctx) {
     .first()
     .waitFor({ timeout: 10000 });
   await capture(ctx, "approval-flow", "approval-denied");
+}
+
+async function scenarioRunRecovery(ctx) {
+  await ensureSeededWorkspace(ctx);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
+  await resetUiState(ctx.page);
+  await reloadApp(ctx.page);
+  await goNewChat(ctx.page);
+  const Database = createRequire(path.join(repoRoot, "apps/pi-server/package.json"))(
+    "better-sqlite3"
+  );
+  const db = new Database(path.join(runRoot, "db.sqlite"));
+  const waitForRow = async (query, expected) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const row = db.prepare(query).get();
+      if (row?.status === expected) return row;
+      await ctx.page.waitForTimeout(100);
+    }
+    assert.fail(`Expected ${expected}: ${query}`);
+  };
+  try {
+    await typeAndSend(ctx.page, "approval-bash stop check");
+    await ctx.page
+      .getByText(/需要审批|Approval required/i)
+      .first()
+      .waitFor();
+    await ctx.page.getByRole("button", { name: /^(stop|停止)$/i }).click();
+    await waitForRow("select status from runs order by created_at desc limit 1", "failed");
+    assert.equal(
+      db.prepare("select status from approvals where id = 'fake-ap-1'").get().status,
+      "expired"
+    );
+
+    await typeAndSend(ctx.page, "approval-edit crash check");
+    await ctx.page
+      .getByText(/摘要\.md/i)
+      .first()
+      .waitFor();
+    const active = await waitForRow(
+      "select * from runs order by created_at desc limit 1",
+      "running"
+    );
+    assert.ok(active.owner_pid > 0);
+    process.kill(active.owner_pid, "SIGKILL");
+    await ctx.page
+      .getByText(/The local service stopped|本地服务已停止/)
+      .waitFor({ timeout: 10000 });
+    await capture(ctx, "run-recovery", "server-stopped");
+    // Keyboard activation exercises the recovery control without a pointer.
+    await ctx.page.getByRole("button", { name: /^(retry|重试)$/i }).focus();
+    await ctx.page.keyboard.press("Enter");
+    await waitForMain(ctx.page);
+    const currentServer = await waitForPiServerUrl(ctx.page);
+    assert.equal(currentServer.url, ctx.apiBase); // Renderer URL stays stable; main rotates the bearer.
+    assert.equal(
+      db.prepare("select status from runs where id = ?").get(active.id).status,
+      "failed"
+    );
+    assert.equal(
+      db.prepare("select status from approvals where id = 'fake-ap-2'").get().status,
+      "expired"
+    );
+    await typeAndSend(ctx.page, "继续");
+    await ctx.page.getByText("好的，这是一段示例回复。").waitFor();
+    const next = await waitForRow(
+      "select * from runs order by created_at desc limit 1",
+      "completed"
+    );
+    assert.notEqual(next.id, active.id);
+    assert.notEqual(next.owner_pid, active.owner_pid);
+    assert.equal(next.session_id, active.session_id);
+    await capture(ctx, "run-recovery", "server-restarted");
+  } finally {
+    db.close();
+  }
 }
 
 async function openSkillsSettings(page) {

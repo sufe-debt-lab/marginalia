@@ -212,6 +212,14 @@ renderer 只通过 preload 暴露的受限 request capability 访问服务；`ma
 - [系统架构](../developer/architecture.md)
 - [打包与发布](../developer/build-and-release.md)
 
+## Run 恢复数据
+
+SQLite 的 `runs.owner_pid` 与 `owner_started_at` 记录执行进程 PID 和操作系统启动时间。启动仅将没有可验证存活所有者的 `running` 记录改为 `failed`，记录通用诊断原因，并将关联待审批项过期。已完成/失败记录、pi history 和 workspace 文件不会被恢复步骤重写。权限不足无法探测进程时保守保留，不误杀可能仍活跃的执行。
+
+Electron 内部为 server 注入 `MARGINALIA_PARENT_PID`，用于应用退出/崩溃后的存活检查；它不是用户配置项，不需要手动设置。应用内重启等待旧 server 退出，再启动新进程。开发者独立运行 server 时没有桌面所有者，仍可通过 SIGTERM/SIGINT 正常关闭。
+
+活动 Bash 使用短生命周期工作进程，父 IPC 断开时停止 shell。`ELECTRON_RUN_AS_NODE` 仅用于内部工作进程启动，不要求用户配置；worker 启动后即移除该内部标志，命令自身仍接收原 Bash 环境。pi 的 shellPath、commandPrefix、超时与现有权限策略保持有效。
+
 ## 面板布局偏好
 
 既有本地 UI 存储保存左右栏宽度和开合状态。新安装左栏默认 275px，文档面板默认 388px；升级保留已有偏好。应用内全屏是临时状态，还原不会将全屏宽度保存成偏好。窗口变窄只限制显示宽度，不覆盖已保存的宽度。文件标签与预览保留在当前 renderer 生命周期中，不保存另一份文档正文。
