@@ -53,7 +53,7 @@ Electron 已验证鼠标拖动 180/480px 边界、文档调宽、按钮/拖动�
 
 正式文档已同步用户指南、配置、API、架构、开发、构建发布、产品状态和逐图裁决。Standards / Spec 评审发现的色值、旧偏好宽度、减少动态效果及设置输入焦点问题已修复；窄窗口根据截图补上聊天控制栏换行。
 
-本记录保留 active，等待 PR 评审和合入后归档。父规格仍包含其他活跃切片，不能随本票归档；当前 diff 的新增 plan 不满足仅限 spec/plan 同时关闭的 same_change 例外，因此不绕过归档门禁。实现提交形成后在本记录补充真实引用。摘要、Markdown 编辑及其他平台验证边界见验证记录，不扩大本票实现范围。
+本记录保留 active，等待 PR 评审和合入后归档。父规格仍包含其他活跃切片，不能随本票归档；当前 diff 的新增 plan 不满足仅限 spec/plan 同时关闭的 same_change 例外，因此不绕过归档门禁。实现提交为 `927b9da`。摘要、Markdown 编辑及其他平台验证边界见验证记录，不扩大本票实现范围。
 
 最终复验：`pnpm verify` 完整通过；`pnpm verify:visual` 为 42 unchanged、0 changed、0 new、0 orphan、0 errors。窄窗口拖动从当前显示宽度开始，只有实际拖动结束才保存偏好，按下/松开不更改原宽度；对应测试先失败后通过。
 
@@ -70,3 +70,5 @@ Electron 已验证鼠标拖动 180/480px 边界、文档调宽、按钮/拖动�
 ## PR 交接
 
 用户已授权最终复查无问题后提交、推送并创建 PR。Standards 与 Spec 最终复查均无实质问题，Issue 保持开放，合入与归档作为剩余交接工作。
+
+实现引用：`927b9da`（feat(desktop): preserve document state across panel layouts）。PR 前再次执行 `pnpm verify` 与 `pnpm docs:check -- --base origin/main`，全部通过。
