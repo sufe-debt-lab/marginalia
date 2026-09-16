@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { createWorkspace } from "../src/db/repositories.js";
 import { migrate } from "../src/db/migrations.js";
 import { createDocumentTools } from "../src/agent/document-tools.js";

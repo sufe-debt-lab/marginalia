@@ -53,8 +53,9 @@ workspace/session 时仍可恢复对应 owner 的草稿，但应用退出、rend
 服务端完成 run 清理后允许显式 Retry。Retry 使用 immutable snapshot，并只在替代请求收到 `run_started`
 后删除旧 accepted attempt 的全部本地 entries；pre-start retry failure 保留旧 attempt。
 
-数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
-capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。
+数据库、备份和崩溃采集都可能包含明文 key。除公开健康检查外，本机 API 已统一要求当前 Electron
+进程的 Loopback Access bearer 与 exact Origin；renderer 不保存 bearer 或实际监听 URL。这不会修复
+Provider key 仍明文存储的问题，因此 Alpha 仍不适合保存高价值凭据。
 
 ## Skills 磁盘发现
 
@@ -121,7 +122,7 @@ roots；提供 workspace 时，服务端通过自己的 workspace 记录取得 r
 保存的 preview、截断标记和总字节数；它不会把请求 path 交给文件读取。Unknown、cross-workspace 和
 snapshot 外 path 都返回 not found。
 
-三个接口都要求 Electron 每进程 capability bearer；浏览器 Origin 还必须是 packaged 的缺省/`null`，
+三个接口与其他敏感 route 一样要求 Electron 每进程 Loopback Access bearer；Origin 还必须是 packaged 的 `null`，
 或本次开发启动明确允许的 exact loopback origin。公开 snapshot 不包含完整 body、content hash、Pi
 Skill object 或 runtime effective collection。Catalog/internal failure 只返回通用错误，不返回内部 path
 或 bytes。
@@ -159,7 +160,7 @@ pre-start EOF 不会错误触发 catalog refresh。
 
 Discovery 保留 Pi 的 symlink 语义，不强制 canonical target 留在 source root 内。如果 Skills root 中
 预先存在指向外部文件、且能被 Pi 识别为 Skill candidate 的 symlink，其 canonical target 和稳定读取的
-preview 会成为 snapshot 数据。读取仍要求 capability 和 snapshot membership，单独提交任意 path 不会
+preview 会成为 snapshot 数据。读取仍要求 Loopback Access bearer 和 snapshot membership，单独提交任意 path 不会
 读盘；但应把 Skills roots 视为可信配置目录，不要放置指向敏感文件的 symlink。
 
 ## 环境变量
@@ -168,12 +169,13 @@ preview 会成为 snapshot 数据。读取仍要求 capability 和 snapshot memb
 | ------------------------------ | ---------------------- | ------------------------------------------------------------------------ |
 | `MARGINALIA_DB_PATH`           | pi-server              | 覆盖 SQLite 文件路径                                                     |
 | `MARGINALIA_NODE_PATH`         | desktop dev            | 指定开发模式启动 pi-server 的 Node binary                                |
-| `MARGINALIA_CAPABILITY_TOKEN`  | Electron -> pi-server  | Electron 每次启动自动注入；server 读取后即从自己的环境删除，不应手工设置 |
-| `MARGINALIA_ALLOWED_ORIGIN`    | Electron -> pi-server  | 只注入已校验的 loopback Vite exact origin；server 读取后即从环境删除     |
+| `MARGINALIA_LOOPBACK_BEARER`   | Electron -> pi-server  | Electron 每次启动自动注入；server 读取后即从自己的环境删除，不应手工设置 |
+| `MARGINALIA_ALLOWED_ORIGIN`    | Electron -> pi-server  | 注入开发 loopback exact Origin 或 packaged `null`；server 读取后删除     |
 | `VITE_DEV_SERVER_URL`          | desktop dev            | 让 Electron 加载指定的 loopback Vite URL；`pnpm dev` 自动设置            |
 | `MARGINALIA_FAKE_AGENT`        | screenshot/local debug | 设为 `1` 时使用脚本化 fake agent，不连接真实模型；不要用于打包或生产     |
 | `MARGINALIA_SCREENSHOT_VERIFY` | screenshot             | 启用隔离和确定性截图模式                                                 |
 | `MARGINALIA_USER_DATA_DIR`     | screenshot             | 覆盖 Electron `userData` 目录                                            |
+| `MARGINALIA_PACKAGED_SMOKE`    | packaged smoke         | 由 `smoke:packaged` 临时设置，只启用不暴露 bearer/URL 的状态探测         |
 | `MINIMAX_CN_API_KEY`           | live screenshot        | 真实 MiniMax opt-in 场景使用                                             |
 | `MINIMAX_CN_BASE_URL`          | live screenshot        | 覆盖 live 场景 URL                                                       |
 | `MINIMAX_CN_MODEL`             | live screenshot        | 覆盖 live 场景 model                                                     |
@@ -187,19 +189,21 @@ preview 会成为 snapshot 数据。读取仍要求 capability 和 snapshot memb
 - Markdown、MDX、TXT 最多收集 50,000 行；LOG、CSV、TSV 为 10,000 行；其他文本默认为 1,000 行；绝对上限 100,000 行。
 - 前 4 KB 用于二进制检测；不可作为文本预览的文件返回 `binary_not_previewable`。
 - PDF、图片、音视频和 Office 扩展名标记为 `rawOnly`，不进入文本抽取。
-- PDF 由 renderer 中的 pdf.js 视觉渲染；图片、音视频使用 raw URL；Office 当前显示不支持预览。
+- PDF 由 renderer 中的 pdf.js 视觉渲染；图片、音视频经只对应用主 frame 开放的认证资源协议流式读取；Office 当前显示不支持预览。
 
 文本限制同时作用于文档面板和显式加入请求的上下文。Agent 默认 coding tools 走 pi 自己的文件实现，不受这组预览行数限制，也没有复用 HTTP 文件 sandbox。
 
 ## 本机 API
 
-pi-server 监听 `127.0.0.1` 的随机端口。Electron 为每个 server 进程生成 capability token；run 和
-Skills 管理请求要求 bearer，浏览器请求还要匹配 packaged `null`/缺省 Origin 或已校验的开发 origin。
-pi-server 在初始化 agent 与工具前读取 token/origin，并从自己的 `process.env` 删除，避免后续 Bash
+pi-server 监听 `127.0.0.1` 的随机端口。Electron 为每个 server 进程生成 Loopback Access bearer；除
+`GET /health` 外的所有请求都要求 bearer，并匹配 packaged `null` 或已校验的开发 exact Origin。
+pi-server 在初始化 agent 与工具前读取 bearer/origin，并从自己的 `process.env` 删除，避免后续 Bash
 工具子进程继承；这不代表对进程启动环境或内存中的 secret 做了安全擦除。
-CORS 不再反射任意来源，但 workspace、provider、文件、审批等既有 route 仍未认证，Origin
-缺失的本地客户端也可以调用它们。Loopback 只限制网络接口，不负责完整授权。完整路由和已知
-边界见[API 参考](../developer/api.md)。
+renderer 只通过 preload 暴露的受限 request capability 访问服务；`marginalia://pi-server` 只是逻辑 URL，
+不能由页面直接 fetch，实际 URL 和 bearer 保留在 main。缺失或错误 bearer 返回 401，缺失或恶意 Origin
+返回 403。Loopback 只限制本机网络接口，
+不隔离拥有当前用户权限且能读取目标进程内存的本机恶意软件。完整路由和边界见
+[API 参考](../developer/api.md)。
 
 ## 相关文档
 

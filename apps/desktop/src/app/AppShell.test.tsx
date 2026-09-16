@@ -35,19 +35,17 @@ describe("AppShell", () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "test-token"
+        url: "http://127.0.0.1:4312"
       })),
       restartPiServer: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "test-token"
+        url: "http://127.0.0.1:4312"
       }))
     };
   });
 
   it("renders sidebar and main while right panel is hidden outside chat", () => {
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     expect(screen.getByRole("complementary", { name: /sidebar/i })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: /document panel/i })).toBeNull();
@@ -55,13 +53,13 @@ describe("AppShell", () => {
 
   it("shows right panel when view is chat", () => {
     useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1" });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     expect(screen.getByRole("complementary", { name: /document panel/i })).toBeInTheDocument();
   });
 
   it("collapses sidebar to zero width but keeps it mounted for the slide animation", () => {
     useAppStore.setState({ leftSidebarCollapsed: true });
-    const { container } = render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    const { container } = render(<AppShell serverUrl="http://x" />);
     expect(screen.queryByRole("complementary", { name: /sidebar/i })).toBeNull();
     const aside = container.querySelector('aside[aria-label="Sidebar"]');
     expect(aside).not.toBeNull();
@@ -71,12 +69,12 @@ describe("AppShell", () => {
 
   it("does not mount sidebar content while collapsed at startup (no eager fetching)", () => {
     useAppStore.setState({ leftSidebarCollapsed: true });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     expect(screen.queryByRole("button", { name: /new chat/i, hidden: true })).toBeNull();
   });
 
   it("toggle persists to localStorage", async () => {
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     await userEvent.click(screen.getByRole("button", { name: /toggle left sidebar/i }));
     const stored = JSON.parse(localStorage.getItem("marginalia-app") || "{}");
     expect(stored.state?.leftSidebarCollapsed).toBe(true);
@@ -84,14 +82,14 @@ describe("AppShell", () => {
 
   it("uses leftSidebarWidth from store", () => {
     useAppStore.setState({ leftSidebarWidth: 320 });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     const aside = screen.getByRole("complementary", { name: /sidebar/i });
     expect(aside).toHaveStyle({ width: "320px" });
   });
 
   it("uses rightPanelWidth from store in chat view", () => {
     useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", rightPanelWidth: 420 });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     const aside = screen.getByRole("complementary", { name: /document panel/i });
     expect(aside).toHaveStyle({ width: "420px" });
   });
@@ -110,7 +108,7 @@ describe("AppShell", () => {
         headers: { "content-type": "application/json" }
       });
     });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     await userEvent.click(await screen.findByRole("button", { name: "Open notes.md" }));
     expect(await screen.findByRole("button", { name: "Attach to chat" })).toBeInTheDocument();
     files.push({ path: "new.md", name: "new.md", kind: "file" });
@@ -128,7 +126,7 @@ describe("AppShell", () => {
       rightPanelWidth: 420,
       leftSidebarCollapsed: true
     });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     const expand = screen.getByRole("button", { name: "Expand document panel" });
     await userEvent.click(expand);
     const panel = screen.getByRole("dialog", { name: "Document panel" });
@@ -144,7 +142,7 @@ describe("AppShell", () => {
 
   it("includes shadow-root controls in fullscreen focus boundaries", async () => {
     useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", leftSidebarCollapsed: true });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     await userEvent.click(screen.getByRole("button", { name: "Expand document panel" }));
     const panel = screen.getByRole("dialog", { name: "Document panel" });
     // The file-tree web component renders its tabbable tree item in an open shadow root.
@@ -174,7 +172,7 @@ describe("AppShell", () => {
     );
     await useAppStore.persist.rehydrate();
     useAppStore.setState({ view: "chat", activeWorkspaceId: "ws-1", leftSidebarCollapsed: true });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
       width: "360px"
     });
@@ -188,7 +186,7 @@ describe("AppShell", () => {
       rightPanelWidth: 520
     });
     Object.defineProperty(window, "innerWidth", { value: 960, configurable: true });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     expect(screen.getByRole("complementary", { name: "Document panel" })).toHaveStyle({
       width: "520px"
     });
@@ -226,7 +224,7 @@ describe("AppShell", () => {
       leftSidebarWidth: 275,
       rightPanelWidth: 420
     });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const panel = screen.getByRole("complementary", { name: "Document panel" });
     const handle = panel.querySelector('[role="separator"][aria-orientation="vertical"]')!;
@@ -264,7 +262,7 @@ describe("AppShell", () => {
       }
       return new Response("[]", { headers: { "content-type": "application/json" } });
     });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     await userEvent.click(screen.getByRole("tab", { name: /^skills$/i }));
 
     expect(await screen.findAllByText("Research")).not.toHaveLength(0);
@@ -314,7 +312,7 @@ describe("AppShell", () => {
       return new Response("[]", { headers: { "content-type": "application/json" } });
     });
 
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
 
     expect(await screen.findByText("Disk Skills")).toBeInTheDocument();
     await waitFor(() =>
@@ -338,7 +336,7 @@ describe("AppShell", () => {
   it("reopens General from the normal Settings entry after an in-view tab change", async () => {
     useAppStore.setState({ view: "settings", settingsEntryTab: "general" });
 
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
 
     await userEvent.click(screen.getByRole("tab", { name: "Skills" }));
     expect(await screen.findByText("Disk Skills")).toBeInTheDocument();
@@ -378,7 +376,7 @@ describe("AppShell", () => {
       }
       return new Response("[]", { headers: { "content-type": "application/json" } });
     });
-    render(<AppShell serverUrl="http://x" capabilityToken="token" />);
+    render(<AppShell serverUrl="http://x" />);
     await userEvent.click(screen.getByRole("tab", { name: /^skills$/i }));
 
     await waitFor(() =>

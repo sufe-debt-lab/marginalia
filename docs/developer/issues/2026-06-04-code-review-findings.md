@@ -51,19 +51,18 @@ Fix direction:
 - Keep DB update and `AuthStorage` update/removal in one explicit path.
 - Add regression coverage for clearing a key while a provider remains enabled.
 
-## P2 - Renderer Sandbox Disabled
+## P2 - Renderer Sandbox Disabled (Resolved 2026-08-09)
 
 File: `apps/desktop/electron/main.ts`
 
-Problem: the Electron renderer uses `sandbox: false`.
+Resolution: the Electron renderer now uses `sandbox: true`. The preload bridge sanitizes pi-server status and exposes
+a constrained streaming request capability. Main validates the IPC sender and request shape, owns the bearer, and does
+not register the logical transport scheme for renderer-global fetch. Main/preload tests and the packaged smoke command
+cover this boundary.
 
 Impact: context isolation and `nodeIntegration: false` help, but the renderer process still has a larger attack surface than necessary for an app that can mostly communicate through preload and a local API.
 
-Fix direction:
-
-- Enable `sandbox: true`.
-- Keep preload API narrow and validate all IPC inputs.
-- Verify packaged launch after the sandbox change, not only Vite/browser rendering.
+Remaining work is tracked separately for OS-backed Provider secret storage and signed packaged distribution.
 
 ## P2 - pi-server Crash Is Not Reflected After Ready
 

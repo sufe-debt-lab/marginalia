@@ -12,7 +12,7 @@ function stubFetch(payload: unknown, status = 200) {
 describe("ApiClient file write", () => {
   it("writes a new file", async () => {
     const fetchMock = stubFetch({ path: "notes/test.md" }, 201);
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     const result = await api.writeWorkspaceFile("ws-1", {
       path: "notes/test.md",
       content: "# Test"
@@ -30,7 +30,7 @@ describe("ApiClient file write", () => {
 
   it("rejects 409 with 'file exists' error", async () => {
     stubFetch({ error: "file exists" }, 409);
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     await expect(api.writeWorkspaceFile("ws-1", { path: "a.md", content: "new" })).rejects.toThrow(
       "file exists"
     );
@@ -38,7 +38,7 @@ describe("ApiClient file write", () => {
 
   it("sends overwrite flag when specified", async () => {
     const fetchMock = stubFetch({ path: "a.md" }, 200);
-    const api = new ApiClient("http://x", "token");
+    const api = new ApiClient("http://x");
     await api.writeWorkspaceFile("ws-1", {
       path: "a.md",
       content: "new",

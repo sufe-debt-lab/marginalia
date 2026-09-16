@@ -11,6 +11,7 @@
     "rebuild:server-native": "node scripts/build-pi-server.mjs --restore-node-abi",
     "prepack:app": "pnpm -r build && pnpm run build:server",
     "package": "pnpm run prepack:app && electron-builder --dir",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
     "dist": "pnpm run prepack:app && electron-builder",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",

@@ -99,16 +99,16 @@ symlink component，但仍存在检查到写入之间的竞态边界；保存到
 | pi AuthStorage   | `~/.marginalia/auth.json`              | 与独立 pi CLI 目录分开                                  |
 | UI preferences   | Electron localStorage `marginalia-app` | 保存语言、布局、权限、推理档位和模型选择                |
 
-本机 pi-server 监听随机 loopback 端口。每个 Electron server 进程会生成独立 capability token，
-所有 run 和 Skills 管理请求必须同时通过 bearer 和 Origin 检查；CORS 不再反射任意网页来源。但
-workspace、provider、文件、审批等既有 route 仍未认证，缺少 Origin 的本地请求也不受 CORS 约束。
-`127.0.0.1` 和这项局部防护都不是整套 API 的授权边界；在 `P0-SEC-001` 完整修复前，不要把 Alpha
-版本用于高敏感资料。
+本机 pi-server 监听随机 loopback 端口。每个 Electron server 进程会生成独立 Loopback Access bearer；
+除公开健康检查外，所有 workspace、Session、Provider、文件、Skills、审批和 Run 请求都必须同时通过
+bearer 与 exact Origin 检查。renderer 只通过受限 preload transport 请求服务，不保存实际端口或 bearer。
+缺失/错误 bearer 与缺失/恶意 Origin 分别返回稳定 401/403。该边界不会抵御已经能读取同用户进程内存的
+本机恶意软件，Provider key 也仍为明文存储，因此 Alpha 仍不应用于高敏感资料。
 
 ## Skills 选择与管理
 
 pi-server 已能刷新 Skills catalog、启停当前 snapshot 中的 candidate、读取 candidate 的截断预览，
-并在受 capability 保护的 run API 中按 exact `{ name, canonical path }` 显式调用 Skill。每个 run 都会
+并在受 Loopback Access 保护的 run API 中按 exact `{ name, canonical path }` 显式调用 Skill。每个 run 都会
 把当前 effective Skills 固定到 agent runtime；explicit-only Skill 不会出现在模型的隐式清单中，但可
 通过显式 selection 调用。
 

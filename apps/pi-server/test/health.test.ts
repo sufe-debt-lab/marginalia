@@ -1,9 +1,20 @@
-import { describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 
 describe("GET /health", () => {
+  let db: Database.Database;
+  beforeEach(() => {
+    db = new Database(":memory:");
+  });
+  afterEach(() => db.close());
   it("returns server health metadata", async () => {
-    const app = createApp({ startedAt: new Date("2026-05-25T00:00:00.000Z") });
+    const app = createApp({
+      db,
+      authStorage: AuthStorage.inMemory(),
+      startedAt: new Date("2026-05-25T00:00:00.000Z")
+    });
 
     const response = await app.request("/health");
     const body = await response.json();
@@ -19,9 +30,11 @@ describe("GET /health", () => {
 
   it("allows the desktop renderer origin to call health", async () => {
     const app = createApp({
+      db,
+      authStorage: AuthStorage.inMemory(),
       startedAt: new Date("2026-05-25T00:00:00.000Z"),
-      capability: {
-        token: null,
+      loopbackAccess: {
+        bearer: null,
         allowedOrigins: new Set(["http://127.0.0.1:5173"])
       }
     });
