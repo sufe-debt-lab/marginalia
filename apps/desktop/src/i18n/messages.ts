@@ -1,5 +1,9 @@
 export const en = {
   common: {
+    requestFailed: "The request failed. Please try again.",
+    credentialMissing: "Enter the Provider API key again in Settings.",
+    credentialStoreUnavailable:
+      "Cannot access the system credential store. Unlock it or allow access, then retry.",
     newChat: "New chat",
     settings: "Settings",
     workspaces: "Workspaces",
@@ -279,6 +283,9 @@ type MessageShape<T> = {
 
 export const zh = {
   common: {
+    requestFailed: "请求失败，请重试。",
+    credentialMissing: "请在设置中重新填写 Provider API key。",
+    credentialStoreUnavailable: "无法访问系统凭据库。请解锁或授权后重试。",
     newChat: "新建聊天",
     settings: "设置",
     workspaces: "工作区",

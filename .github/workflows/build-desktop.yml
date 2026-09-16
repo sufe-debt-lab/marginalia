@@ -57,6 +57,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      - name: Smoke packaged credential adapter
+        run: pnpm --filter @marginalia/desktop exec electron scripts/credential-packaged-smoke.mjs
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:

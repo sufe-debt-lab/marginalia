@@ -1,3 +1,6 @@
+import { migrateProviderCredentials } from "./credentials/migrate.js";
+import { credentials } from "./credentials/system.js";
+import { CredentialStoreError, type CredentialStore } from "./credentials/store.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -89,6 +92,7 @@ export type AppOptions = {
   db?: Database.Database;
   agentClient?: AgentClient;
   authStorage?: AuthStorage;
+  credentialStore?: CredentialStore;
   modelRegistry?: ModelRegistry;
   availabilityChecker?: ModelAvailabilityChecker;
   documentReader?: (rootDir: string, relativePath: string) => Promise<DocumentContent>;
@@ -96,13 +100,12 @@ export type AppOptions = {
   skillCatalog?: SkillCatalogService;
 };
 
-const DEFAULT_AUTH_PATH = path.join(homedir(), ".marginalia", "auth.json");
-
 export function createApp(options: AppOptions = {}) {
   const startedAt = options.startedAt ?? new Date();
   const db = options.db ?? openDatabase();
   const documentReader = options.documentReader ?? readDocument;
-  const authStorage = options.authStorage ?? AuthStorage.create(DEFAULT_AUTH_PATH);
+  const credentialStore = options.credentialStore ?? credentials;
+  const authStorage = options.authStorage ?? AuthStorage.inMemory();
   const modelRegistry = options.modelRegistry ?? ModelRegistry.inMemory(authStorage);
   const registry = new AgentSessionRegistry({
     authStorage,
@@ -125,7 +128,8 @@ export function createApp(options: AppOptions = {}) {
           return null;
         }
       },
-      approvalGateway
+      approvalGateway,
+      (message) => credentialStore.redact(message)
     );
   const availabilityChecker =
     options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
@@ -133,7 +137,8 @@ export function createApp(options: AppOptions = {}) {
   const runLeases = new SessionRunLeases();
 
   migrate(db);
-  syncProviderKeys(db, authStorage);
+  migrateProviderCredentials(db, credentialStore);
+  syncProviderKeys(db, authStorage, credentialStore);
   const skillCatalog =
     options.skillCatalog ??
     createSkillCatalogService({
@@ -142,6 +147,15 @@ export function createApp(options: AppOptions = {}) {
     });
 
   const app = new Hono();
+  app.onError((error, c) =>
+    c.json(
+      {
+        error:
+          error instanceof CredentialStoreError ? "credential_store_unavailable" : "internal_error"
+      },
+      error instanceof CredentialStoreError ? 503 : 500
+    )
+  );
   app.use(
     "*",
     cors({
@@ -376,7 +390,7 @@ export function createApp(options: AppOptions = {}) {
       baseUrl?: string | null;
       defaultModel: string;
     }>();
-    const provider = createProvider(db, body);
+    const provider = createProvider(db, body, credentialStore);
     const piId = piProviderId(provider.name);
     if (piId && body.apiKey) authStorage.setRuntimeApiKey(piId, body.apiKey);
     return c.json(provider, 201);
@@ -384,6 +398,10 @@ export function createApp(options: AppOptions = {}) {
   app.post("/providers/:id/test", async (c) => {
     const provider = getProvider(db, c.req.param("id"));
     if (!provider) return c.json({ error: "provider not found" }, 404);
+    const key = credentialStore.read(provider.apiKeyRef);
+    if (!key) {
+      return c.json({ ok: false, message: "credential_missing" });
+    }
     return c.json(
       availabilityChecker.check({
         piProviderId: piProviderId(provider.name),
@@ -401,14 +419,16 @@ export function createApp(options: AppOptions = {}) {
       defaultModel?: string;
       enabled?: boolean;
     }>();
-    const after = updateProvider(db, before.id, body);
+    const apiKey =
+      body.apiKey ??
+      ((body.enabled ?? before.enabled) ? credentialStore.read(before.apiKeyRef) : null);
+    const after = updateProvider(db, before.id, body, credentialStore);
     if (!after) return c.json({ error: "provider not found" }, 404);
 
     // Keep the pi runtime key in sync: drop the old provider id on rename, then
     // set/clear the new one based on whether the provider is enabled.
     const oldPiId = piProviderId(before.name);
     const newPiId = piProviderId(after.name);
-    const apiKey = body.apiKey ?? before.apiKey;
     if (oldPiId && oldPiId !== newPiId) authStorage.removeRuntimeApiKey(oldPiId);
     if (newPiId) {
       // Set when enabled with a non-empty key; otherwise drop any stale override
@@ -417,11 +437,10 @@ export function createApp(options: AppOptions = {}) {
       else authStorage.removeRuntimeApiKey(newPiId);
     }
 
-    const { apiKey: _omit, ...safe } = after;
-    return c.json(safe);
+    return c.json(after);
   });
   app.delete("/providers/:id", async (c) => {
-    const removed = deleteProvider(db, c.req.param("id"));
+    const removed = deleteProvider(db, c.req.param("id"), credentialStore);
     if (!removed) return c.json({ error: "provider not found" }, 404);
     const piId = piProviderId(removed.name);
     if (piId) authStorage.removeRuntimeApiKey(piId);
@@ -459,6 +478,11 @@ export function createApp(options: AppOptions = {}) {
     const provider = getProvider(db, body.providerId);
     if (!provider) return c.json({ error: "provider not found" }, 404);
     if (!provider.enabled) return c.json({ error: "provider disabled" }, 409);
+
+    const key = credentialStore.read(provider.apiKeyRef);
+    if (!key) {
+      return c.json({ error: "credential_missing" }, 409);
+    }
 
     const modelId = body.model ?? provider.defaultModel;
     const lease = runLeases.tryAcquire(sessionId);
@@ -548,6 +572,8 @@ export function createApp(options: AppOptions = {}) {
       let execution: AgentRunExecution | null = null;
       try {
         await emit("run_started", { model: modelId });
+        // Rejected/preflight-failed requests must not mutate active authentication.
+        authStorage.setRuntimeApiKey(piProviderId(provider.name), key);
         execution = preparedRun.start(agentMessage);
 
         let abortRequested = false;
@@ -592,7 +618,7 @@ export function createApp(options: AppOptions = {}) {
               message?: { stopReason?: string; errorMessage?: string };
             };
             if (e?.type === "message_end" && e.message?.stopReason === "error") {
-              const msg = e.message.errorMessage ?? "agent failed";
+              const msg = credentialStore.redact(e.message.errorMessage ?? "agent failed");
               await emit("run_failed", { error: msg });
               completeRun(db, run.id, "failed", msg);
               failed = true;
@@ -616,7 +642,7 @@ export function createApp(options: AppOptions = {}) {
           completeRun(db, run.id, "completed");
         }
       } catch (error) {
-        const msg = (error as Error).message;
+        const msg = error instanceof Error ? credentialStore.redact(error.message) : "agent_failed";
         try {
           await emit("run_failed", { error: msg });
         } catch {
@@ -660,14 +686,15 @@ function storedMessageToChatEntry(message: Message): ChatEntry {
   };
 }
 
-function syncProviderKeys(db: Database.Database, authStorage: AuthStorage) {
-  const rows = db
-    .prepare(
-      "select providers.name as name, env_vars.value as api_key from providers join env_vars on env_vars.id = providers.api_key_ref where providers.enabled = 1"
-    )
-    .all() as Array<{ name: string; api_key: string }>;
-  for (const row of rows) {
-    const piId = piProviderId(row.name);
-    if (piId && row.api_key) authStorage.setRuntimeApiKey(piId, row.api_key);
+function syncProviderKeys(db: Database.Database, authStorage: AuthStorage, store: CredentialStore) {
+  for (const provider of listProviders(db)) {
+    if (!provider.enabled) continue;
+    try {
+      const key = store.read(provider.apiKeyRef);
+      if (key) authStorage.setRuntimeApiKey(piProviderId(provider.name), key);
+    } catch {
+      // Settings remain available; probe and run retry the OS store and report failures.
+      authStorage.removeRuntimeApiKey(piProviderId(provider.name));
+    }
   }
 }

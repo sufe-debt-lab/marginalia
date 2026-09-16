@@ -190,7 +190,7 @@ pnpm --filter @marginalia/desktop verify:screenshots -- --scenario core-ui
 pnpm verify:screenshots:shot
 ```
 
-输出写到 `output/desktop-screenshots/`。runner 会设置隔离的 `MARGINALIA_DB_PATH`、`HOME` 和 `MARGINALIA_USER_DATA_DIR`，避免使用真实 `~/.marginalia` 状态。真实 MiniMax 场景是 opt-in：
+输出写到 `output/desktop-screenshots/`。runner 会设置隔离的 `HOME` 和 `MARGINALIA_USER_DATA_DIR`；截图模式使用进程内 SQLite 和内存凭据，避免使用真实 `~/.marginalia` 状态。真实 MiniMax 场景是 opt-in：
 
 ```bash
 MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
@@ -242,3 +242,23 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 - 提交/分支/PR 规范：[贡献指南](./contributing.md)
 - 文档同步、docs impact 和 closeout：[文档生命周期](./documentation-lifecycle.md)
 - 当前验证快照和发布阻断：[产品状态](../product/status.md)
+
+## Credential Store 验证
+
+普通 pi-server Vitest 使用 `test/setup-credentials.ts` 将 OS 边界替换为内存适配器。
+迁移测试使用临时 SQLite/WAL，检查实际文件字节；模型错误测试使用受控 streamFn 和真实 pi
+SessionManager，不调用外部模型。`MARGINALIA_SCREENSHOT_VERIFY=1` 的现有 Electron 隔离
+harness 同时使用进程内 SQLite 和内存凭据，忽略默认数据库和 `MARGINALIA_DB_PATH`；
+退出后一起丢弃，重启重新 seed。该模式不能编辑真实 Provider 或迁移用户数据。
+`screenshot-credentials.test.ts` 用实际启动入口、临时默认/显式数据库及两次进程启动验证原文件完全不变。
+
+```bash
+pnpm --filter @marginalia/pi-server test -- test/credential-store.test.ts test/provider-credentials.test.ts test/provider-management.test.ts test/provider-chat.test.ts test/pi-coding-agent-client.test.ts
+pnpm --filter @marginalia/pi-server typecheck
+pnpm verify
+pnpm verify:visual
+```
+
+真实模型 smoke 现在还要求显式 `MARGINALIA_LIVE_SMOKE=1`，仅存在 `MINIMAX_CN_API_KEY`
+不再触发网络请求。系统凭据 packaged smoke 与普通测试分开，命令及平台边界见
+[打包与发布](./build-and-release.md)。不要并行运行 packaging 与测试/开发的 native ABI 切换。

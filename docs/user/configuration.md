@@ -32,17 +32,17 @@ Settings -> Providers 可以创建、编辑、启停、测试和删除 provider�
 
 ### Test 按钮
 
-Provider Test 调用本地 `ModelRegistry.getAvailable()`，检查 provider/model 是否在 registry 中，并过滤没有配置凭据的项目。它不会发送网络请求，也不能验证 key 是否有效、DNS、TLS、余额、限流、Base URL 或真实推理响应。真实对话可能产生服务商费用。
+Provider Test 读取所选 Provider 的系统凭据，并通过本地 `ModelRegistry.getAll()` 检查 provider/model 注册。探测不写入或清除运行时认证，不会切换正在运行任务的账户。它不会发送网络请求，也不能验证 key 是否有效、DNS、TLS、余额、限流、Base URL 或真实推理响应。真实对话可能产生服务商费用。
 
 ## Secret 与存储
 
-| Data             | Path or table                          | Notes                                                       |
-| ---------------- | -------------------------------------- | ----------------------------------------------------------- |
-| SQLite           | `~/.marginalia/db.sqlite`              | workspace、session、message、provider、run、approval 等     |
-| Provider API key | SQLite `env_vars.value`                | 当前为明文，没有使用 OS keychain 或应用层加密               |
-| pi AuthStorage   | `~/.marginalia/auth.json`              | pi 运行时独立目录；不要与 SQLite 中的 provider key 混为一处 |
-| UI preferences   | Electron localStorage `marginalia-app` | 语言、布局、权限、推理档位、上次模型和 resume toggle        |
-| Turn drafts      | renderer memory                        | 按 New chat workspace/session 隔离；不写入 localStorage     |
+| Data             | Path or table                          | Notes                                                                       |
+| ---------------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| SQLite           | `~/.marginalia/db.sqlite`              | workspace、session、message、provider、run、approval 等                     |
+| Provider API key | 操作系统凭据库                         | macOS Keychain、Windows Credential Manager；Linux 要求持久化 Secret Service |
+| pi AuthStorage   | 进程内存                               | 仅使用系统凭据库读取的运行时 key，不再读取或写入 `~/.marginalia/auth.json`  |
+| UI preferences   | Electron localStorage `marginalia-app` | 语言、布局、权限、推理档位、上次模型和 resume toggle                        |
+| Turn drafts      | renderer memory                        | 按 New chat workspace/session 隔离；不写入 localStorage                     |
 
 `defaultDbPath()` 通过 `os.homedir()` 解析用户目录。测试或临时运行可以用 `MARGINALIA_DB_PATH` 覆盖数据库路径。
 
@@ -53,8 +53,20 @@ workspace/session 时仍可恢复对应 owner 的草稿，但应用退出、rend
 服务端完成 run 清理后允许显式 Retry。Retry 使用 immutable snapshot，并只在替代请求收到 `run_started`
 后删除旧 accepted attempt 的全部本地 entries；pre-start retry failure 保留旧 attempt。
 
-数据库、备份和崩溃采集都可能包含明文 key。应用只有 run 和后续 Skills 敏感接口使用进程级
-capability；其他既有本机 API 仍未认证，因此不适合保存高价值凭据。
+Provider key 在系统凭据库保存，SQLite 只保留 opaque reference 和非敏感元数据。首次启动会将旧
+`env_vars.value`（包括旧版创建失败遗留的孤立 key）写入系统凭据库并回读验证，再清理 SQLite 空闲页和 WAL，最后原子清空旧值并记录成功。
+迁移保存或验证失败会保留数据库原值并阻止服务启动；解锁系统凭据库后重启即可重试。
+SQLite 清理失败时数据库仍保留原值，启动会重新回读验证和清理，不报告迁移成功。
+旧备份、旧 `auth.json`、文件系统快照和崩溃转储不在此迁移的擦除范围。
+
+禁用 Provider 保留凭据；启用时重新读取；编辑表单 key 留空保留原值（HTTP API 显式提交空 key 才清空）；删除会
+删除该 Provider 拥有的凭据。系统凭据缺失时重新填写 key；访问被拒绝时先解锁/授权再重试。
+迁移完成后凭据库锁定不会阻止打开设置，但 Test 和 Run 会返回明确的凭据错误。
+
+secret 不作为命令参数、环境变量、Session 配置或 workspace 文件写出；模型认证在进程内使用。
+错误详情中的已知 key（含 URL 编码和 base64）会脱敏，原生存储错误仅返回固定错误码。
+这不是对内存和崩溃转储的安全擦除保证。此分支中其他既有本机 API 的统一访问控制仍由 #3 承接，
+renderer sandbox 仍未启用；不能因凭据迁移就宣称全部安全 gate 已通过。
 
 ## Skills 磁盘发现
 
@@ -172,7 +184,7 @@ preview 会成为 snapshot 数据。读取仍要求 capability 和 snapshot memb
 | `MARGINALIA_ALLOWED_ORIGIN`    | Electron -> pi-server  | 只注入已校验的 loopback Vite exact origin；server 读取后即从环境删除     |
 | `VITE_DEV_SERVER_URL`          | desktop dev            | 让 Electron 加载指定的 loopback Vite URL；`pnpm dev` 自动设置            |
 | `MARGINALIA_FAKE_AGENT`        | screenshot/local debug | 设为 `1` 时使用脚本化 fake agent，不连接真实模型；不要用于打包或生产     |
-| `MARGINALIA_SCREENSHOT_VERIFY` | screenshot             | 启用隔离和确定性截图模式                                                 |
+| `MARGINALIA_SCREENSHOT_VERIFY` | screenshot             | 启用确定性截图；SQLite/凭据均为进程内存，忽略数据库路径配置              |
 | `MARGINALIA_USER_DATA_DIR`     | screenshot             | 覆盖 Electron `userData` 目录                                            |
 | `MINIMAX_CN_API_KEY`           | live screenshot        | 真实 MiniMax opt-in 场景使用                                             |
 | `MINIMAX_CN_BASE_URL`          | live screenshot        | 覆盖 live 场景 URL                                                       |

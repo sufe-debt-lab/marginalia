@@ -240,17 +240,24 @@ realpath 检查；预先存在、指向 workspace 外或已经断裂的 symlink 
 
 ## Providers
 
-| 方法   | 路径                  | 说明                                                                                                                                                                                                                                                              |
-| ------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/providers`          | 列出已配置的 provider（不含 API key）。                                                                                                                                                                                                                           |
-| POST   | `/providers`          | 创建。Body `{ name, apiKey, baseUrl?, defaultModel }`，返回 `201`。API key 存入 `env_vars` 并注册到 pi 运行时（`authStorage.setRuntimeApiKey`）。                                                                                                                 |
-| PATCH  | `/providers/:id`      | 更新。Body 任意子集 `{ name?, apiKey?, baseUrl?, defaultModel?, enabled? }`，返回更新后的 provider（不含 API key）。省略 `apiKey` 则保留原 key；改名会同步重命名 `env_vars` 键并把 pi 运行时 key 从旧 `piProviderId` 迁到新的；`enabled:false` 会移除运行时 key。 |
-| DELETE | `/providers/:id`      | 删除 provider 及其 `env_vars` 记录，并清除 pi 运行时 key，返回 `204`。                                                                                                                                                                                            |
-| POST   | `/providers/:id/test` | 检查 provider/model 是否存在于本地可用模型列表，不发真实网络请求。                                                                                                                                                                                                |
+| 方法   | 路径                  | 说明                                                                                                                                                                                                                                                           |
+| ------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/providers`          | 列出已配置的 provider（不含 API key）。                                                                                                                                                                                                                        |
+| POST   | `/providers`          | 创建。Body `{ name, apiKey, baseUrl?, defaultModel }`，返回 `201`。API key 存入系统凭据库并注册到 pi 运行时（`authStorage.setRuntimeApiKey`）。                                                                                                                |
+| PATCH  | `/providers/:id`      | 更新。Body 任意子集 `{ name?, apiKey?, baseUrl?, defaultModel?, enabled? }`，返回更新后的 provider（不含 API key）。省略 `apiKey` 则保留原 key；改名保持 opaque reference，并把 pi 运行时 key 从旧 `piProviderId` 迁到新的；`enabled:false` 会移除运行时 key。 |
+| DELETE | `/providers/:id`      | 删除系统凭据、provider 及其非敏感 `env_vars` 记录，并清除 pi 运行时 key，返回 `204`。                                                                                                                                                                          |
+| POST   | `/providers/:id/test` | 检查 provider/model 是否存在于本地可用模型列表，不发真实网络请求。                                                                                                                                                                                             |
 
 `Provider`（对客户端）：`{ id, name, baseUrl?, defaultModel, enabled? }`。`name` 会经 `piProviderId()`（`agent/provider-id.ts`）映射到 pi 运行时的 provider id，例如 `"MiniMax"` → `"minimax-cn"`、`"OpenAI"` → `"openai"`。当前 GLM 和 Xiaomi MiMo 预设会分别映射到 registry 中不存在的 `glm`、`xiaomi-mimo`。Run 只把 provider/model ID 交给 `getModel()`，数据库中的 `baseUrl` 没有进入模型请求；Test 只检查本地 registry 和是否配置凭据，不验证 key 或网络。
 
-删除 provider 时，repository 会先删除关联 runs，随后删除 provider 和 `env_vars` key。它不是保留历史记录的 soft delete。
+凭据访问失败返回 `503 { "error": "credential_store_unavailable" }`，不返回原生错误详情。
+Run 前缺失/空凭据返回 `409 { "error": "credential_missing" }`，不创建 Run；Test 返回
+`{ "ok": false, "message": "credential_missing" }`。每次 Test/Run 都重新检查系统凭据，不能使用
+失效的启动缓存或隐式环境 key 绕过检查。Test 仅读取目标凭据并检查全部已注册模型，
+不修改共享 AuthStorage；停用或缺失凭据的账户探测不会改变活跃 Run 的 key。
+Run 的 runtime key 注册在占用检查与全部 preflight 成功、即将启动执行时才进行；被拒绝的请求不清除或替换认证。
+
+删除 provider 时，repository 会先删除系统凭据，再删除关联 runs，随后删除 provider 和 `env_vars` key。它不是保留历史记录的 soft delete。
 
 ## 运行对话（SSE 流式）
 
@@ -479,3 +486,20 @@ HTTP API 之外，renderer 通过 `window.marginalia`（`apps/desktop/electron/p
 
 - 数据流与事件转发设计：[系统架构](./architecture.md)
 - provider 预设、存储位置、读取限制：[配置](../user/configuration.md)
+
+## Credential Store 与旧数据迁移
+
+`credentials/store.ts#CredentialStore` 提供 `create(owner, secret)`、`read(reference)`、
+`replace(reference, secret)`、`delete(reference)` 和诊断 `redact(message)`。Provider 与后续
+Knowledge Platform 复用同一接口、系统适配器和 service namespace；不提供 HTTP secret 读取路由。
+缺失返回 null，重复删除幂等；适配器失败统一为 `CredentialStoreError`，无原始 cause。
+secret 不包含在 Provider DTO 中；已有 `apiKeyRef` 字段仅为不透明引用。
+
+Schema v3 添加 `env_vars.credential_store`，0 表示旧明文待迁移，1 表示只保留空 value 的引用行。
+Provider 的既有外键继续引用该行，避免重建 Provider/Run 表；新数据从不将 key 写入 SQLite。
+启动时同步迁移 legacy `env_vars` 中全部未迁移项（包括 disabled Provider 和旧版非事务创建失败的孤立 key）。
+孤立 key 保留原引用并写入同一系统凭据库，既不留明文，也不直接丢弃源值；已有 v4 标记但仍存在未迁移行时也会补迁。
+写入并回读确认后先 TRUNCATE WAL、切换 DELETE journal 并 VACUUM，
+再以 `secure_delete` 事务原子清空旧值和写入保留的 v4 数据迁移标记。清理失败或事务失败均保留源值。
+失败会阻止启动并允许重试；v4 不是常规 SQL migration，后续 schema 版本从 v5 开始。
+Provider 写入/删除遇到 SQLite 事务失败会恢复原系统凭据；不宣称 OS store 与 SQLite 跨系统原子提交。

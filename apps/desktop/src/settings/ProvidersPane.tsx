@@ -1,3 +1,4 @@
+import { credentialError } from "@/i18n/credential-error.js";
 import { useState } from "react";
 import { Plus, RotateCw } from "lucide-react";
 import { toast } from "sonner";
@@ -42,9 +43,9 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
     try {
       const res = await api.testProvider(id);
       if (res.ok) toast.success(res.message || "OK");
-      else toast.error(res.message);
+      else toast.error(credentialError(res.message, t));
     } catch (err) {
-      toast.error((err as Error).message);
+      toast.error(credentialError((err as Error).message, t));
     }
   }
 
@@ -62,7 +63,7 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       else
         toast.error(
           failed
-            .map((f) => f.message)
+            .map((f) => credentialError(f.message, t))
             .filter(Boolean)
             .join("; ") || "failed"
         );
@@ -84,7 +85,9 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       setAddOpen(false);
       setSeedPreset(null);
     } catch (err) {
-      toast.error(`${t("settings.providerAddFailed")}: ${(err as Error).message}`);
+      toast.error(
+        `${t("settings.providerAddFailed")}: ${credentialError((err as Error).message, t)}`
+      );
     }
   }
 
@@ -101,7 +104,9 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       toast.success(t("settings.providerUpdated"));
       setEditing(null);
     } catch (err) {
-      toast.error(`${t("settings.providerUpdateFailed")}: ${(err as Error).message}`);
+      toast.error(
+        `${t("settings.providerUpdateFailed")}: ${credentialError((err as Error).message, t)}`
+      );
     }
   }
 
@@ -111,7 +116,9 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       loaded.refresh();
       toast.success(t("settings.providerDeleted"));
     } catch (err) {
-      toast.error(`${t("settings.providerDeleteFailed")}: ${(err as Error).message}`);
+      toast.error(
+        `${t("settings.providerDeleteFailed")}: ${credentialError((err as Error).message, t)}`
+      );
     } finally {
       setDeleting(null);
     }
@@ -122,7 +129,9 @@ export function ProvidersPane({ api }: { api: ApiClient }) {
       await api.updateProvider(provider.id, { enabled: next });
       loaded.refresh();
     } catch (err) {
-      toast.error(`${t("settings.providerUpdateFailed")}: ${(err as Error).message}`);
+      toast.error(
+        `${t("settings.providerUpdateFailed")}: ${credentialError((err as Error).message, t)}`
+      );
     }
   }
 

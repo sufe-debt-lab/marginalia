@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "@/api/client.js";
 import { useAppStore } from "@/store/app-store.js";
 import { SettingsView } from "./SettingsView.js";
+import { toast } from "sonner";
 
 function fakeApi(): ApiClient {
   return {
@@ -31,6 +32,25 @@ async function openProvidersPane() {
 }
 
 describe("SettingsView", () => {
+  it.each([
+    ["en", "credential_missing", "Enter the Provider API key again in Settings."],
+    ["zh", "credential_store_unavailable", "无法访问系统凭据库。请解锁或授权后重试。"]
+  ] as const)(
+    "localizes %s credential failures with recovery instructions",
+    async (locale, code, message) => {
+      const api = fakeApi();
+      vi.mocked(api.testProvider).mockResolvedValue({ ok: false, message: code });
+      const errorToast = vi.spyOn(toast, "error").mockImplementation(() => "test-toast");
+      render(<SettingsView api={api} />);
+      await openProvidersPane();
+      useAppStore.setState({ locale });
+      await userEvent.click(
+        await screen.findByRole("button", { name: locale === "en" ? "Test" : "测试" })
+      );
+      expect(errorToast).toHaveBeenCalledWith(message);
+      errorToast.mockRestore();
+    }
+  );
   beforeEach(() => {
     cleanup();
     localStorage.clear();

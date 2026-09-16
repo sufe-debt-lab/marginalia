@@ -1,3 +1,4 @@
+import { credentialError } from "@/i18n/credential-error.js";
 import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 import { stringifyContent } from "@marginalia/chat-core";
@@ -105,7 +106,7 @@ export function MessageStream({
         <div className="flex items-center gap-2.5 rounded-lg border border-danger bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="flex-1">
-            <strong>{t("chat.runFailed")}</strong> · {error.message}
+            <strong>{t("chat.runFailed")}</strong> · {credentialError(error.message, t)}
           </span>
           {error.retryable && (
             <Button

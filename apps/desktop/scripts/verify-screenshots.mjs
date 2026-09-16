@@ -28,6 +28,7 @@ const SCENARIOS = {
       "provider-add-form",
       "provider-toast",
       "settings-providers-connected",
+      "provider-credential-missing",
       "provider-edit-dialog",
       "settings-providers-disabled",
       "provider-delete-confirm",
@@ -367,7 +368,6 @@ async function startHarness(extraEnv = {}) {
     const env = {
       ...process.env,
       VITE_DEV_SERVER_URL: viteUrl,
-      MARGINALIA_DB_PATH: path.join(runRoot, "db.sqlite"),
       MARGINALIA_SCREENSHOT_VERIFY: "1",
       MARGINALIA_USER_DATA_DIR: path.join(runRoot, "user-data"),
       HOME: path.join(runRoot, "home"),
@@ -692,9 +692,8 @@ export async function writeSkillsFixture({ root, home, workspace }) {
 async function ensureSeededWorkspace(ctx) {
   if (ctx.seed) return ctx.seed;
 
-  // Isolated passes run with clean=false and inherit the shared pass's
-  // database, so the fixture must be create-or-reuse — a second
-  // "screenshot-fixture" workspace would double the sidebar in captures.
+  // Each server pass owns an in-memory database. Scenarios sharing a pass reuse
+  // its fixture; a new pass recreates it through the same HTTP API.
   const existing = (await apiJson(ctx.apiBase, "/workspaces")).find(
     (workspace) => workspace?.name === "screenshot-fixture"
   );
@@ -851,6 +850,31 @@ async function scenarioCoreUi(ctx) {
   const deleteButton = ctx.page.getByRole("button", { name: /^(delete|删除)$/i }).first();
   await deleteButton.waitFor({ timeout: 5000 });
   await capture(ctx, "core-ui", "settings-providers-connected");
+
+  // Real HTTP missing-credential recovery, with the harness's in-memory OS adapter.
+  const provider = (await apiJson(ctx.apiBase, "/providers")).find(
+    (item) => item.name === "OpenAI"
+  );
+  await apiJson(ctx.apiBase, `/providers/${provider.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ apiKey: "" })
+  });
+  await ctx.page
+    .getByRole("button", { name: /^Test$/ })
+    .first()
+    .click();
+  const missingCredential = ctx.page.getByText("Enter the Provider API key again in Settings.");
+  await missingCredential.waitFor();
+  await ctx.page.waitForFunction(
+    () => !!document.querySelector("[data-sonner-toast][data-mounted='true']")
+  );
+  await ctx.page.waitForTimeout(100);
+  await capture(ctx, "core-ui", "provider-credential-missing");
+  await missingCredential.waitFor({ state: "detached", timeout: 5000 });
+  await apiJson(ctx.apiBase, `/providers/${provider.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ apiKey: "sk-screenshot-fixture" })
+  });
 
   // Edit dialog: fields prefilled, API key blank with the keep-current hint.
   await ctx.page
@@ -1039,8 +1063,7 @@ async function scenarioApprovalFlow(ctx) {
   await ensureSeededWorkspace(ctx);
   // The composer refuses to send without a provider selected; the key/model are
   // never used since the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never
-  // calls a real model. Create-or-reuse also keeps this isolated pass from
-  // stacking a duplicate when it inherits the shared pass's database.
+  // calls a real model. Create-or-reuse avoids duplicates within the same pass.
   await ensureFixtureProvider(ctx.apiBase);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);

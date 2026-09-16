@@ -1,3 +1,4 @@
+import { credentials } from "../src/credentials/system.js";
 import Database from "better-sqlite3";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,10 +62,10 @@ describe("updateProvider", () => {
     });
 
     expect(updated).toMatchObject({ defaultModel: "MiniMax-M3", enabled: false });
-    expect(getProvider(db, created.id)?.apiKey).toBe("sk-original");
+    expect(credentials.read(created.apiKeyRef)).toBe("sk-original");
   });
 
-  it("renames the env var key and rotates the value on rename + new key", () => {
+  it("retains the opaque reference and rotates the credential on rename + new key", () => {
     const db = memoryDb();
     migrate(db);
     const created = createProvider(db, {
@@ -76,11 +77,8 @@ describe("updateProvider", () => {
 
     updateProvider(db, created.id, { name: "GLM Pro", apiKey: "sk-new" });
 
-    const row = db
-      .prepare("select key, value from env_vars where id = ?")
-      .get(created.apiKeyRef) as { key: string; value: string };
-    expect(row.key).toBe("GLM PRO_API_KEY");
-    expect(row.value).toBe("sk-new");
+    expect(getProvider(db, created.id)?.apiKeyRef).toBe(created.apiKeyRef);
+    expect(credentials.read(created.apiKeyRef)).toBe("sk-new");
   });
 
   it("returns null for an unknown id", () => {

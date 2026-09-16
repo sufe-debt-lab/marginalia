@@ -36,7 +36,7 @@ HTTP 文件写入会拒绝预先存在、指向 workspace 外或已经断裂的 
 
 Settings -> Providers 提供 OpenAI、智谱 GLM、MiniMax、小米 MiMo 四个预设。当前 OpenAI 和 MiniMax 的 name/model 能被 pi registry 识别；GLM 会被错误映射为 `glm`，小米会被错误映射为 `xiaomi-mimo`，两者的 Test 当前会失败，不能用于真实对话。
 
-自定义 Base URL 目前只会保存和显示，没有进入实际模型请求。Test 按钮只检查本地 provider/model 注册和是否已经配置凭据，不会验证 key 是否有效，也不会向服务商发送真实请求。需要确认真实连通性时只能发起对话，并留意它可能产生费用。
+自定义 Base URL 目前只会保存和显示，没有进入实际模型请求。Test 按钮只读检查所选账户的本地 provider/model 注册和凭据，不改变正在运行任务的账户，不会验证 key 是否有效，也不会向服务商发送真实请求。需要确认真实连通性时只能发起对话，并留意它可能产生费用。
 
 Provider API key 当前以明文保存在本机 SQLite。删除 provider 会同时删除它的 key 和关联 run 历史。完整配置边界见[配置](./configuration.md)。
 
@@ -187,3 +187,11 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 - [核心术语](./concepts.md)
 - [产品状态](../product/status.md)
 - [API 参考](../developer/api.md)
+
+### Provider 凭据恢复
+
+Provider key 由系统凭据库保存。禁用不会删除 key；删除 Provider 会删除其 key。
+首次升级若系统凭据库拒绝访问，旧数据不会被当作迁移成功；解锁后重新启动应用。
+迁移完成后 Test/发送出现 `credential_store_unavailable` 时解锁/授权后重试，出现
+`credential_missing` 时在 Provider 编辑页重新输入 key。Test 仍只做本地可用性检查，不联网验 key。
+详细存储与隐私边界见[配置](./configuration.md)。

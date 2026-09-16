@@ -23,7 +23,8 @@ export class PiCodingAgentClient implements AgentClient {
   constructor(
     private readonly registry: AgentSessionRegistry,
     private readonly resolveModel: ResolveModelFn,
-    private readonly gateway: ApprovalGateway
+    private readonly gateway: ApprovalGateway,
+    private readonly redactDiagnostic: (message: string) => string = () => "agent_failed"
   ) {}
 
   resolveApproval(_sessionId: string, approvalId: string, decision: ApprovalDecision): boolean {
@@ -126,6 +127,7 @@ export class PiCodingAgentClient implements AgentClient {
         // the same ordered stream, so the consumer sees approvals interleaved with
         // the tool calls they gate.
         const pushEvent = (event: AgentRunEvent) => {
+          redactModelDiagnostics(event, this.redactDiagnostic);
           queue.push(event);
           waiters.shift()?.();
         };
@@ -197,5 +199,20 @@ export class PiCodingAgentClient implements AgentClient {
         };
       }
     };
+  }
+}
+
+// Pi notifies subscribers before appending message_end to SessionManager. Mutate the
+// diagnostic fields on that same message so live events and persisted history agree.
+// Event shapes, message identity, content and tool results remain pi-native.
+function redactModelDiagnostics(value: unknown, redact: (message: string) => string): void {
+  if (!value || typeof value !== "object") return;
+  const object = value as Record<string, unknown>;
+  for (const [key, child] of Object.entries(object)) {
+    if ((key === "errorMessage" || key === "lastError") && typeof child === "string") {
+      object[key] = redact(child);
+    } else if (key !== "content" && key !== "details" && key !== "arguments") {
+      redactModelDiagnostics(child, redact);
+    }
   }
 }
