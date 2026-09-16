@@ -390,6 +390,14 @@ describe("ChatView", () => {
       new ApiError("Payload too large", 413, "skill_payload_too_large", {}),
       "Selected Skill content is too large"
     ],
+    [
+      new ApiError("credential_missing", 409, "credential_missing", {}),
+      "Enter the Provider API key again in Settings."
+    ],
+    [
+      new ApiError("credential_store_unavailable", 503, "credential_store_unavailable", {}),
+      "Cannot access the system credential store."
+    ],
     [null, "The run ended before it started"]
   ])(
     "keeps a pre-start blocked turn in the Composer without refreshing the catalog",

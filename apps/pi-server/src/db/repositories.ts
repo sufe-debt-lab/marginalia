@@ -1,3 +1,5 @@
+import { credentials } from "../credentials/system.js";
+import type { CredentialStore } from "../credentials/store.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import type { PiMessageCore } from "@marginalia/chat-core";
@@ -38,7 +40,6 @@ export type Provider = {
   id: string;
   name: string;
   apiKeyRef: string;
-  apiKey?: string;
   baseUrl: string | null;
   defaultModel: string;
   enabled: boolean;
@@ -236,10 +237,11 @@ export function getMessages(db: Database.Database, sessionId: string) {
 
 export function createProvider(
   db: Database.Database,
-  input: { name: string; apiKey: string; baseUrl?: string | null; defaultModel: string }
+  input: { name: string; apiKey: string; baseUrl?: string | null; defaultModel: string },
+  credentialStore: CredentialStore = credentials
 ) {
   const timestamp = now();
-  const envId = randomUUID();
+  const envId = credentialStore.create("provider", input.apiKey);
   const provider = {
     id: randomUUID(),
     name: input.name,
@@ -250,25 +252,28 @@ export function createProvider(
     createdAt: timestamp,
     updatedAt: timestamp
   } satisfies Provider;
-  db.prepare("insert into env_vars (id, key, value, scope, created_at) values (?, ?, ?, ?, ?)").run(
-    envId,
-    `${input.name.toUpperCase()}_API_KEY`,
-    input.apiKey,
-    "global",
-    timestamp
-  );
-  db.prepare(
-    "insert into providers (id, name, api_key_ref, base_url, default_model, enabled, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(
-    provider.id,
-    provider.name,
-    provider.apiKeyRef,
-    provider.baseUrl,
-    provider.defaultModel,
-    1,
-    timestamp,
-    timestamp
-  );
+  try {
+    db.transaction(() => {
+      db.prepare(
+        "insert into env_vars (id, key, value, scope, created_at, credential_store) values (?, ?, ?, ?, ?, 1)"
+      ).run(envId, `${input.name.toUpperCase()}_API_KEY`, "", "global", timestamp);
+      db.prepare(
+        "insert into providers (id, name, api_key_ref, base_url, default_model, enabled, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        provider.id,
+        provider.name,
+        provider.apiKeyRef,
+        provider.baseUrl,
+        provider.defaultModel,
+        1,
+        timestamp,
+        timestamp
+      );
+    })();
+  } catch (error) {
+    credentialStore.delete(envId);
+    throw error;
+  }
   return provider;
 }
 
@@ -280,11 +285,7 @@ export function listProviders(db: Database.Database) {
 }
 
 export function getProvider(db: Database.Database, id: string) {
-  const row = db
-    .prepare(
-      "select providers.*, env_vars.value as api_key from providers join env_vars on env_vars.id = providers.api_key_ref where providers.id = ?"
-    )
-    .get(id);
+  const row = db.prepare("select * from providers where id = ?").get(id);
   return row ? mapProvider(row) : null;
 }
 
@@ -297,7 +298,8 @@ export function updateProvider(
     baseUrl?: string | null;
     defaultModel?: string;
     enabled?: boolean;
-  }
+  },
+  credentialStore: CredentialStore = credentials
 ) {
   const existing = getProvider(db, id);
   if (!existing) return null;
@@ -306,28 +308,31 @@ export function updateProvider(
   const defaultModel = input.defaultModel ?? existing.defaultModel;
   const enabled = input.enabled === undefined ? existing.enabled : input.enabled;
   const timestamp = now();
-  db.prepare(
-    "update providers set name = ?, base_url = ?, default_model = ?, enabled = ?, updated_at = ? where id = ?"
-  ).run(name, baseUrl, defaultModel, enabled ? 1 : 0, timestamp, id);
-  const renamed = name !== existing.name;
-  if (input.apiKey !== undefined) {
-    db.prepare("update env_vars set key = ?, value = ? where id = ?").run(
-      `${name.toUpperCase()}_API_KEY`,
-      input.apiKey,
-      existing.apiKeyRef
-    );
-  } else if (renamed) {
-    db.prepare("update env_vars set key = ? where id = ?").run(
-      `${name.toUpperCase()}_API_KEY`,
-      existing.apiKeyRef
-    );
+  const oldSecret = input.apiKey === undefined ? null : credentialStore.read(existing.apiKeyRef);
+  if (input.apiKey !== undefined) credentialStore.replace(existing.apiKeyRef, input.apiKey);
+  try {
+    db.prepare(
+      "update providers set name = ?, base_url = ?, default_model = ?, enabled = ?, updated_at = ? where id = ?"
+    ).run(name, baseUrl, defaultModel, enabled ? 1 : 0, timestamp, id);
+  } catch (error) {
+    if (input.apiKey !== undefined) {
+      if (oldSecret === null) credentialStore.delete(existing.apiKeyRef);
+      else credentialStore.replace(existing.apiKeyRef, oldSecret);
+    }
+    throw error;
   }
   return getProvider(db, id);
 }
 
-export function deleteProvider(db: Database.Database, id: string) {
+export function deleteProvider(
+  db: Database.Database,
+  id: string,
+  credentialStore: CredentialStore = credentials
+) {
   const existing = getProvider(db, id);
   if (!existing) return null;
+  const oldSecret = credentialStore.read(existing.apiKeyRef);
+  credentialStore.delete(existing.apiKeyRef);
   const tx = db.transaction(() => {
     // runs.provider_id is a NOT NULL FK with no ON DELETE, so clear the provider's
     // run history first (mirrors deleteWorkspace) to avoid a constraint failure.
@@ -335,7 +340,12 @@ export function deleteProvider(db: Database.Database, id: string) {
     db.prepare("delete from providers where id = ?").run(id);
     db.prepare("delete from env_vars where id = ?").run(existing.apiKeyRef);
   });
-  tx();
+  try {
+    tx();
+  } catch (error) {
+    if (oldSecret !== null) credentialStore.replace(existing.apiKeyRef, oldSecret);
+    throw error;
+  }
   return existing;
 }
 
@@ -398,7 +408,6 @@ function mapProvider(row: any): Provider {
     id: row.id,
     name: row.name,
     apiKeyRef: row.api_key_ref,
-    apiKey: row.api_key,
     baseUrl: row.base_url,
     defaultModel: row.default_model,
     enabled: Boolean(row.enabled),

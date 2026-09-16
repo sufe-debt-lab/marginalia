@@ -13,14 +13,14 @@ export class ModelAvailabilityChecker {
   constructor(private readonly registry: ModelRegistry) {}
 
   check(input: AvailabilityInput): AvailabilityResult {
-    const available = this.registry.getAvailable() as unknown as AvailableModel[];
+    const available = this.registry.getAll() as unknown as AvailableModel[];
     const hit = available.find((m) => m.provider === input.piProviderId && m.id === input.modelId);
     if (hit) return { ok: true, message: "ok" };
     const sameProvider = available.filter((m) => m.provider === input.piProviderId);
     if (sameProvider.length === 0) {
       return {
         ok: false,
-        message: `provider ${input.piProviderId} not available (missing API key?)`
+        message: `provider ${input.piProviderId} not registered`
       };
     }
     return {

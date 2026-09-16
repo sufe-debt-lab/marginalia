@@ -3,14 +3,14 @@ import { ModelAvailabilityChecker } from "../src/providers/provider-availability
 
 function fakeRegistry(available: Array<{ provider: string; id: string }>) {
   return {
-    getAvailable() {
+    getAll() {
       return available;
     }
   };
 }
 
 describe("ModelAvailabilityChecker", () => {
-  it("returns ok when provider id appears in pi available list", () => {
+  it("returns ok when provider id appears in pi registered list", () => {
     const checker = new ModelAvailabilityChecker(
       fakeRegistry([{ provider: "minimax-cn", id: "MiniMax-M2.7" }]) as any
     );

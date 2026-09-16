@@ -166,7 +166,8 @@ describe("database migrations", () => {
 
       expect(db.prepare("select version from schema_migrations order by version").all()).toEqual([
         { version: 1 },
-        { version: 2 }
+        { version: 2 },
+        { version: 3 }
       ]);
       expect(
         db
@@ -334,7 +335,8 @@ describe("database migrations", () => {
       try {
         expect(db.prepare("select version from schema_migrations order by version").all()).toEqual([
           { version: 1 },
-          { version: 2 }
+          { version: 2 },
+          { version: 3 }
         ]);
         expect(tableNames(db).filter((name) => name === "skill_preferences")).toEqual([
           "skill_preferences"

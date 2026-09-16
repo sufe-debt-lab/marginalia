@@ -1,3 +1,4 @@
+import { credentialError } from "@/i18n/credential-error.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -463,7 +464,9 @@ export function ChatView({ api, sessionId }: { api: ApiClient; sessionId: string
           ? t("composer.skillPayloadTooLarge")
           : preStartError === "run ended before starting"
             ? t("composer.runEndedBeforeStart")
-            : preStartError;
+            : preStartError
+              ? credentialError(preStartError, t)
+              : null;
   const composerStatus =
     blockedTurn?.code === "skill_precondition_failed" ? (
       <SkillPreconditionBanner

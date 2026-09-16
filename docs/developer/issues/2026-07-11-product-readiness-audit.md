@@ -119,8 +119,7 @@ lexical candidate，没有检查最近存在父目录。审计用 `workspace/lin
 
 ## P0-SEC-006: Secret 与 renderer 缺少发布级保护
 
-Provider API key 直接写入 SQLite `env_vars.value`。数据库副本、备份、崩溃采集或其他本地进程可读取
-key。Electron renderer sandbox 已开启，这一子项已完成，但不会保护 SQLite 中的明文 secret。
+2026-09-16：Issue #3 已启用 renderer sandbox；Issue #4 将 Provider key 迁到系统凭据库并清理当前 SQLite/WAL。旧备份与崩溃转储不在擦除范围，系统凭据跨平台验收限制见 [Issue #4 实施记录](./2026-09-16-issue-4-credentials.md)。
 
 修复目标：secret 移到 OS keychain 或等价加密存储，SQLite 只保存引用和非敏感元数据；继续保持
 renderer sandbox、context isolation 和窄 preload API。

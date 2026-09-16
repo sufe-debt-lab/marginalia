@@ -1,6 +1,6 @@
 # 使用指南
 
-Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工具权限还不是安全沙箱，Provider key 也没有加密；重要限制见[产品状态](../product/status.md)。开发、测试和打包命令见[本地开发指南](../developer/development.md)。
+Marginalia 当前处于 Alpha，适合在可恢复的资料副本上评估。工具权限还不是安全沙箱；Provider key 由操作系统凭据库保存；重要限制见[产品状态](../product/status.md)。开发、测试和打包命令见[本地开发指南](../developer/development.md)。
 
 ## 基本流程
 
@@ -36,9 +36,9 @@ HTTP 文件写入会拒绝预先存在、指向 workspace 外或已经断裂的 
 
 Settings -> Providers 提供 OpenAI、智谱 GLM、MiniMax、小米 MiMo 四个预设。当前 OpenAI 和 MiniMax 的 name/model 能被 pi registry 识别；GLM 会被错误映射为 `glm`，小米会被错误映射为 `xiaomi-mimo`，两者的 Test 当前会失败，不能用于真实对话。
 
-自定义 Base URL 目前只会保存和显示，没有进入实际模型请求。Test 按钮只检查本地 provider/model 注册和是否已经配置凭据，不会验证 key 是否有效，也不会向服务商发送真实请求。需要确认真实连通性时只能发起对话，并留意它可能产生费用。
+自定义 Base URL 目前只会保存和显示，没有进入实际模型请求。Test 按钮只读检查所选账户的本地 provider/model 注册和凭据，不改变正在运行任务的账户，不会验证 key 是否有效，也不会向服务商发送真实请求。需要确认真实连通性时只能发起对话，并留意它可能产生费用。
 
-Provider API key 当前以明文保存在本机 SQLite。删除 provider 会同时删除它的 key 和关联 run 历史。完整配置边界见[配置](./configuration.md)。
+Provider API key 保存在操作系统凭据库，SQLite 仅保存不透明引用。删除 provider 会同时删除它的 key 和关联 run 历史。完整配置边界见[配置](./configuration.md)。
 
 ## 文件上下文
 
@@ -95,15 +95,15 @@ symlink component，但仍存在检查到写入之间的竞态边界；保存到
 | Data             | Location                               | Current behavior                                        |
 | ---------------- | -------------------------------------- | ------------------------------------------------------- |
 | SQLite           | `~/.marginalia/db.sqlite`              | 保存 workspace、session、provider、run、approval 等记录 |
-| Provider API key | SQLite `env_vars`                      | 明文保存，启动时注册到 pi 运行时                        |
-| pi AuthStorage   | `~/.marginalia/auth.json`              | 与独立 pi CLI 目录分开                                  |
+| Provider API key | 操作系统凭据库                         | SQLite 仅保存不透明引用，运行时读取凭据                 |
+| pi AuthStorage   | 进程内存                               | 不写入 auth.json，与独立 pi CLI 存储分开                |
 | UI preferences   | Electron localStorage `marginalia-app` | 保存语言、布局、权限、推理档位和模型选择                |
 
 本机 pi-server 监听随机 loopback 端口。每个 Electron server 进程会生成独立 Loopback Access bearer；
 除公开健康检查外，所有 workspace、Session、Provider、文件、Skills、审批和 Run 请求都必须同时通过
 bearer 与 exact Origin 检查。renderer 只通过受限 preload transport 请求服务，不保存实际端口或 bearer。
 缺失/错误 bearer 与缺失/恶意 Origin 分别返回稳定 401/403。该边界不会抵御已经能读取同用户进程内存的
-本机恶意软件，Provider key 也仍为明文存储，因此 Alpha 仍不应用于高敏感资料。
+本机恶意软件；系统凭据库也不替代 workspace 和工具权限隔离，因此 Alpha 仍不应用于高敏感资料。
 
 ## Skills 选择与管理
 
@@ -187,6 +187,14 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 - [核心术语](./concepts.md)
 - [产品状态](../product/status.md)
 - [API 参考](../developer/api.md)
+
+### Provider 凭据恢复
+
+Provider key 由系统凭据库保存。禁用不会删除 key；删除 Provider 会删除其 key。
+首次升级若系统凭据库拒绝访问，旧数据不会被当作迁移成功；解锁后重新启动应用。
+迁移完成后 Test/发送出现 `credential_store_unavailable` 时解锁/授权后重试，出现
+`credential_missing` 时在 Provider 编辑页重新输入 key。Test 仍只做本地可用性检查，不联网验 key。
+详细存储与隐私边界见[配置](./configuration.md)。
 
 ## 桌面面板
 

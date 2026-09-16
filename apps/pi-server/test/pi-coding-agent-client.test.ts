@@ -1,4 +1,6 @@
-import { mkdtempSync } from "node:fs";
+import { CredentialStore } from "../src/credentials/store.js";
+import { MemoryCredentialAdapter } from "./helpers/memory-credentials.js";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -10,7 +12,8 @@ import {
   type AgentSession,
   type Skill
 } from "@earendil-works/pi-coding-agent";
-import { getModel } from "@earendil-works/pi-ai";
+import { getModel, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { emptyUsage } from "@marginalia/chat-core";
 import { describe, expect, it, vi } from "vitest";
 import { PiCodingAgentClient } from "../src/agent/pi-coding-agent-client.js";
 import type { AgentRunEvent, AgentSessionEvent } from "../src/agent/agent-client.js";
@@ -55,6 +58,68 @@ function emptyRuntimeSkills() {
 }
 
 describe("PiCodingAgentClient", () => {
+  it("redacts model error diagnostics before raw events and real pi history persistence", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "credential-pi-"));
+    const authStorage = AuthStorage.inMemory();
+    authStorage.setRuntimeApiKey("openai", "synthetic-key");
+    const credentialStore = new CredentialStore(new MemoryCredentialAdapter());
+    credentialStore.create("provider", "synthetic-key");
+    const model = getModel("openai", "gpt-4o");
+    const registry = new RealAgentSessionRegistry({
+      authStorage,
+      modelRegistry: ModelRegistry.inMemory(authStorage),
+      sessionManagerFor: () => SessionManager.create(root, path.join(root, "sessions")),
+      createSession: async (options) => {
+        const result = await createAgentSession({ ...options, tools: [] });
+        result.session.setAutoRetryEnabled(false);
+        result.session.agent.streamFn = () => {
+          const stream = createAssistantMessageEventStream();
+          stream.push({
+            type: "error",
+            reason: "error",
+            error: {
+              role: "assistant",
+              content: [],
+              api: model.api,
+              provider: model.provider,
+              model: model.id,
+              usage: emptyUsage(),
+              stopReason: "error",
+              errorMessage: "synthetic-key was rejected",
+              timestamp: Date.now()
+            }
+          });
+          stream.end();
+          return stream;
+        };
+        return result;
+      }
+    });
+    try {
+      const client = new PiCodingAgentClient(
+        registry,
+        () => model,
+        new ApprovalGateway(),
+        (message) => credentialStore.redact(message)
+      );
+      const prepared = await client.prepare({
+        sessionId: "s1",
+        workspaceRoot: root,
+        piProviderId: "openai",
+        modelId: model.id,
+        runtimeSkills: emptyRuntimeSkills()
+      });
+      const execution = prepared.start("hello");
+      const events = await collect(execution.events);
+      await execution.settled;
+      expect(JSON.stringify(events)).not.toContain("synthetic-key");
+      expect(readFileSync(prepared.sessionFile!, "utf8")).not.toContain("synthetic-key");
+      expect(JSON.stringify(events)).toContain("[redacted] was rejected");
+    } finally {
+      registry.disposeAll();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("pins the effective skill loader and registry revision for the prepared runtime", async () => {
     const session = fakeSession([]);
     const acquire = vi.fn(async () => ({

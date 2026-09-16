@@ -12,9 +12,31 @@ const [{ serve }, { createApp }, { ScriptedFakeAgentClient }] = await Promise.al
 const agentClient =
   process.env.MARGINALIA_FAKE_AGENT === "1" ? new ScriptedFakeAgentClient() : undefined;
 
+// The existing isolated Electron screenshot harness must never touch the OS store.
+// Pair both stores in memory: this flag must never migrate or open a user database.
+let credentialStore;
+let db;
+if (process.env.MARGINALIA_SCREENSHOT_VERIFY === "1") {
+  const { CredentialStore } = await import("./credentials/store.js");
+  const { openDatabase } = await import("./db/connection.js");
+  db = openDatabase(":memory:");
+  const values = new Map<string, string>();
+  credentialStore = new CredentialStore({
+    get: (reference) => values.get(reference) ?? null,
+    set: (reference, secret) => {
+      values.set(reference, secret);
+    },
+    delete: (reference) => {
+      values.delete(reference);
+    }
+  });
+}
+
 const app = createApp({
   agentClient,
-  loopbackAccess
+  loopbackAccess,
+  credentialStore,
+  db
 });
 
 const server = serve(

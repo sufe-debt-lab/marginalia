@@ -159,6 +159,26 @@ protocol 代理 JSON、SSE 和 raw/Range 请求，并在代理层注入 bearer �
 - 发布阻断与验证基线：[产品状态](../product/status.md)
 - PR 验证和文档影响：[贡献指南](./contributing.md)
 
+## 系统凭据 packaged resource smoke
+
+pi-server bundle 包含固定版 `@napi-rs/keyring` 及宿主平台的 Node-API 原生包，不需要按 Electron
+ABI 重编译 keyring；better-sqlite3 仍使用既有 rebuild/restore 流程。macOS/Windows 打包矩阵在
+生成安装包后运行以下 gate：
+
+```bash
+pnpm --filter @marginalia/desktop exec electron scripts/credential-packaged-smoke.mjs
+```
+
+harness 用 Electron utilityProcess 从实际 packaged Resources/pi-server 加载适配器，跨三个
+子进程验证保存、读取、替换、删除和缺失。默认定位本机 mac/mac-arm64 或 win-unpacked 的
+Resources，也可显式传入 pi-server bundle 路径。该检查验证 packaged 资源与 Electron 原生加载，
+不替代签名/公证后真实应用身份和权限提示的安装验收。
+
+smoke 只使用 `works.marginalia.credential-smoke` namespace、随机 reference 和合成值，最后
+清理自己的测试项；不会列举或读取开发者现有系统凭据。失败只输出固定诊断；清理失败保留
+reference 供人工处理。macOS/Windows 必须在各自原生 runner 通过；Linux 要求已解锁的持久化
+Secret Service，在具备该服务的桌面环境单独验收，不接受 keyutils 或明文 fallback。
+
 ### Issue #3 smoke 隔离与验收
 
 `smoke:packaged` 使用环境 allowlist、临时 HOME/USERPROFILE 和 Pi agent 目录，不继承模型凭据，

@@ -406,7 +406,7 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - Catalog admission 只提供两个 active build、20 个 waiter 与 30 秒排队等待的有界 fail-closed；无法取消的
   active Promise 或同步 Pi discovery 卡顿仍可让所有 workspace refresh 暂时不可用。
 - Ask 审批按字符串前缀判断 shell，新文件 write 默认直通。
-- Provider key 以明文写入 SQLite。
+- Provider key 使用系统凭据库；旧备份/快照与进程转储不由本次迁移擦除。
 
 修复目标和验收条件见[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。
 
@@ -431,6 +431,34 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 - 数据模型、HTTP 路由、SSE 事件格式：[API 参考](./api.md)
 - 打包时如何处理 better-sqlite3 原生 ABI：[打包与发布](./build-and-release.md)
 - 环境变量、provider、存储位置：[配置](../user/configuration.md)
+
+## 系统凭据所有权
+
+pi-server 的 `CredentialStore` 是 Provider 和后续 Knowledge Platform 的共用 secret seam。
+`@napi-rs/keyring` 2.1.0 通过原生 API 使用 macOS Keychain、Windows Credential Manager；Linux
+显式选择持久化 Secret Service，不回退到会话级 keyutils 或明文文件。依赖使用 Node-API，不走
+shell，也不把 key 放到 argv。系统适配器延迟加载，加载/权限错误都经过固定错误边界。
+
+SQLite 的 Provider reference 与空的旧 env 元数据保留现有外键关系。旧版非事务创建留下的
+孤立 env 凭据也迁移至系统库；不存在 Provider 引用不再成为遗漏凭据的条件。启动数据迁移先写系统库、
+回读，再清理数据库页及 WAL、切换 DELETE journal；最后以 secure_delete 事务原子清除源值和提交完成标记。普通 CRUD 对数据库失败做凭据补偿，跨进程
+崩溃不具备分布式事务保证：创建中断可能留下无引用的系统项，删除中断可能留下缺失凭据的
+Provider；后者必须重新填写 key，不能回退到数据库明文或环境变量。
+
+pi AuthStorage 使用 in-memory storage，模型请求只消费 runtime key。Test 和 Run 每次读取
+系统库，缺失/拒绝访问在接受 Run 前失败。Test 只检查目标凭据和 `getAll()` 模型注册，
+不会对共享认证状态调用 set/remove；Run 在占用检查、preflight 和接受成功后、调用 start 之前注册 key，
+拒绝/失败请求不修改认证。配置操作沿用既有 runtime key 注册。设置仍可打开来修复。禁用保留系统项，删除移除所有权。
+原生适配器错误无 cause/输入详情；运行异常与 pi `errorMessage`/`lastError` 使用已观察 key 的
+脱敏值。pi subscriber 在 SessionManager 持久化之前同步处理同一条消息，真实 pi history
+测试约束这个顺序；不改变 raw event/ChatEntry 形状，不增设聊天协议或文档正文存储。
+
+测试通过 AppOptions 注入内存适配器；普通 Vitest 的 setup 替换系统边界。现有隔离 Electron
+截图模式将 SQLite 和凭据同时置于进程内存，不打开默认数据库，也忽略 `MARGINALIA_DB_PATH`。
+每个截图服务进程重新通过 HTTP 建立 fixture，退出后两类状态一起释放。打包资源的原生 smoke 另在独立 namespace 使用合成值，并在 finally
+清理该测试项。原生服务说明见 [keyring-node](https://github.com/Brooooooklyn/keyring-node)。
+
+Run 在异步准备及 `run_started` 写出后、实际启动模型前重新读取系统凭据，避免恢复准备期间已替换或清空的旧 key。此时凭据缺失或拒绝访问通过既有 `run_failed` 终结已接受的 Run，不启动模型；不增加凭据版本或平行认证状态。
 
 ## Issue #3 的流式预览边界
 

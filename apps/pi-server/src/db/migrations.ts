@@ -91,7 +91,8 @@ const migrations: ReadonlyArray<{ version: number; sql: string }> = [
         updated_at INTEGER NOT NULL
       );
     `
-  }
+  },
+  { version: 3, sql: "ALTER TABLE env_vars ADD COLUMN credential_store INTEGER NOT NULL DEFAULT 0" }
 ];
 
 function repairV1SessionColumns(db: Database.Database) {
