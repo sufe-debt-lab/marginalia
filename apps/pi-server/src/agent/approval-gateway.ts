@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import type {
   AgentPermission,
   ApprovalDecision,
   ApprovalEvent,
   ApprovalPayload
 } from "./agent-client.js";
-import { commandPrefix, evaluateToolCall, type ApprovalNeed } from "./approval-policy.js";
+import { evaluateEffect, type ToolEffect } from "./approval-policy.js";
 
 type SessionPolicy = { permission: AgentPermission; workspaceRoot: string };
 
@@ -20,15 +18,9 @@ type Pending = {
 };
 
 export class ApprovalGateway {
-  private readonly fileExists: (absPath: string) => boolean;
   private readonly policies = new Map<string, SessionPolicy>();
-  private readonly allowedPrefixes = new Map<string, Set<string>>();
   private readonly pending = new Map<string, Pending>();
   private readonly listeners = new Map<string, Set<(e: ApprovalEvent) => void>>();
-
-  constructor(deps: { fileExists?: (absPath: string) => boolean } = {}) {
-    this.fileExists = deps.fileExists ?? existsSync;
-  }
 
   setPolicy(sessionId: string, policy: SessionPolicy): void {
     this.policies.set(sessionId, policy);
@@ -38,21 +30,41 @@ export class ApprovalGateway {
     return this.policies.get(sessionId) ?? null;
   }
 
-  evaluate(
-    sessionId: string,
-    toolName: string,
-    input: Record<string, unknown>
-  ): "allow" | ApprovalNeed {
+  evaluate(sessionId: string, effect: ToolEffect): "allow" | "approve" | "deny" {
     const policy = this.policies.get(sessionId);
-    if (!policy) return "allow";
-    const prefixes = this.allowedPrefixes.get(sessionId);
-    return evaluateToolCall({
-      toolName,
-      input,
-      permission: policy.permission,
-      fileExists: (rel) => this.fileExists(path.resolve(policy.workspaceRoot, rel)),
-      isPrefixAllowed: (prefix) => prefixes?.has(prefix) ?? false
-    });
+    return policy ? evaluateEffect(policy.permission, effect) : "deny";
+  }
+
+  async authorize(
+    sessionId: string,
+    req: { toolCallId: string; toolName: string; effect: ToolEffect; payload?: ApprovalPayload },
+    signal?: AbortSignal
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    const policy = this.evaluate(sessionId, req.effect);
+    if (policy === "deny")
+      throw new Error("Operation denied by read-only or missing session policy");
+    if (policy === "allow") return;
+    if (!req.payload) throw new Error("Protected operation requires an exact approval preview");
+    const cancel = () => {
+      this.cancelPending(sessionId);
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const decision = await this.request(sessionId, {
+        ...req,
+        payload: { ...req.payload, effect: req.effect }
+      });
+      signal?.throwIfAborted();
+      if (!decision.approved)
+        throw new Error(
+          decision.reason
+            ? `User declined this operation: ${decision.reason}`
+            : "User declined this operation."
+        );
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
   }
 
   request(
@@ -83,11 +95,6 @@ export class ApprovalGateway {
     const entry = this.pending.get(approvalId);
     if (!entry) return false;
     this.pending.delete(approvalId);
-    if (decision.approved && decision.alwaysAllowPrefix && entry.payload.kind === "command") {
-      const set = this.allowedPrefixes.get(entry.sessionId) ?? new Set<string>();
-      set.add(commandPrefix(entry.payload.command));
-      this.allowedPrefixes.set(entry.sessionId, set);
-    }
     entry.resolve({ approved: decision.approved, reason: decision.reason });
     this.emit(entry.sessionId, {
       type: "approval_resolved",

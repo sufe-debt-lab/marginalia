@@ -25,7 +25,14 @@ function grayPng(width: number, height: number, overrides: Array<[number, number
   return PNG.sync.write(png);
 }
 
-const DEFAULTS = ["core-ui", "seeded-workspace", "approval-flow", "skills-flow", "desktop-panels"];
+const DEFAULTS = [
+  "core-ui",
+  "seeded-workspace",
+  "approval-flow",
+  "workspace-access",
+  "skills-flow",
+  "desktop-panels"
+];
 const SKILLS_FLOW_LABELS = [
   "skills-settings",
   "skill-picker-dollar",
@@ -298,6 +305,7 @@ describe("SCENARIOS registry export", () => {
       "core-ui",
       "seeded-workspace",
       "approval-flow",
+      "workspace-access",
       "skills-flow",
       "desktop-panels",
       "minimax-live"

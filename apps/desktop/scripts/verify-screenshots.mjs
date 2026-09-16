@@ -72,6 +72,14 @@ const SCENARIOS = {
     ],
     run: scenarioApprovalFlow
   },
+  "workspace-access": {
+    description:
+      "Real workspace writes, overwrite denial, stale approval and persisted history using controlled pi tools.",
+    default: true,
+    env: { MARGINALIA_FAKE_AGENT: "workspace" },
+    expected: ["overwrite-pending", "stale-approval"],
+    run: scenarioWorkspaceAccess
+  },
   "skills-flow": {
     description:
       "Skills settings, dual picker, ordered chips, global context, diagnostics and blocked turns.",
@@ -968,7 +976,7 @@ async function scenarioCoreUi(ctx) {
     .getByRole("button", { name: /tool permission|工具权限/i })
     .first()
     .click({ timeout: 5000 });
-  await ctx.page.getByRole("menuitem", { name: /ask each time|每次询问/i }).waitFor({
+  await ctx.page.getByRole("menuitem", { name: /standard access|标准访问/i }).waitFor({
     timeout: 5000
   });
   await capture(ctx, "core-ui", "permission-menu");
@@ -1146,6 +1154,88 @@ async function scenarioApprovalFlow(ctx) {
     .first()
     .waitFor({ timeout: 10000 });
   await capture(ctx, "approval-flow", "approval-denied");
+}
+
+async function scenarioWorkspaceAccess(ctx) {
+  const { workspace } = await ensureSeededWorkspace(ctx);
+  await ensureFixtureProvider(ctx.apiBase);
+  await resetUiState(ctx.page);
+  await reloadApp(ctx.page);
+  await goNewChat(ctx.page);
+  await ctx.page.getByRole("button", { name: /tool permission|工具权限/i }).click();
+  await ctx.page.getByRole("menuitem", { name: /standard access|标准访问/i }).click();
+  const beforeIds = new Set(
+    (await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/sessions`)).map(
+      (session) => session.id
+    )
+  );
+  const target = path.join(workspace.rootDir, "access-check.md");
+  const send = (content) =>
+    typeAndSend(
+      ctx.page,
+      `workspace-write ${JSON.stringify({ path: "access-check.md", content })}`
+    );
+  const waitTextCount = async (text, count) => {
+    const end = Date.now() + 10000;
+    while ((await ctx.page.getByText(text, { exact: true }).count()) < count) {
+      if (Date.now() > end) throw new Error(`Missing ${count} occurrences of ${text}`);
+      await ctx.page.waitForTimeout(100);
+    }
+  };
+  const assertBytes = async (expected) => {
+    if ((await readFile(target, "utf8")) !== expected)
+      throw new Error("Workspace file bytes differ from the approved result");
+  };
+  const pending = () =>
+    ctx.page
+      .getByText(/需要审批|Approval required/i)
+      .first()
+      .waitFor({ timeout: 10000 });
+  await send("original");
+  await waitTextCount("Tool completed.", 1);
+  await assertBytes("original");
+  if (await ctx.page.getByRole("button", { name: /^(Allow|允许)$/i }).count())
+    throw new Error("New file required approval");
+
+  await send("denied replacement");
+  await pending();
+  await assertBytes("original");
+  await capture(ctx, "workspace-access", "overwrite-pending");
+  await ctx.page.getByRole("button", { name: /^(Deny|拒绝)$/i }).click();
+  await ctx.page.getByRole("button", { name: /Confirm deny|确认拒绝/i }).click();
+  await waitTextCount("Tool failed.", 1);
+  await assertBytes("original");
+
+  await send("stale replacement");
+  await pending();
+  await writeFile(target, "newer manual edit", "utf8");
+  await ctx.page.getByRole("button", { name: /^(Allow|允许)$/i }).click();
+  await waitTextCount("Tool failed.", 2);
+  await assertBytes("newer manual edit");
+  await capture(ctx, "workspace-access", "stale-approval");
+
+  await send("approved replacement");
+  await pending();
+  await ctx.page.getByRole("button", { name: /^(Allow|允许)$/i }).click();
+  await waitTextCount("Tool completed.", 2);
+  await assertBytes("approved replacement");
+  const session = (await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/sessions`)).find(
+    (session) => !beforeIds.has(session.id)
+  );
+  if (!session) throw new Error("Created session missing from workspace");
+  await reloadApp(ctx.page);
+  await ctx.page.getByText(session.title, { exact: true }).first().click();
+  await waitTextCount("Tool completed.", 2);
+  await assertBytes("approved replacement");
+  const preview = await apiJson(
+    ctx.apiBase,
+    `/workspaces/${workspace.id}/files/content?path=access-check.md`
+  );
+  if (preview.text !== "approved replacement")
+    throw new Error("Reopened preview did not read the saved file");
+  console.log(
+    "[workspace-access] create, deny, stale approval, retry, disk bytes and reopened history verified"
+  );
 }
 
 async function openSkillsSettings(page) {

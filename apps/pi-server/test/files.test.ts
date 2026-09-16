@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -36,7 +36,9 @@ describe("resolveWorkspacePath", () => {
     const root = tempRoot();
     mkdirSync(path.join(root, "docs"), { recursive: true });
     writeFileSync(path.join(root, "docs/note.md"), "# Note");
-    expect(resolveWorkspacePath(root, "docs/note.md")).toBe(path.join(root, "docs/note.md"));
+    expect(resolveWorkspacePath(root, "docs/note.md")).toBe(
+      path.join(realpathSync(root), "docs/note.md")
+    );
   });
 
   it("rejects paths outside workspace", () => {
@@ -54,12 +56,14 @@ describe("resolveWorkspacePath", () => {
 
   it("returns the candidate path for inside-workspace paths that do not exist yet", () => {
     const root = tempRoot();
-    expect(resolveWorkspacePath(root, "docs/missing.md")).toBe(path.join(root, "docs/missing.md"));
+    expect(resolveWorkspacePath(root, "docs/missing.md")).toBe(
+      path.join(realpathSync(root), "docs/missing.md")
+    );
   });
 });
 
 describe("workspace files", () => {
-  it("lists previewable text and media files while ignoring protected and oversized files", () => {
+  it("lists previewable text and media files while ignoring protected and oversized files", async () => {
     const root = tempRoot();
     mkdirSync(path.join(root, "docs"), { recursive: true });
     mkdirSync(path.join(root, "node_modules/pkg"), { recursive: true });
@@ -71,7 +75,7 @@ describe("workspace files", () => {
     writeFileSync(path.join(root, "node_modules/pkg/index.js"), "ignored");
     writeFileSync(path.join(root, ".git/config"), "ignored");
 
-    expect(listWorkspaceFiles(root)).toEqual([
+    expect(await listWorkspaceFiles(root)).toEqual([
       { path: "docs/image.png", name: "image.png", kind: "file" },
       { path: "docs/note.md", name: "note.md", kind: "file" },
       { path: "docs/report.docx", name: "report.docx", kind: "file" }

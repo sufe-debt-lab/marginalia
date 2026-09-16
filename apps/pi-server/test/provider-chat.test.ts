@@ -282,7 +282,8 @@ describe("chat runs", () => {
     });
     expect(preparedInput.runtimeSkills).toEqual({
       effectiveRevision: "effective-1",
-      loadResult: { skills: [], diagnostics: [] }
+      loadResult: { skills: [], diagnostics: [] },
+      contents: {}
     });
     expect(runCount(db)).toBe(1);
   });

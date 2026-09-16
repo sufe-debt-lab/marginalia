@@ -2921,3 +2921,9 @@ renderer 不再持有 bearer，启用 sandbox，通过受限 preload 访问。�
 - 更新新增 AppShell 测试的调用签名。面板截图场景的 page.route 拦截不适用于 main-owned HTTP，改用临时移走 fixture 文件/目录触发真实读取失败，并在 finally 恢复，保持失败恢复验收。
 - AppShell focused 17 tests 通过；完整 pnpm verify 通过（docs 30、chat-core 38、pi-server 334、desktop 478；1 live skipped）。
 - pnpm verify:visual：42 张，39 unchanged、3 changed、0 new/orphan/errors。逐张检查 skills-settings、skills-global-only、skill-diagnostics，差异仅在隔离 worktree 路径换行；#21 面板真实失败恢复、全屏焦点、宽度和内容保留均通过。不更新基线。
+
+## Workspace 权限接线补充（2026-09-16）
+
+Issue #5 接入统一文件边界后，普通 read 不再接受 Skills 的外部绝对路径。runtime 从已冻结 Catalog
+携带 effective 非 explicit-only 正文，通过 read_skill 按 exact identity 读取，不重读磁盘。Catalog 仍是
+唯一准入与 revision 来源，显式 Skill 消息块和既有管理 API 不变；不重跑已完成的 Skills 交付。

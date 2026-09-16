@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -130,7 +130,7 @@ describe("PiCodingAgentClient", () => {
       authStorage: {} as AuthStorage,
       modelRegistry: {} as ModelRegistry,
       createSession,
-      sessionManagerFor: () => SessionManager.inMemory("/workspace")
+      sessionManagerFor: () => SessionManager.inMemory(os.tmpdir())
     });
     const client = new PiCodingAgentClient(
       registry,
@@ -140,7 +140,7 @@ describe("PiCodingAgentClient", () => {
     const prepare = (providerId: string, modelId: string, permission: "full" | "readonly") =>
       client.prepare({
         sessionId: "runtime-cache",
-        workspaceRoot: "/workspace",
+        workspaceRoot: os.tmpdir(),
         piProviderId: providerId,
         modelId,
         permission,
@@ -155,11 +155,11 @@ describe("PiCodingAgentClient", () => {
 
     expect(createSession).toHaveBeenCalledTimes(5);
     expect(createSession.mock.calls.map(([options]) => options.tools)).toEqual([
-      undefined,
+      ["read", "grep", "find", "ls", "write", "edit", "bash"],
       ["read", "grep", "find", "ls"],
       ["read", "grep", "find", "ls"],
       ["read", "grep", "find", "ls"],
-      undefined
+      ["read", "grep", "find", "ls", "write", "edit", "bash"]
     ]);
     expect(
       createSession.mock.calls.map(([options]) => (options.model as { id: string }).id)
@@ -596,7 +596,7 @@ describe("PiCodingAgentClient", () => {
       runtimeSkills: emptyRuntimeSkills()
     });
     const config = acquirePinned.mock.calls[0][0].config as Record<string, unknown>;
-    expect(config.tools).toBeUndefined();
+    expect(config.tools).toEqual(["read", "grep", "find", "ls", "write", "edit", "bash"]);
   });
 
   it("throws when the resolver cannot find the model", async () => {
@@ -685,4 +685,59 @@ describe("PiCodingAgentClient approval merge", () => {
     await execution.settled;
     expect((await iterator.next()).done).toBe(true);
   });
+});
+
+it("registers confined tools and refuses outside reads in Standard Access", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "pi-confined-"));
+  const outside = mkdtempSync(path.join(os.tmpdir(), "pi-outside-"));
+  writeFileSync(path.join(outside, "secret.txt"), "outside fixture");
+  let options: Record<string, unknown> = {};
+  const registry = new RealAgentSessionRegistry({
+    authStorage: {} as AuthStorage,
+    modelRegistry: {} as ModelRegistry,
+    createSession: async (input) => {
+      options = input;
+      return { session: fakeSession([]) as unknown as AgentSession };
+    },
+    sessionManagerFor: () => SessionManager.inMemory(root)
+  });
+  const client = new PiCodingAgentClient(registry, () => ({ id: "model" }), new ApprovalGateway());
+  try {
+    const prepared = await client.prepare({
+      sessionId: "confined",
+      workspaceRoot: root,
+      piProviderId: "test",
+      modelId: "model",
+      permission: "ask",
+      runtimeSkills: emptyRuntimeSkills()
+    });
+    const tools = options.customTools as
+      | import("@earendil-works/pi-coding-agent").ToolDefinition[]
+      | undefined;
+    expect(tools?.map((tool) => tool.name)).toContain("read");
+    const read = tools!.find((tool) => tool.name === "read")!;
+    await expect(
+      read.execute(
+        "outside",
+        { path: path.join(outside, "secret.txt") },
+        undefined,
+        undefined,
+        {} as never
+      )
+    ).rejects.toThrow("Path escapes workspace");
+    const write = tools!.find((tool) => tool.name === "write")!;
+    await write.execute(
+      "new",
+      { path: "new.md", content: "saved" },
+      undefined,
+      undefined,
+      {} as never
+    );
+    expect(readFileSync(path.join(root, "new.md"), "utf8")).toBe("saved");
+    prepared.release();
+  } finally {
+    registry.disposeAll();
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
 });

@@ -1,7 +1,7 @@
-import { createReadStream, openSync, readSync, closeSync, statSync } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import path from "node:path";
-import { resolveWorkspacePath } from "./path-sandbox.js";
+import { WorkspaceFiles } from "./workspace-files.js";
 
 export type DocumentContent = {
   path: string;
@@ -189,16 +189,17 @@ export async function readDocument(
   rootDir: string,
   relativePath: string
 ): Promise<DocumentContent> {
-  const absolute = resolveWorkspacePath(rootDir, relativePath);
+  const files = await WorkspaceFiles.open(rootDir);
+  files.relative(relativePath);
   const extension = path.extname(relativePath).toLowerCase();
   const bareExt = extension.slice(1);
   let stat;
   try {
-    stat = statSync(absolute);
+    stat = await files.stat(relativePath);
   } catch {
     throw new DocumentPreviewError("not_found", `File not found: ${relativePath}`);
   }
-  if (!stat.isFile()) {
+  if (!stat.isFile) {
     throw new DocumentPreviewError("not_a_file", `Not a file: ${relativePath}`);
   }
 
@@ -229,17 +230,30 @@ export async function readDocument(
     );
   }
 
-  assertTextPreviewable(absolute, bytesTotal, relativePath);
-  const maxLines = Math.min(extensionLineCaps[bareExt] ?? defaultLineCap, absoluteLineCeiling);
-  return readTextPreview(absolute, relativePath, mime, language, bytesTotal, maxLines);
+  const opened = await files.openRead(relativePath);
+  try {
+    if (opened.stat.size > byteCeiling)
+      throw new DocumentPreviewError("file_too_large", "File too large to preview");
+    await assertTextPreviewable(opened.handle, opened.stat.size, relativePath);
+    const maxLines = Math.min(extensionLineCaps[bareExt] ?? defaultLineCap, absoluteLineCeiling);
+    return await readTextPreview(
+      opened.handle,
+      relativePath,
+      mime,
+      language,
+      opened.stat.size,
+      maxLines
+    );
+  } finally {
+    await opened.handle.close();
+  }
 }
 
-function assertTextPreviewable(absolute: string, bytesTotal: number, relativePath: string) {
-  const fd = openSync(absolute, "r");
+async function assertTextPreviewable(handle: FileHandle, bytesTotal: number, relativePath: string) {
   try {
     const sampleSize = Math.min(binaryDetectionSample, bytesTotal);
     const sample = Buffer.alloc(sampleSize);
-    readSync(fd, sample, 0, sampleSize, 0);
+    await handle.read(sample, 0, sampleSize, 0);
     if (looksBinary(sample)) {
       throw new DocumentPreviewError(
         "binary_not_previewable",
@@ -250,13 +264,11 @@ function assertTextPreviewable(absolute: string, bytesTotal: number, relativePat
   } catch (error) {
     if (error instanceof DocumentPreviewError) throw error;
     throw new DocumentPreviewError("read_failed", `Failed to sample file: ${String(error)}`);
-  } finally {
-    closeSync(fd);
   }
 }
 
 async function readTextPreview(
-  absolute: string,
+  handle: FileHandle,
   relativePath: string,
   mime: string,
   language: string,
@@ -268,7 +280,7 @@ async function readTextPreview(
   let hitLimit = false;
 
   await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(absolute, { encoding: "utf8" });
+    const stream = handle.createReadStream({ encoding: "utf8", autoClose: false, start: 0 });
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
     rl.on("line", (line) => {

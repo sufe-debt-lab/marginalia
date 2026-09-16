@@ -191,7 +191,7 @@ preview 会成为 snapshot 数据。读取仍要求 Loopback Access bearer 和 s
 - PDF、图片、音视频和 Office 扩展名标记为 `rawOnly`，不进入文本抽取。
 - PDF 由 renderer 中的 pdf.js 视觉渲染；图片、音视频经只对应用主 frame 开放的认证资源协议流式读取；Office 当前显示不支持预览。
 
-文本限制同时作用于文档面板和显式加入请求的上下文。Agent 默认 coding tools 走 pi 自己的文件实现，不受这组预览行数限制，也没有复用 HTTP 文件 sandbox。
+文本限制同时作用于文档面板和显式加入请求的上下文。Agent 文件工具共享 WorkspaceFiles 边界和 10 MiB 读取上限，展示截断仍沿用 pi。grep 总读取量上限 10 MiB，超限须缩小目录或 glob。
 
 ## 本机 API
 
@@ -215,3 +215,16 @@ renderer 只通过 preload 暴露的受限 request capability 访问服务；`ma
 ## 面板布局偏好
 
 既有本地 UI 存储保存左右栏宽度和开合状态。新安装左栏默认 275px，文档面板默认 388px；升级保留已有偏好。应用内全屏是临时状态，还原不会将全屏宽度保存成偏好。窗口变窄只限制显示宽度，不覆盖已保存的宽度。文件标签与预览保留在当前 renderer 生命周期中，不保存另一份文档正文。
+
+## Workspace Standard Access
+
+UI 的 Standard Access 对应已有 `ask` 请求值；Full/Read-only 请求值不变。UI 仍保留已保存的权限选择；
+未指定权限的 API run 使用 ask。文件工具所有档位均限制在 canonical workspace 下，支持 Windows
+分隔符和大小写不敏感文件系统；绝对路径、父路径段和 symlink 不可通过配置绕过。
+
+标准访问自动允许 workspace 读取和新建，覆盖/删除/执行/外部导出/发送等 effect 需要逐次审批。
+当前不提供独立删除、外部导出或发送 Agent 工具；这三类已纳入共享策略矩阵。每次 bash 需批准，旧前缀
+白名单不再生效。批准的 bash 和 Full 下的 bash 使用宿主权限。
+
+原生文件 binding 随依赖交付，不使用运行时下载或用户 Python。缺失/不兼容时文件操作拒绝执行，不能
+用环境变量将 production WorkspaceFiles 降级为 JavaScript pathname 写入。各平台保证见[系统架构](../developer/architecture.md#workspace-文件操作与审批)。

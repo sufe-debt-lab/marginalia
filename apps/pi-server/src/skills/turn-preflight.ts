@@ -27,6 +27,8 @@ export type InvalidSkillSelection = SkillSelection & {
 export type AgentRuntimeSkills = {
   effectiveRevision: string;
   loadResult: LoadSkillsResult;
+  /** Catalog bytes only; paths identify entries and never authorize arbitrary disk reads. */
+  contents?: Readonly<Record<string, string>>;
 };
 
 export type PreparedSkillTurn = {
@@ -117,6 +119,16 @@ function cloneSkill(skill: Skill): Skill {
 function runtimeFromSnapshot(snapshot: SkillCatalogSnapshot): AgentRuntimeSkills {
   return {
     effectiveRevision: snapshot.effectiveRevision,
+    contents: Object.freeze(
+      Object.fromEntries(
+        snapshot.candidates
+          .filter(
+            (candidate) =>
+              candidate.effective && !candidate.explicitOnly && candidate.rawContent !== null
+          )
+          .map((candidate) => [candidate.canonicalPath, candidate.rawContent!])
+      )
+    ),
     loadResult: {
       skills: snapshot.effectiveSkills.map(cloneSkill),
       diagnostics: snapshot.diagnostics.map(toPiDiagnostic)
