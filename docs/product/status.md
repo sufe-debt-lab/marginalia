@@ -103,3 +103,11 @@ Next milestone: M0 - Trustworthy Local Alpha
 - UI 变更的视觉差异已逐张裁决，并保留可复查的 Electron baseline 与报告。
 
 公开发布还需要签名、公证、自动更新、LICENSE、跨平台安装测试和发布回滚方案；这些条件不并入 M0 的本地 Alpha 定义。
+
+## Issue #21 面板切片（2026-09-16，候选工作树已验证）
+
+候选工作树已实现 46px 顶栏、默认 275px 左栏、文档面板拖动和应用内全屏/还原、同项目布局切换保留文件标签及预览、键盘焦点与既有布局偏好持久化。focused tests 76 项及 useDocumentContent 3 项、全部包 typecheck、`pnpm verify` 和真实 Electron 面板交互通过。完整视觉比较为 38 changed、3 new、1 unchanged，全部逐张裁决并按预期变更更新基线，最终完整复验 42 unchanged、0 changed/new/error；详见[验证与视觉裁决](../developer/issues/2026-09-16-desktop-panels-verification.md)。
+
+此切片不改变上方历史验证快照或 Alpha NO-GO；未实现真实右侧摘要、Markdown 手工编辑或跨重启标签恢复，不以原型模拟能力作为已交付证据。
+
+后续 review 的五项问题已修复：列表重开刷新与失败重试、Shadow DOM 焦点、释放宽度一致、窄窗文档动作和内部树拖动。复验 66 项 focused、desktop 全量 452 项及完整 `pnpm verify` 通过；本轮视觉 5 changed、37 unchanged 经逐张裁决更新基线，同批截图重比 42 unchanged。详细红绿与 Electron 证据见上方验证记录。

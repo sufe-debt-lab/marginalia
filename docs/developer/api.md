@@ -479,3 +479,7 @@ HTTP API 之外，renderer 通过 `window.marginalia`（`apps/desktop/electron/p
 
 - 数据流与事件转发设计：[系统架构](./architecture.md)
 - provider 预设、存储位置、读取限制：[配置](../user/configuration.md)
+
+### 面板布局与文件接口
+
+面板开合、拖宽及应用内全屏不创建 HTTP/SSE 或 IPC 协议；继续使用现有文件列表、正文与 raw URL。当前文件组件在同 workspace 的布局切换中保留，布局偏好使用 renderer 既有本地存储；文件正文不写入该存储。

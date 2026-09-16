@@ -159,3 +159,7 @@ Electron 当前会在 main 状态中持有 token，并通过 preload status brid
 - 存储位置与环境变量：[配置](../user/configuration.md)
 - 发布阻断与验证基线：[产品状态](../product/status.md)
 - PR 验证和文档影响：[贡献指南](./contributing.md)
+
+## 桌面窗口布局
+
+Electron 主窗口继续使用 macOS 原生窗口按钮，位置为 x=14、y=16，与 46px 顶栏垂直中心对齐。文档面板全屏属于 renderer 内布局，不调用系统全屏或切换 Space；原生最小化、关闭和系统全屏仍由 Electron 窗口处理。面板布局回归使用隔离 Electron 验证，不代表安装包签名、公证或发布验收完成。

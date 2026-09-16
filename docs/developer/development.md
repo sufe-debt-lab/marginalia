@@ -242,3 +242,7 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 - 提交/分支/PR 规范：[贡献指南](./contributing.md)
 - 文档同步、docs impact 和 closeout：[文档生命周期](./documentation-lifecycle.md)
 - 当前验证快照和发布阻断：[产品状态](../product/status.md)
+
+## 面板交互回归
+
+`pnpm --filter @marginalia/desktop verify:screenshots --scenario desktop-panels` 使用既有 Electron 启动器、隔离 profile、临时 workspace/SQLite 和可控 Agent，实际执行外侧拖动、文件开合、应用内全屏、Escape、焦点限制、窄窗口和重载后的偏好恢复。它也是 `pnpm verify:visual` 的默认场景。截图与交互记录位于 `output/desktop-screenshots/`，必须逐张检查 changed/new；测试不使用真实 Provider 凭据或外部模型。

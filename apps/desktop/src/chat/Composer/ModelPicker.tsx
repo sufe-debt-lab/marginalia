@@ -41,16 +41,18 @@ export function ModelPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1 text-xs font-normal">
-          {reasoning ? (
-            <>
-              <span className="text-text-subtle">{base} ·</span>
-              <span className="font-medium">{reasoningLabels[reasoning]}</span>
-            </>
-          ) : (
-            base
-          )}
-          <ChevronDown className="h-3 w-3 text-text-muted" />
+        <Button variant="ghost" size="sm" className="min-w-0 max-w-full gap-1 text-xs font-normal">
+          <span className="truncate">
+            {reasoning ? (
+              <>
+                <span className="text-text-subtle">{base} · </span>
+                <span className="font-medium">{reasoningLabels[reasoning]}</span>
+              </>
+            ) : (
+              base
+            )}
+          </span>
+          <ChevronDown className="h-3 w-3 shrink-0 text-text-muted" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
