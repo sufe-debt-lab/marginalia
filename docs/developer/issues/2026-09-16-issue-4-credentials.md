@@ -131,3 +131,11 @@
 
 验证：`pnpm verify` exit 0，817 tests passed（server 323、desktop 456、chat-core 38），1 项真实模型 smoke skipped；两个新增测试先红后绿。最新 main 的 docs diff check 和 git diff check 通过。
 `pnpm verify:visual` exit 0，43 张图中 39 unchanged、4 changed。逐张裁决：凭据缺失提示图（1.925%）继承主干 275px 侧栏/46px 顶栏，toast 正常，使用带 reason 的比较命令更新这一张基线；Skills settings/global-only/diagnostics（0.234%/0.189%/0.222%）仅路径文本变化，不更新。新增主干面板交互场景通过。
+
+## 合并 Issue #3（2026-09-16）
+
+合并 main `a63fd1f` 的统一 Loopback Access 与 sandbox。保留 Credential Store 的错误脱敏和截图内存存储；截图数据访问改用主干已有 main-owned transport，新增凭据测试使用已有认证 helper，实际 server 启动测试显式提供测试 bearer/Origin，不增加认证旁路。
+产品状态同步为 sandbox 已开启、凭据已迁移，系统凭据跨平台验证限制保持。合并验证完成。
+
+本轮 `pnpm verify` exit 0：882 tests passed（server 362、desktop 482、chat-core 38），1 项真实模型 smoke skipped；最新主干 docs diff check 和 git diff check 通过。
+首轮视觉在主干既有面板拖动全屏步骤超时；不改代码单独复跑通过，随后完整 `pnpm verify:visual` exit 0：43 张图中 40 unchanged、3 changed。逐张检查 Skills settings/global-only/diagnostics（0.234%/0.189%/0.222%），差异仍仅 fixture 路径及轻微 hover，不更新基线。其余 Provider、代理文件访问、审批与面板交互通过。

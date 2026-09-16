@@ -2,13 +2,16 @@
 
 pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.1` 上一个系统分配的随机端口。所有路由定义在 `apps/pi-server/src/app.ts`。
 
-桌面端通过 `ApiClient`（`apps/desktop/src/api/client.ts`）调用这些接口，启动时由 main 进程把实际 URL（`http://127.0.0.1:<port>`）传给 renderer。
+桌面端通过 `ApiClient`（`apps/desktop/src/api/client.ts`）调用这些接口。renderer 只看到
+`marginalia://pi-server` 逻辑 URL，并经 `window.marginalia.requestPiServer` 的受限 preload capability 发出
+请求；该 scheme 不注册为页面可直接 fetch 的协议。Electron main 验证 IPC sender 与请求形状，把请求
+代理到实际随机 loopback URL，并注入进程 bearer 与当前 renderer 的 exact Origin。
 
 除 raw 文件和 SSE 外，业务路由主要使用 JSON。多数显式错误返回 `{ "error": "<message>" }`，但当前没有全局 error schema。
 
-当前仅 run 与后续 Skills API 使用 Electron 每次启动生成的进程 capability；其他既有 loopback
-路由仍未认证。CORS 不再反射任意 Origin，但随机 loopback 端口和局部 capability 都不是整套 API
-的授权边界；`P0-SEC-001` 仍未关闭，这套 API 仍只适合 Alpha 开发和评估。
+除 `GET /health` 外，所有路由统一经过 Loopback Access policy。缺失或错误 bearer 返回稳定 401，缺失或
+不可信 Origin 返回稳定 403；renderer 不持有实际 URL 或 bearer。随机 loopback 端口不是授权边界，进程
+bearer 才是本机桌面进程与其他调用方之间的凭据边界。
 
 ## Route inventory
 
@@ -48,28 +51,30 @@ pi-server 是 Marginalia 的本机后端，由 Hono 实现，只监听 `127.0.0.
 
 <!-- route-inventory:end -->
 
-## Run capability 与 CORS
+## Loopback Access 与 CORS
 
-`POST /sessions/:sessionId/runs` 和三个 `/skills` 请求必须包含 Electron main 进程提供给 renderer
-的 bearer：
+除 `GET /health` 外，每个请求都必须包含 Electron main 为本次 pi-server 进程生成的 bearer：
 
 ```http
-Authorization: Bearer <capabilityToken>
+Authorization: Bearer <processBearer>
 Content-Type: application/json
 ```
 
-pi-server 在读取 session、workspace、query 或 body 前验证请求：token 缺失、不匹配或 server 没有配置 token 时返回
-`401 { "error": "unauthorized" }`；`Origin` 既不是缺省/`null`，也不在本次启动的 exact allowlist
-时返回 `403 { "error": "origin_forbidden" }`。`GET /health`、workspace、provider、document 和
-approval 等既有 API 不带 bearer，保持原有认证边界。
+pi-server 在读取 route query/body 或业务数据前验证请求：bearer 缺失、不匹配或 server 没有配置 bearer
+时返回 `401 { "error": "unauthorized" }`；`Origin` 缺失或不在本次启动的 exact allowlist 时返回
+`403 { "error": "origin_forbidden" }`。packaged renderer 使用 exact `Origin: null`，开发 renderer 使用
+main 校验后的 exact loopback Vite origin。`GET /health` 是唯一公开 HTTP route；启动 ready 是 stdout
+进程协议，不是额外 HTTP route。
 
-浏览器预检不要求 bearer。允许来源的 `OPTIONS` 返回 `204`，并声明
+预检不要求 bearer。允许来源的 `OPTIONS` 返回 `204`，并声明
 `Access-Control-Allow-Headers: Authorization,Content-Type`；不可信来源不会收到
-`Access-Control-Allow-Origin`。Electron 开发模式只允许经过 loopback URL 校验的 Vite origin；
-打包后的 `file:` renderer 使用 `Origin: null`。
+`Access-Control-Allow-Origin`，同时返回 `403 { "error": "origin_forbidden" }`。允许 Origin 下的 401
+响应保留 CORS header，因此 renderer 能读取稳定机器错误，而不是只看到浏览器 CORS failure。
 
-Desktop 的 `ApiClient` 为三个 Skills method 和 `runChat()` 附加上述 bearer；workspace、provider、
-document、approval 等普通 method 仍只发送 JSON header。Skills list/content query 由
+Desktop 的 `ApiClient` 不保存 bearer，只向 preload capability 发送相对 path 与业务 method/header/body。
+main transport 验证 sender，丢弃 renderer 提供的 Authorization/Cookie，仅转发 allowlist header，并对
+所有 route 注入自己的 bearer 与 Origin；JSON 和 SSE 的 response status/header/body chunk 经 IPC 回传。
+原始文件预览通过仅应用主 frame 可访问的 `marginalia-file` 协议流式读取。Skills list/content query 由
 `URLSearchParams` 编码，state update 只发送 `{ path, enabled, workspaceId? }`，run 的 `skills`
 selection 按调用方顺序序列化。
 
@@ -113,7 +118,7 @@ body 的字符串 `message`（缺省为 `code`）。非 JSON 或非 object respo
 Skills API 只使用服务端 Catalog snapshot。可选 `workspaceId` 通过 SQLite workspace 记录解析为
 server-owned root；省略时传入 `{ workspaceId: null, workspaceRoot: null }`，只扫描 global roots。
 客户端提交的 canonical path 只用于当前 snapshot 的 exact membership lookup，服务端不会把它交给
-文件读取 API。因此即使持有 capability，未知 path、其他 workspace 的 path 和任意宿主 path 都不能
+文件读取 API。因此即使持有 Loopback Access bearer，未知 path、其他 workspace 的 path 和任意宿主 path 都不能
 读取或修改。
 
 ### `GET /skills?workspaceId=<optional>`
@@ -273,7 +278,7 @@ Run 的 runtime key 注册在占用检查与全部 preflight 成功、即将启�
 
 Catalog refresh、Skill preflight、消息附件构建、agent preparation 或 `runs` 记录创建都在 SSE/start
 之前完成。其中任一步骤失败都返回 JSON 错误且不保留 `runs` 记录；`start()` 之后的失败则已有一条
-run，并以 `failed` 终态完成。完整顺序为：capability auth → session/workspace lookup → request
+run，并以 `failed` 终态完成。完整顺序为：loopback access auth → session/workspace lookup → request
 decode/validation（含 provider）→ session lease → Catalog refresh → Skill preflight → message build →
 agent preparation → `runs` insert → SSE/start。refresh、preflight、message build、preparation 和 run
 insert 都在 lease 内；request abort listener 保持到 execution `settled` 完成后才移除，因此事件已结束
@@ -297,7 +302,7 @@ execution `settled` 时释放。LRU 的 20 项容量因此是 idle soft cap，�
 }
 ```
 
-Run body 最多 4 MiB。服务端在 capability auth 之后、JSON decode 之前检查 declared Content-Length 和
+Run body 最多 4 MiB。服务端在 loopback access auth 之后、JSON decode 之前检查 declared Content-Length 和
 实际 streamed bytes；二者任一超限都返回 `413 { "error": "skill_payload_too_large" }`。因此无 bearer
 的超限请求仍先返回 401，chunked body 也不能绕过限制。
 
@@ -505,6 +510,17 @@ Provider 的既有外键继续引用该行，避免重建 Provider/Run 表；新
 Provider 写入/删除遇到 SQLite 事务失败会恢复原系统凭据；不宣称 OS store 与 SQLite 跨系统原子提交。
 
 Run 在异步准备及 `run_started` 写出后、实际启动模型前重新读取系统凭据，避免恢复准备期间已替换或清空的旧 key。此时凭据缺失或拒绝访问通过既有 `run_failed` 终结已接受的 Run，不启动模型；不增加凭据版本或平行认证状态。
+
+## Issue #3 的流式预览边界
+
+JSON 和 SSE 复用受限 preload IPC；原始 pi 事件和 ChatEntry 不变。二进制预览使用
+`marginalia-file://pi-server`，只代理 GET/HEAD 的 workspace raw-file 路由；Electron webRequest
+仅允许应用主 frame 的资源请求，拒绝其他窗口、子 frame 和页面导航。main 注入 bearer/Origin，
+Chromium 直接消费响应流，文件切换由原生资源生命周期及 PDF.js destroy 取消请求，不创建整文件 Blob。
+浏览器直接打开 Vite 页面没有这些能力；验收必须启动 Electron。
+
+`createApp` 不提供无认证测试旁路。功能测试使用显式测试 bearer；边界测试调用真实 HTTP 路由，
+覆盖拒绝、重新认证和 SQLite 重开。进程重启生成新 bearer，旧 bearer 失效；应用数据与文件不受影响。
 
 ### 面板布局与文件接口
 

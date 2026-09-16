@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { migrate } from "../src/db/migrations.js";
 import { CredentialStore } from "../src/credentials/store.js";
 import { MemoryCredentialAdapter } from "./helpers/memory-credentials.js";
@@ -172,7 +172,11 @@ it.each(["set", "get"] as const)(
 function json(app: ReturnType<typeof createApp>, route: string, body: unknown, method = "POST") {
   return app.request(route, {
     method,
-    headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer test-token",
+      origin: "null"
+    },
     body: JSON.stringify(body)
   });
 }
@@ -232,8 +236,7 @@ it.each(["disabled", "missing", "busy-run", "missing-run", "invalid-skills"] as 
       credentialStore,
       authStorage,
       modelRegistry,
-      agentClient,
-      capability: { token: "test-token", allowedOrigins: new Set<string>() }
+      agentClient
     });
     const create = async (key: string) =>
       (
@@ -335,8 +338,7 @@ it.each(["rotated-key", ""])(
       credentialStore,
       authStorage,
       modelRegistry,
-      agentClient,
-      capability: { token: "test-token", allowedOrigins: new Set<string>() }
+      agentClient
     });
     const provider = await (
       await json(app, "/providers", { name: "OpenAI", apiKey: "old-key", defaultModel: "gpt-4o" })
@@ -375,8 +377,7 @@ it("preserves Provider lifecycle and uses the stored key after reopening; missin
     db,
     credentialStore,
     authStorage,
-    agentClient: new FakeAgentClient(),
-    capability: { token: "test-token", allowedOrigins: new Set<string>() }
+    agentClient: new FakeAgentClient()
   };
   let app = createApp(options);
   const provider = await (
@@ -497,8 +498,7 @@ it("does not expose model exception details in SSE or persisted run errors", asy
   const app = createApp({
     db,
     credentialStore,
-    agentClient,
-    capability: { token: "test-token", allowedOrigins: new Set<string>() }
+    agentClient
   });
   const provider = await (
     await json(app, "/providers", {

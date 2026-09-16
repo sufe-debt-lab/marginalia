@@ -165,13 +165,15 @@ export type Approval = {
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
-    private readonly capabilityToken: string
+    private readonly fetch: (input: string, init?: RequestInit) => Promise<Response> = (
+      input,
+      init
+    ) => globalThis.fetch(input, init)
   ) {}
 
-  private sensitiveHeaders(): HeadersInit {
+  private jsonHeaders(): HeadersInit {
     return {
-      "content-type": "application/json",
-      authorization: `Bearer ${this.capabilityToken}`
+      "content-type": "application/json"
     };
   }
 
@@ -215,7 +217,7 @@ export class ApiClient {
     if (workspaceId != null) query.set("workspaceId", workspaceId);
     const search = query.toString();
     return this.request<SkillCatalogSnapshot>(`/skills${search ? `?${search}` : ""}`, {
-      headers: this.sensitiveHeaders()
+      headers: this.jsonHeaders()
     });
   }
 
@@ -231,7 +233,7 @@ export class ApiClient {
     };
     return this.request<SkillCatalogSnapshot>("/skills/state", {
       method: "PATCH",
-      headers: this.sensitiveHeaders(),
+      headers: this.jsonHeaders(),
       body: JSON.stringify(body)
     });
   }
@@ -244,7 +246,7 @@ export class ApiClient {
   }> {
     const query = new URLSearchParams({ path: input.path });
     if (input.workspaceId != null) query.set("workspaceId", input.workspaceId);
-    return this.request(`/skills/content?${query}`, { headers: this.sensitiveHeaders() });
+    return this.request(`/skills/content?${query}`, { headers: this.jsonHeaders() });
   }
 
   createProvider(input: {
@@ -293,7 +295,7 @@ export class ApiClient {
   }
 
   rawDocumentUrl(workspaceId: string, path: string) {
-    return `${this.baseUrl}/workspaces/${workspaceId}/files/raw?path=${encodeURIComponent(path)}`;
+    return `marginalia-file://pi-server/workspaces/${encodeURIComponent(workspaceId)}/files/raw?path=${encodeURIComponent(path)}`;
   }
 
   searchFiles(workspaceId: string, q: string) {
@@ -347,9 +349,9 @@ export class ApiClient {
     },
     options: { signal?: AbortSignal } = {}
   ): Promise<AsyncIterable<RunEvent>> {
-    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/runs`, {
+    const response = await this.fetch(`${this.baseUrl}/sessions/${sessionId}/runs`, {
       method: "POST",
-      headers: this.sensitiveHeaders(),
+      headers: this.jsonHeaders(),
       body: JSON.stringify(input),
       signal: options.signal
     });
@@ -365,14 +367,14 @@ export class ApiClient {
 
   /** Like request(), but for endpoints that answer 204 No Content. */
   async requestNoContent(path: string, method: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}${path}`, { method });
+    const response = await this.fetch(`${this.baseUrl}${path}`, { method });
     if (response.status === 204) return;
     throw await apiError(response);
   }
 
   async getBranch(workspaceId: string): Promise<string | null> {
     try {
-      const response = await fetch(`${this.baseUrl}/workspaces/${workspaceId}/branch`);
+      const response = await this.fetch(`${this.baseUrl}/workspaces/${workspaceId}/branch`);
       if (!response.ok) return null;
       const body = (await response.json()) as { branch?: string };
       return body.branch ?? null;
@@ -382,7 +384,7 @@ export class ApiClient {
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    const response = await this.fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: { "content-type": "application/json", ...init.headers }
     });

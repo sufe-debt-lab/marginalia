@@ -16,7 +16,9 @@ async function withScreenshotServer(
     HOME: home,
     USERPROFILE: home,
     MARGINALIA_SCREENSHOT_VERIFY: "1",
-    MARGINALIA_FAKE_AGENT: "1"
+    MARGINALIA_FAKE_AGENT: "1",
+    MARGINALIA_LOOPBACK_BEARER: "screenshot-test-token",
+    MARGINALIA_ALLOWED_ORIGIN: "null"
   };
   delete env.MARGINALIA_DB_PATH;
   if (database) env.MARGINALIA_DB_PATH = database;
@@ -77,11 +79,16 @@ it.each(["default", "explicit"] as const)(
       const original = readFileSync(file);
       for (let attempt = 0; attempt < 2; attempt++) {
         await withScreenshotServer(home, source === "explicit" ? file : undefined, async (url) => {
-          const providers = await (await fetch(`${url}/providers`)).json();
+          const headers = {
+            authorization: "Bearer screenshot-test-token",
+            origin: "null",
+            "content-type": "application/json"
+          };
+          const providers = await (await fetch(`${url}/providers`, { headers })).json();
           expect(providers).toEqual([]);
           const created = await fetch(`${url}/providers`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers,
             body: JSON.stringify({
               name: "OpenAI",
               apiKey: "screenshot-only",
@@ -90,7 +97,10 @@ it.each(["default", "explicit"] as const)(
           });
           expect(created.status).toBe(201);
           const provider = await created.json();
-          const probe = await fetch(`${url}/providers/${provider.id}/test`, { method: "POST" });
+          const probe = await fetch(`${url}/providers/${provider.id}/test`, {
+            method: "POST",
+            headers
+          });
           expect(await probe.json()).toEqual({ ok: true, message: "ok" });
         });
         expect(readFileSync(file)).toEqual(original);

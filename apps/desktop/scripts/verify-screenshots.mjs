@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import path from "node:path";
@@ -259,23 +259,53 @@ async function apiJson(baseUrl, endpoint, init = {}) {
   return response.json();
 }
 
-export async function skillsApiJson(server, endpoint, init = {}, request = globalThis.fetch) {
-  const signal = init.signal ?? AbortSignal.timeout(15000);
-  const response = await request(`${server.url}${endpoint}`, {
-    ...init,
-    signal,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${server.capabilityToken}`,
-      ...(init.headers ?? {})
+async function pageApiJson(page, baseUrl, endpoint, init = {}) {
+  return page.evaluate(
+    async ({ url, requestInit }) => {
+      const target = new URL(url);
+      return new Promise((resolve, reject) => {
+        let status = 0;
+        const chunks = [];
+        window.marginalia.requestPiServer(
+          {
+            path: `${target.pathname}${target.search}`,
+            method: requestInit.method ?? "GET",
+            headers: Object.entries(requestInit.headers ?? {}),
+            ...(requestInit.body == null ? {} : { body: requestInit.body })
+          },
+          (event) => {
+            if (event.type === "start") status = event.status;
+            if (event.type === "data") chunks.push(event.chunk);
+            if (event.type === "error") reject(new Error(event.code));
+            if (event.type !== "end") return;
+            void new Blob(chunks)
+              .text()
+              .then((text) => {
+                if (status < 200 || status >= 300) {
+                  reject(new Error(`${target.pathname}: ${status} ${text}`));
+                } else if (status === 204) {
+                  resolve(null);
+                } else {
+                  resolve(JSON.parse(text));
+                }
+              })
+              .catch(reject);
+          }
+        );
+      });
+    },
+    {
+      url: `${baseUrl}${endpoint}`,
+      requestInit: {
+        method: init.method,
+        body: init.body,
+        headers: {
+          "content-type": "application/json",
+          ...(init.headers ?? {})
+        }
+      }
     }
-  });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => response.statusText);
-    throw new Error(`${endpoint}: ${response.status} ${detail}`);
-  }
-  if (response.status === 204) return null;
-  return response.json();
+  );
 }
 
 // The one provider fixture every local scenario renders: its name/defaultModel
@@ -327,7 +357,7 @@ async function waitForPiServerUrl(page) {
   while (Date.now() - start < 30000) {
     const status = await page.evaluate(() => window.marginalia?.getPiServerStatus?.());
     if (status?.status === "ready") {
-      return { url: status.url, capabilityToken: status.capabilityToken };
+      return { url: status.url };
     }
     if (status?.status === "failed") {
       const logs = Array.isArray(status.logs) ? `\n${status.logs.join("\n")}` : "";
@@ -375,7 +405,20 @@ async function startHarness(extraEnv = {}) {
     await Promise.race([waitForUrl(viteUrl), viteExit]);
 
     const env = {
-      ...process.env,
+      ...Object.fromEntries(
+        [
+          "PATH",
+          "SystemRoot",
+          "WINDIR",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "DISPLAY",
+          "XAUTHORITY",
+          "LANG",
+          "MARGINALIA_NODE_PATH"
+        ].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : []))
+      ),
       VITE_DEV_SERVER_URL: viteUrl,
       MARGINALIA_SCREENSHOT_VERIFY: "1",
       MARGINALIA_USER_DATA_DIR: path.join(runRoot, "user-data"),
@@ -400,9 +443,10 @@ async function startHarness(extraEnv = {}) {
     await assertScreenshotMotionOff(page);
     const server = await waitForPiServerUrl(page);
     apiBase = server.url;
-    const skillsApi = (endpoint, init) => skillsApiJson(server, endpoint, init);
+    const browserApiJson = (baseUrl, endpoint, init) => pageApiJson(page, baseUrl, endpoint, init);
+    const skillsApi = (endpoint, init) => browserApiJson(server.url, endpoint, init);
     await waitForMain(page);
-    return { app, page, vite, viteUrl, apiBase, skillsApi };
+    return { app, page, vite, viteUrl, apiBase, apiJson: browserApiJson, skillsApi };
   } catch (error) {
     await mkdir(outRoot, { recursive: true });
     const page = app ? await app.firstWindow().catch(() => null) : null;
@@ -703,21 +747,21 @@ async function ensureSeededWorkspace(ctx) {
 
   // Each server pass owns an in-memory database. Scenarios sharing a pass reuse
   // its fixture; a new pass recreates it through the same HTTP API.
-  const existing = (await apiJson(ctx.apiBase, "/workspaces")).find(
+  const existing = (await ctx.apiJson(ctx.apiBase, "/workspaces")).find(
     (workspace) => workspace?.name === "screenshot-fixture"
   );
   if (existing) {
-    await apiJson(ctx.apiBase, `/workspaces/${existing.id}/open`, { method: "PATCH" });
+    await ctx.apiJson(ctx.apiBase, `/workspaces/${existing.id}/open`, { method: "PATCH" });
     ctx.seed = { workspace: existing, sessions: [] };
     return ctx.seed;
   }
 
   const seedRoot = await writeSeedWorkspace();
-  const workspace = await apiJson(ctx.apiBase, "/workspaces", {
+  const workspace = await ctx.apiJson(ctx.apiBase, "/workspaces", {
     method: "POST",
     body: JSON.stringify({ name: "screenshot-fixture", rootDir: seedRoot })
   });
-  await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/open`, { method: "PATCH" });
+  await ctx.apiJson(ctx.apiBase, `/workspaces/${workspace.id}/open`, { method: "PATCH" });
 
   // Seven sessions so the sidebar's five-row fold ("Show more") is exercised.
   const titles = [
@@ -731,11 +775,11 @@ async function ensureSeededWorkspace(ctx) {
   ];
   const sessions = [];
   for (const title of titles) {
-    const session = await apiJson(ctx.apiBase, "/sessions", {
+    const session = await ctx.apiJson(ctx.apiBase, "/sessions", {
       method: "POST",
       body: JSON.stringify({ workspaceId: workspace.id, title })
     });
-    await apiJson(ctx.apiBase, `/sessions/${session.id}`, {
+    await ctx.apiJson(ctx.apiBase, `/sessions/${session.id}`, {
       method: "PATCH",
       body: JSON.stringify({ model: "visual-fixture" })
     });
@@ -743,14 +787,14 @@ async function ensureSeededWorkspace(ctx) {
   }
 
   const first = sessions[0];
-  await apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
+  await ctx.apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
     method: "POST",
     body: JSON.stringify({
       role: "user",
       content: "Rewrite the PR schedule as a weekly checklist."
     })
   });
-  await apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
+  await ctx.apiJson(ctx.apiBase, `/sessions/${first.id}/messages`, {
     method: "POST",
     body: JSON.stringify({
       role: "assistant",
@@ -861,10 +905,10 @@ async function scenarioCoreUi(ctx) {
   await capture(ctx, "core-ui", "settings-providers-connected");
 
   // Real HTTP missing-credential recovery, with the harness's in-memory OS adapter.
-  const provider = (await apiJson(ctx.apiBase, "/providers")).find(
+  const provider = (await ctx.apiJson(ctx.apiBase, "/providers")).find(
     (item) => item.name === "OpenAI"
   );
-  await apiJson(ctx.apiBase, `/providers/${provider.id}`, {
+  await ctx.apiJson(ctx.apiBase, `/providers/${provider.id}`, {
     method: "PATCH",
     body: JSON.stringify({ apiKey: "" })
   });
@@ -880,7 +924,7 @@ async function scenarioCoreUi(ctx) {
   await ctx.page.waitForTimeout(100);
   await capture(ctx, "core-ui", "provider-credential-missing");
   await missingCredential.waitFor({ state: "detached", timeout: 5000 });
-  await apiJson(ctx.apiBase, `/providers/${provider.id}`, {
+  await ctx.apiJson(ctx.apiBase, `/providers/${provider.id}`, {
     method: "PATCH",
     body: JSON.stringify({ apiKey: "sk-screenshot-fixture" })
   });
@@ -966,7 +1010,7 @@ async function scenarioSeededWorkspace(ctx) {
   await ensureSeededWorkspace(ctx);
   // Solo runs and the shared default pass must render the same composer state
   // (provider chip + assistant model label) — never piggyback on core-ui's.
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
@@ -1073,7 +1117,7 @@ async function scenarioApprovalFlow(ctx) {
   // The composer refuses to send without a provider selected; the key/model are
   // never used since the scripted fake agent (MARGINALIA_FAKE_AGENT=1) never
   // calls a real model. Create-or-reuse avoids duplicates within the same pass.
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
@@ -1149,7 +1193,7 @@ async function scenarioSkillsFlow(ctx) {
     workspace: seedRoot
   });
   const { workspace } = await ensureSeededWorkspace(ctx);
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await ctx.skillsApi(`/skills?workspaceId=${encodeURIComponent(workspace.id)}`);
 
   await resetUiState(ctx.page);
@@ -1315,22 +1359,19 @@ async function scenarioDesktopPanels(ctx) {
     "wide drag stays at its released width"
   );
   await drag(panel.getByRole("separator").first(), 480);
-  // Fail one public HTTP read, then reopen the same real file to recover.
-  await page.route(
-    "**/files/content?path=README.md",
-    (route) =>
-      route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "fixture read unavailable" })
-      }),
-    { times: 1 }
-  );
-  await panel.getByRole("treeitem", { name: /README/ }).click();
-  await panel.getByText(/fixture read unavailable/).waitFor();
+  // Exercise a real read failure across the main-owned HTTP transport.
+  const readme = path.join(seed.workspace.rootDir, "README.md");
+  const unavailableReadme = `${readme}.unavailable`;
+  await rename(readme, unavailableReadme);
+  try {
+    await panel.getByRole("treeitem", { name: /README/ }).click();
+    await panel.getByText("File not found: README.md", { exact: true }).waitFor();
+  } finally {
+    await rename(unavailableReadme, readme);
+  }
   await page.getByRole("button", { name: "Toggle right panel" }).click();
   await page.getByRole("button", { name: "Toggle right panel" }).click();
-  await panel.getByText(/fixture read unavailable/).waitFor();
+  await panel.getByText("File not found: README.md", { exact: true }).waitFor();
   await panel.getByRole("button", { name: "Refresh", exact: true }).click();
   await panel.getByRole("heading", { name: "Demo Workspace" }).waitFor();
 
@@ -1353,19 +1394,15 @@ async function scenarioDesktopPanels(ctx) {
   await page.getByRole("button", { name: "Toggle right panel" }).click();
   await panel.getByRole("button", { name: "Attach to chat" }).waitFor();
   await panel.getByRole("treeitem", { name: /new-panel-file/ }).waitFor();
-  // Listing refresh failure keeps the open preview and can be retried.
-  await page.route(
-    "**/files",
-    (route) =>
-      route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "unavailable" })
-      }),
-    { times: 1 }
-  );
-  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
-  await panel.getByRole("alert").waitFor();
+  // Temporarily remove the fixture root so listing really fails in pi-server.
+  const unavailableRoot = `${seed.workspace.rootDir}.unavailable`;
+  await rename(seed.workspace.rootDir, unavailableRoot);
+  try {
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await panel.getByRole("alert").waitFor();
+  } finally {
+    await rename(unavailableRoot, seed.workspace.rootDir);
+  }
   await panel.getByRole("button", { name: "Refresh", exact: true }).click();
   await panel.getByRole("alert").waitFor({ state: "hidden" });
   await panel.getByRole("heading", { name: "Demo Workspace" }).waitFor();
@@ -1522,7 +1559,7 @@ async function scenarioDesktopPanels(ctx) {
 
 async function scenarioMinimaxLive(ctx) {
   await ensureSeededWorkspace(ctx);
-  await apiJson(ctx.apiBase, "/providers", {
+  await ctx.apiJson(ctx.apiBase, "/providers", {
     method: "POST",
     body: JSON.stringify({
       name: "MiniMax",

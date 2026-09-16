@@ -58,13 +58,11 @@ describe("SettingsView", () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "test-token"
+        url: "http://127.0.0.1:4312"
       })),
       restartPiServer: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "test-token"
+        url: "http://127.0.0.1:4312"
       }))
     };
   });
