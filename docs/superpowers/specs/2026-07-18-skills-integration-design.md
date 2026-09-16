@@ -564,8 +564,9 @@ Settings 启用现有 Skills tab。页面不提供新增或修改操作，包括
 - AgentSession 不共享可变 loader 实例；Settings refresh 不会在运行中热改资源。
 - Global-only 与各 workspace Catalog 分开缓存，workspace key 同时使用 workspace identity 与 canonical root。
 - 同一 realpath 的 symlink alias 只加载一次。
-- Capability token 不落数据库、不输出日志。Snapshot 对 explicit-eligible Skill 保留最多
-  512 KiB 完整 bytes；对超限或 invalid candidate 只保留 256 KiB preview prefix 和总字节数。
+- Capability token 不落数据库、不输出日志。Snapshot 对有效 Skill 保留最多
+  10 MiB 完整正文供按需读取；显式注入仍限 512 KiB/XML wrapper；invalid candidate 只保留
+  256 KiB preview prefix 和总字节数。超过 10 MiB 的正文为 invalid，不进入隐式清单。
   完整显式正文最终进入 Pi session 的正常历史。
 
 ## 测试策略

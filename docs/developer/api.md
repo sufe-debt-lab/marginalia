@@ -201,10 +201,14 @@ workspace 返回 `404 { "error": "workspace not found" }`，snapshot 不含该 p
 
 ## 文件 / 文档
 
-文件接口通过 `files/path-sandbox.ts` 做 lexical path、已存在目标 realpath，以及新目标最近存在祖先的
-realpath 检查；预先存在、指向 workspace 外或已经断裂的 symlink component 会被拒绝。当前检查与
-`writeFile` 之间仍不是 race-free open，Agent 默认 coding tools 也不复用这层检查，剩余边界见
-[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。
+文件接口与生产 pi 文件工具共享 `apps/pi-server/src/files/workspace-files.ts#WorkspaceFiles`。
+`path-sandbox.ts` 规范化相对路径；WorkspaceFiles 在操作期间校验 root/目标 identity，打开后使用同一
+文件句柄读取，使用原生描述符相对的临时写入及发布。拒绝绝对路径、父路径段、symlink 和外部目标，
+接受 Windows 分隔符和文件系统允许的大小写别名。文件树返回 `/` 分隔的路径。
+
+PUT 不带 `overwrite` 使用原子 create-only，目标存在或并发创建返回 409；显式 `overwrite: true`
+代表用户确认的替换，服务端固定原文件版本，提交前变化返回 409。策略拒绝返回 403；底层 I/O 失败返回
+500。文件发布不是跨进程 expected-inode CAS，平台保证和限制见[系统架构](./architecture.md#workspace-文件操作与审批)。
 
 | 方法 | 路径                                       | 说明                                                                      |
 | ---- | ------------------------------------------ | ------------------------------------------------------------------------- |
@@ -357,7 +361,7 @@ Catalog refresh、message build、agent preparation 或 run insert 的非 typed 
 
 1. `run_started` — `payload: { model }`。
 2. 若干 `agent_event` — `payload: { event }`，其中 `event` 是 **原样转发的原始 pi 事件**（message_start、文本/思考增量、工具调用、message_end 等）。客户端从这些原始事件派生所有 UI。
-3. `ask` 权限下，审批策略认为需要确认的工具调用会插入 `approval_requested` / `approval_resolved`，并在请求事件处暂停。当前部分 shell 前缀和新文件 write 自动放行，不会产生审批事件。
+3. `ask` 权限下，审批策略认为需要确认的工具调用会插入 `approval_requested` / `approval_resolved`，并在请求事件处暂停。workspace 读取和新建产物自动允许；每次 bash 和已有文件覆盖均产生审批。
 4. 结束：`run_completed`（无 payload）；或 `run_failed` — `payload: { error }`（agent 返回 `message_end` 且 `stopReason === "error"`，或抛异常时）。
 
 > 设计约定：pi-server **不**把 pi 事件重映射成 desktop 专用形状，只加 run 级信封。详见[系统架构 · 单一事实源](./architecture.md#单一事实源single-source-of-truth)。
@@ -376,9 +380,14 @@ retry snapshot 的失败显示 Retry，pre-start 401/409/413/EOF 不会复用更
 
 ### 审批（`ask` 档）
 
-判定某次工具调用是否需要审批的纯函数见 `apps/pi-server/src/agent/approval-policy.ts`；暂停/恢复流程（含挂起态管理、断连时的自动拒绝）见 `apps/pi-server/src/agent/approval-gateway.ts`；把两者接到 pi 工具调用钩子上的 extension 见 `apps/pi-server/src/agent/approval-extension.ts`。
+`apps/pi-server/src/agent/approval-policy.ts#evaluateEffect` 判定 read/create/overwrite/delete/execute/export/send。
+`ask` 自动允许 read/create，其余需要审批；readonly 只允许 read；full 不要求审批但文件边界始终生效。
+`apps/pi-server/src/agent/workspace-tools.ts#createWorkspaceTools` 以 pi 原生 customTools 注册现有工具名，
+在实际执行前声明 effect 并调用 ApprovalGateway，替代旧 tool_call extension 和 shell-string 推断。
 
-当前策略：read/grep/find/ls 直接放行；bash 按命令分段和首 token allowlist 判断；edit 必审；write 只在目标已存在时审批；未知工具使用命令卡审批。这个字符串判断不解析完整 shell 语义，审批不是安全沙箱。
+审批 payload 仍为 command/file_edit，新增可选 `effect: { kind, target }`，保留旧历史的可读性。
+file_edit 的 path 是实际 canonical 目标，mode 为 write/edit，patch 来自同一拟写入内容，exact 为 true。
+新建失败、拒绝、过期提案和无效 edit 不产生已保存结果。审批后版本冲突作为原始 pi tool error 返回。
 
 两类 SSE 信封（`payload.approval` 形状见 `apps/pi-server/src/agent/agent-client.ts#ApprovalRequestedEvent`/`ApprovalResolvedEvent`）：
 
@@ -429,10 +438,10 @@ retry snapshot 的失败显示 Retry，pre-start 401/409/413/EOF 不会复用更
 
 对应的 REST 接口：
 
-| 方法 | 路径                                         | 说明                                                                                                 |
-| ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| POST | `/sessions/:sessionId/approvals/:approvalId` | 提交决策。Body `{ approved, reason?, alwaysAllowPrefix? }`；未知或已处理的 `approvalId` 返回 `404`。 |
-| GET  | `/sessions/:sessionId/approvals`             | 列出该 session 的全部审批记录（含终态），用于重开会话还原 UI。                                       |
+| 方法 | 路径                                         | 说明                                                                                                                                    |
+| ---- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| POST | `/sessions/:sessionId/approvals/:approvalId` | 提交决策。Body `{ approved, reason? }`（旧 `alwaysAllowPrefix` 字段被忽略，不再授予后续权限）；未知或已处理的 `approvalId` 返回 `404`。 |
+| GET  | `/sessions/:sessionId/approvals`             | 列出该 session 的全部审批记录（含终态），用于重开会话还原 UI。                                                                          |
 
 Desktop 在第一次提交 Allow 或 Confirm deny 时立即锁定该卡片的全部决策控件，避免同一个 pending
 approval 被重复提交；请求失败时恢复控件，成功时等待对应 `approval_resolved` 更新卡片终态。
@@ -499,3 +508,11 @@ Chromium 直接消费响应流，文件切换由原生资源生命周期及 PDF.
 ### 面板布局与文件接口
 
 面板开合、拖宽及应用内全屏不创建 HTTP/SSE 或 IPC 协议；继续使用现有文件列表、正文与 raw URL。当前文件组件在同 workspace 的布局切换中保留，布局偏好使用 renderer 既有本地存储；文件正文不写入该存储。
+
+### Skill 读取与文本审批限制
+
+管理 API 的 preview 仍为冻结内容且最多 256 KiB，显式选择上限仍为 512 KiB；运行时隐式正文
+可读取最多 10 MiB，超过时 candidate 为 invalid，诊断为 `read_too_large`。这些限制不新增 HTTP route。
+生产 `read_skill` 还可读取本轮准入 Skill 根目录内的引用资源，使用与 workspace 相同的文件边界；
+普通 workspace 文件接口不因此开放外部路径。文本 write/edit 对非法 UTF-8 或含 NUL 的现有目标
+返回原始 pi tool error，不产生审批记录或文件副作用；有效文本的审批和 toolCallId 合同不变。

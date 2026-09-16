@@ -238,3 +238,15 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 ## 面板交互回归
 
 `pnpm --filter @marginalia/desktop verify:screenshots --scenario desktop-panels` 使用既有 Electron 启动器、隔离 profile、临时 workspace/SQLite 和可控 Agent，实际执行外侧拖动、文件开合、应用内全屏、Escape、焦点限制、窄窗口和重载后的偏好恢复。它也是 `pnpm verify:visual` 的默认场景。截图与交互记录位于 `output/desktop-screenshots/`，必须逐张检查 changed/new；测试不使用真实 Provider 凭据或外部模型。
+
+## Workspace Standard Access 验证
+
+`pnpm --filter @marginalia/pi-server test -- workspace-tools.test.ts workspace-access-flow.test.ts files-write.test.ts`
+验证生产工具、真实临时文件、SQLite 与原始 SSE，包括拒绝、旧审批、并发新建、路径替换及 I/O 失败。
+`pnpm verify:visual` 默认增加 workspace-access：使用现有 ScriptedFakeAgentClient 的受控工具模式，
+在 Electron 中发送、拒绝、批准过期提案、重新提案、读取落盘文件及重开会话；不调用外部模型。
+
+该模式仅供隔离验证，`MARGINALIA_FAKE_AGENT=workspace` 配合 `MARGINALIA_DB_PATH` 使用，pi history
+存放在数据库同目录的 pi-sessions。普通 `MARGINALIA_FAKE_AGENT=1` 保留旧 UI 固定事件场景。
+新模式运行真实文件工具，必须使用临时 workspace 和隔离 profile；不能用于生产。所有文件操作强制
+使用固定版本 fs-safe 原生 binding，缺失时拒绝执行，不自动下载或降级。搜索正则 worker 有 2 秒预算。

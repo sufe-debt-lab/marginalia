@@ -168,3 +168,11 @@ protocol 代理 JSON、SSE 和 raw/Range 请求，并在代理层注入 bearer �
 ## 桌面窗口布局
 
 Electron 主窗口继续使用 macOS 原生窗口按钮，位置为 x=14、y=16，与 46px 顶栏垂直中心对齐。文档面板全屏属于 renderer 内布局，不调用系统全屏或切换 Space；原生最小化、关闭和系统全屏仍由 Electron 窗口处理。面板布局回归使用隔离 Electron 验证，不代表安装包签名、公证或发布验收完成。
+
+## Workspace 文件原生后端
+
+pi-server 的 `@openclaw/fs-safe` 固定为 0.12.0。pnpm 按平台安装对应 optional native binding，deploy
+必须保留该平台 optional dependencies；生产强制 require，不允许缺失时静默使用普通路径写入。
+这些预编译 binding 使用 Node-API，不复用 better-sqlite3 的 ABI 重编译流程，也不依赖运行时 Rust/Python。
+打包后的平台 smoke test 应实际新建、读取、拒绝覆盖与批准覆盖临时 workspace 文件；仅 import 成功或
+receipt 存在不证明文件操作可用。本次 macOS 开发 Electron 验证不代替 Windows/Linux 安装包验收。

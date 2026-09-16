@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { createReadStream, existsSync, statSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -61,7 +59,7 @@ import {
   type DocumentContent
 } from "./files/document-reader.js";
 import { listWorkspaceFiles, searchWorkspaceFiles } from "./files/file-tree.js";
-import { resolveWorkspacePath } from "./files/path-sandbox.js";
+import { WorkspaceFiles, workspaceErrorStatus } from "./files/workspace-files.js";
 import { createHealthInfo } from "./health.js";
 import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
 import { SessionRunLeases } from "./run/session-run-leases.js";
@@ -260,10 +258,10 @@ export function createApp(options: AppOptions = {}) {
     return c.body(null, 204);
   });
   app.get("/workspaces/:id/sessions", (c) => c.json(listSessions(db, c.req.param("id"))));
-  app.get("/workspaces/:id/files", (c) => {
+  app.get("/workspaces/:id/files", async (c) => {
     const workspace = getWorkspace(db, c.req.param("id"));
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
-    return c.json(listWorkspaceFiles(workspace.rootDir));
+    return c.json(await listWorkspaceFiles(workspace.rootDir));
   });
   app.get("/workspaces/:id/files/content", async (c) => {
     const workspace = getWorkspace(db, c.req.param("id"));
@@ -271,7 +269,7 @@ export function createApp(options: AppOptions = {}) {
     try {
       return c.json(await documentReader(workspace.rootDir, c.req.query("path") ?? ""));
     } catch (error) {
-      if ((error as Error).message === "Path escapes workspace")
+      if (workspaceErrorStatus(error) === 403)
         return c.json({ error: "Path escapes workspace" }, 403);
       if (error instanceof DocumentPreviewError) {
         return c.json(
@@ -282,15 +280,16 @@ export function createApp(options: AppOptions = {}) {
       return c.json({ error: "file not found" }, 404);
     }
   });
-  app.get("/workspaces/:id/files/raw", (c) => {
+  app.get("/workspaces/:id/files/raw", async (c) => {
     const workspace = getWorkspace(db, c.req.param("id"));
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
     const filePath = c.req.query("path") ?? "";
     try {
-      const absolute = resolveWorkspacePath(workspace.rootDir, filePath);
-      const stat = statSync(absolute);
-      if (!stat.isFile()) return c.json({ error: "not a file" }, 400);
-      const stream = createReadStream(absolute);
+      const files = await WorkspaceFiles.open(workspace.rootDir);
+      if (!(await files.stat(filePath)).isFile) return c.json({ error: "not a file" }, 400);
+      const opened = await files.openRead(filePath);
+      const stat = opened.stat;
+      const stream = opened.handle.createReadStream();
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         headers: {
           "content-type": mimeFromPath(filePath),
@@ -299,7 +298,7 @@ export function createApp(options: AppOptions = {}) {
         }
       });
     } catch (error) {
-      if ((error as Error).message === "Path escapes workspace")
+      if (workspaceErrorStatus(error) === 403)
         return c.json({ error: "Path escapes workspace" }, 403);
       return c.json({ error: "file not found" }, 404);
     }
@@ -314,16 +313,16 @@ export function createApp(options: AppOptions = {}) {
     if (!workspace) return c.json({ error: "workspace not found" }, 404);
     const body = await c.req.json<{ path: string; content: string; overwrite?: boolean }>();
     try {
-      const absolute = resolveWorkspacePath(workspace.rootDir, body.path ?? "");
-      const exists = existsSync(absolute);
-      if (exists && !body.overwrite) return c.json({ error: "file exists" }, 409);
-      await mkdir(path.dirname(absolute), { recursive: true });
-      await writeFile(absolute, body.content ?? "", "utf8");
-      return c.json({ path: body.path }, exists ? 200 : 201);
+      const files = await WorkspaceFiles.open(workspace.rootDir);
+      const existing = body.overwrite ? await files.snapshot(body.path ?? "") : null;
+      await files.write(body.path ?? "", body.content ?? "", existing);
+      return c.json({ path: body.path }, existing ? 200 : 201);
     } catch (error) {
-      if ((error as Error).message === "Path escapes workspace")
-        return c.json({ error: "Path escapes workspace" }, 403);
-      return c.json({ error: (error as Error).message }, 500);
+      const status = workspaceErrorStatus(error);
+      return c.json(
+        { error: status === 409 && !body.overwrite ? "file exists" : (error as Error).message },
+        status
+      );
     }
   });
   app.post("/sessions", async (c) => {

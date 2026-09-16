@@ -303,7 +303,7 @@ describe("loadSkillCandidate", () => {
     expect(candidate.previewTruncated).toBe(true);
   });
 
-  it("keeps only a 256 KiB preview above the explicit size limit", async () => {
+  it("keeps implicit body bytes above the explicit size limit with a bounded preview", async () => {
     const content = Buffer.alloc(SKILL_EXPLICIT_BYTES + 1, "b");
 
     const candidate = await loadSkillCandidate(
@@ -313,7 +313,7 @@ describe("loadSkillCandidate", () => {
 
     expect(candidate.bytesTotal).toBe(SKILL_EXPLICIT_BYTES + 1);
     expect(candidate.explicitEligible).toBe(false);
-    expect(candidate.rawContent).toBeNull();
+    expect(candidate.rawContent).toBe(content.toString("utf8"));
     expect(Buffer.byteLength(candidate.previewContent, "utf8")).toBe(SKILL_PREVIEW_BYTES);
     expect(candidate.previewTruncated).toBe(true);
     expect(candidate.diagnostics).toContainEqual(
@@ -367,7 +367,7 @@ describe("loadSkillCandidate", () => {
 
     expect(candidate.bytesTotal).toBe(content.byteLength);
     expect(candidate.explicitEligible).toBe(false);
-    expect(candidate.rawContent).toBeNull();
+    expect(candidate.rawContent).toBe(content.toString("utf8"));
   });
 
   it("maps disable-model-invocation to explicitOnly", async () => {
@@ -389,7 +389,7 @@ describe("loadSkillCandidate", () => {
 
     expect(candidate.skill).not.toBeNull();
     expect(candidate.explicitEligible).toBe(false);
-    expect(candidate.rawContent).toBeNull();
+    expect(candidate.rawContent).toBe(content.toString("utf8"));
     expect(candidate.diagnostics).toContainEqual(
       expect.objectContaining({ code: "unsupported_identifier", level: "error" })
     );
@@ -452,7 +452,7 @@ describe("loadSkillCandidate", () => {
 
       expect(candidate.skill).not.toBeNull();
       expect(candidate.explicitEligible).toBe(false);
-      expect(candidate.rawContent).toBeNull();
+      expect(candidate.rawContent).toBe(V1);
       expect(candidate.diagnostics).toContainEqual(
         expect.objectContaining({ code: "unsupported_identifier", level: "error" })
       );
@@ -494,7 +494,7 @@ describe("loadSkillCandidate", () => {
 
       expect(candidate.skill).not.toBeNull();
       expect(candidate.explicitEligible).toBe(false);
-      expect(candidate.rawContent).toBeNull();
+      expect(candidate.rawContent).toBe(V1);
       expect(candidate.diagnostics).toContainEqual(
         expect.objectContaining({ code: "unsupported_identifier", level: "error" })
       );
@@ -548,7 +548,7 @@ describe("default Pi parser adapter", () => {
 
     expect(candidate.skill?.name).toBe("line-one\nline-two");
     expect(candidate.explicitEligible).toBe(false);
-    expect(candidate.rawContent).toBeNull();
+    expect(candidate.rawContent).toContain("# Warning");
     expect(candidate.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "pi_warning", level: "warning" }),

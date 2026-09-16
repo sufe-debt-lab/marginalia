@@ -350,3 +350,19 @@ describe("stripPiFrontmatter", () => {
     expect(stripPiFrontmatter("---\nname: demo\nBody")).toBe("---\nname: demo\nBody");
   });
 });
+
+it("carries frozen effective Skill bodies for catalog reads without filesystem authority", () => {
+  const selected = candidate({ name: "notes", rawContent: "frozen body" });
+  const snapshot = {
+    workspaceId: "w",
+    workspaceRoot: "/workspace",
+    catalogRevision: "c",
+    effectiveRevision: "e",
+    refreshedAt: 0,
+    candidates: [selected],
+    effectiveSkills: [selected.skill!],
+    diagnostics: []
+  };
+  const turn = prepareSkillTurn(snapshot, []);
+  expect(turn.runtime.contents).toEqual({ [selected.canonicalPath]: "frozen body" });
+});

@@ -2,23 +2,18 @@ import { describe, expect, it } from "vitest";
 import { ApprovalGateway } from "../src/agent/approval-gateway.js";
 import type { ApprovalEvent } from "../src/agent/agent-client.js";
 
-function gateway(fileExists = () => true) {
-  const g = new ApprovalGateway({ fileExists });
+function gateway() {
+  const g = new ApprovalGateway();
   g.setPolicy("s1", { permission: "ask", workspaceRoot: "/ws" });
   return g;
 }
 
 describe("ApprovalGateway", () => {
-  it("evaluates using the session policy and injected fileExists", () => {
-    const g = gateway(() => false);
-    expect(g.evaluate("s1", "write", { path: "new.md" })).toBe("allow");
-    expect(g.evaluate("s1", "edit", { path: "a.md" })).toEqual({
-      kind: "file_edit",
-      path: "a.md",
-      mode: "edit"
-    });
-    // Unknown session defaults to allow (no policy registered → not "ask").
-    expect(g.evaluate("nope", "edit", { path: "a.md" })).toBe("allow");
+  it("evaluates declared effects and fails closed without a session policy", () => {
+    const g = gateway();
+    expect(g.evaluate("s1", { kind: "create", target: "new.md" })).toBe("allow");
+    expect(g.evaluate("s1", { kind: "overwrite", target: "a.md" })).toBe("approve");
+    expect(g.evaluate("nope", { kind: "read", target: "a.md" })).toBe("deny");
   });
 
   it("emits approval_requested and resolves the pending promise on approve", async () => {
@@ -41,7 +36,7 @@ describe("ApprovalGateway", () => {
     expect(g.resolve(approvalId, { approved: false })).toBe(false);
   });
 
-  it("adds the command prefix to the session allowlist on alwaysAllowPrefix", async () => {
+  it("does not turn a legacy prefix decision into future command authorization", async () => {
     const g = gateway();
     g.onEvent("s1", () => {});
     const promise = g.request("s1", {
@@ -52,7 +47,7 @@ describe("ApprovalGateway", () => {
     const pendingId = g.pendingIds("s1")[0]!;
     g.resolve(pendingId, { approved: true, alwaysAllowPrefix: true });
     await promise;
-    expect(g.evaluate("s1", "bash", { command: "python other.py" })).toBe("allow");
+    expect(g.evaluate("s1", { kind: "execute", target: "/ws" })).toBe("approve");
   });
 
   it("cancelPending denies all pending approvals with expired flag", async () => {

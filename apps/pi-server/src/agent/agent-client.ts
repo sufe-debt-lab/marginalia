@@ -83,7 +83,7 @@ export interface AgentClient {
 /** Decision sent back from the UI for one pending approval. */
 export type ApprovalDecision = { approved: boolean; reason?: string; alwaysAllowPrefix?: boolean };
 
-export type ApprovalPayload =
+export type ApprovalPayload = { effect?: import("./approval-policy.js").ToolEffect } & (
   | { kind: "command"; command: string; cwd: string }
   | {
       kind: "file_edit";
@@ -94,7 +94,8 @@ export type ApprovalPayload =
       deletions: number;
       exact: boolean;
       error?: string;
-    };
+    }
+);
 
 export type ApprovalRequestedEvent = {
   type: "approval_requested";

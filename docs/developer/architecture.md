@@ -264,7 +264,7 @@ bytes 必须是合法 UTF-8，否则发布 `invalid_utf8` error 并把 candidate
 限制始终按 Buffer bytes 判断。显式调用的原始 `SKILL.md` 文件上限为 512 KiB（边界包含），preview 上限
 为 256 KiB；超过文件上限，正文含 XML 1.0 不允许的字符，或 name、canonical path、canonical base
 directory 含 XML 1.0 不允许的字符或 CR/LF 时，candidate 仍保留 Pi metadata 和 preview，但
-`explicitEligible: false`、`rawContent: null`。`disable-model-invocation` 直接映射为 `explicitOnly`，
+`explicitEligible: false`。有效候选保留最多 10 MiB 的完整 `rawContent` 供隐式读取；超过读取上限则为 invalid，并产生 `read_too_large` 诊断。`disable-model-invocation` 直接映射为 `explicitOnly`，
 完整稳定内容用 SHA-256 `contentHash` 标识。Preference、canonical identity 去重、同名 collision 和
 effective winner 由下一阶段 Catalog reducer 处理。
 
@@ -396,16 +396,14 @@ Provider 的 `baseUrl` 会保存到 SQLite，但 run 只用 `piProviderId(provid
 
 - 只有 `GET /health` 公开，其余接口统一验证进程 bearer 和 exact Origin；未配置策略时默认拒绝。随机端口不是授权边界；该机制不抵御可读取同用户进程内存或控制 main 的恶意软件。
 - BrowserWindow 使用 context isolation、`nodeIntegration: false` 和 `sandbox: true`。
-- Full 和 Ask 使用 pi 默认 coding tools。Workspace 只作为 cwd，工具可接收绝对路径，bash 使用宿主用户权限。
-- HTTP 文件接口检查 lexical path、已存在目标 realpath，以及新目标最近存在祖先的 realpath；预先存在或
-  断裂的 symlink component 会被拒绝。检查与最终 open/write 之间仍存在 TOCTOU，Agent coding tools 也未
-  复用该边界。
+- 文件接口、附件、文件树和 pi 文件工具共用 WorkspaceFiles。所有权限档均拒绝越界文件访问；
+  Standard Access 的 bash 逐次审批，Full/批准的 bash 仍以宿主权限执行，不构成 OS sandbox。
 - Skill discovery 沿用 Pi symlink 语义，不要求 canonical target 留在 source root。持有 Loopback Access bearer 的调用方
   只有在外部 target 已通过预先存在、可发现的 Skill symlink 成为当前 snapshot member 时才能取得其
   snapshot preview；单独提交任意 path 不会触发读取，content route 也不重读 target。
 - Catalog admission 只提供两个 active build、20 个 waiter 与 30 秒排队等待的有界 fail-closed；无法取消的
   active Promise 或同步 Pi discovery 卡顿仍可让所有 workspace refresh 暂时不可用。
-- Ask 审批按字符串前缀判断 shell，新文件 write 默认直通。
+- Standard Access 按结构化 effect 判断，workspace read/create 自动允许；Protected Action 逐次批准。
 - Provider key 以明文写入 SQLite。
 
 修复目标和验收条件见[产品就绪审计](./issues/2026-07-11-product-readiness-audit.md)。
@@ -454,3 +452,40 @@ IPC 请求由发起它的 renderer 生命周期拥有；主 frame reload、rende
 全屏面板覆盖 renderer 区域，顶端预留原生窗口控件；背景 inert、Tab 焦点限制、Escape 与还原操作由 shell 负责。原生 BrowserWindow 的系统全屏状态不改变。现有编辑入口尚禁用，后续编辑缓冲应留在此内容生命周期内。
 
 文件面板的可见状态传给 `useFileTree`：重新可见时通过既有 files API 读取列表，手动刷新同时更新列表与当前正文，失败保留已有预览并可重试。外侧面板拖动、释放和恢复使用相同的窗口宽度上限；内部文件树从实际 DOM 宽度开始拖动。全屏焦点边界包含文件树的 open Shadow Root，内部导航仍由原生 Tab 与文件树组件处理。
+
+## Workspace 文件操作与审批
+
+`WorkspaceFiles` 统一操作边界，`resolveWorkspacePath` 只做路径规范化/静态检查，不独自承担安全保证。
+`@openclaw/fs-safe` 固定为 0.12.0，强制 native require：缺少平台 binding 时 fail closed。
+读取校验打开的 descriptor 与路径 identity；write/create 通过 pinned parent、同目录临时文件和原子
+replace/no-replace 发布，不直接截断原文件。新建冲突不覆盖赢家；新文件遵循进程 umask，覆盖保留原权限。
+HTTP 与 Agent 共用这一实现。
+
+文件提案只在当次调用保存临时 snapshot，不建立正文数据库。snapshot 包含内容及 lossless bigint
+inode/device/size/mtime/ctime 版本。pi edit 使用内存 operations 对该 snapshot 计算结果，成功后为同一
+结果生成 diff；审批通过后、最终发布前核对版本，中止、拒绝、旧版本和无效 edit 保留原文件。部分写入
+I/O 失败清理原生 staging，后续重试可重新执行。AgentSession runtime revision 包含工具合同版本。
+
+当前文件工具集合封闭，均在执行时声明 effect；未来 Capability 应调用相同 WorkspaceFiles 和
+ApprovalGateway.authorize，不允许只在 UI 或 tool_call 预检查。未知工具不进入 runtime。grep 对受限读取
+的文本使用有时间和输出上限的 worker，避免模型提供的正则阻塞 server；find/ls 不通过外部 shell。
+Agent find/grep 在受限 walker 上用固定 ignore 7.0.5 解析根目录及子目录 `.gitignore`，跳过被忽略子树；
+文件树界面保留原来的枚举规则。
+
+Skills 保留 Catalog 作为唯一准入边界。`read_skill` 对本轮 admitted Skill 的 exact path 返回冻结正文，
+不按该 path 重新读取正文；隐式正文读取与 512 KiB/XML 显式 wrapper 门槛分开，读取上限为 10 MiB。
+准入包括 effective 且可隐式调用的 Skill，以及本轮已通过 preflight 的 explicit-only 选择。
+显式选择集合进入 runtime revision，移除选择后不能复用仍持有其资源权限的 session。
+
+Skill 根目录在工具准备时经 WorkspaceFiles 固定。`read_skill` 可按需读取该目录内的资源，使用同一
+native 操作边界和 10 MiB 单文件上限；拒绝父路径段、symlink、目录替换与根目录外目标。
+资源读取返回当前文件内容，不宣称它是冻结正文的一部分；不递归复制资源、不增加正文数据库。
+普通 read/write/edit 仍只访问 workspace，资源准入不授权写入或执行，bash 仍遵守现有 execute 策略。
+
+文本 write/edit 在生成预览前拒绝非法 UTF-8 或含 NUL 的目标，不请求审批也不改动原始字节。
+不猜测编码、不自动转码、不提供二进制 diff；有效 UTF-8 文本继续使用准确 diff 与版本核对。
+
+原生 binding 防止 pathname 被换成 symlink 后把发布重定向到外部；它不是 OS 隔离，也不是跨进程
+expected-inode CAS。macOS/Windows 的同权限恶意目录移动仍属于上游明确的 best-effort 范围，Linux 原生
+open 使用 openat2。批准的 shell 可绕过库访问宿主资源；不得把上述机制描述成任意恶意进程下的完全沙箱。
+本地测试覆盖可控替换与失败时序，Windows/Linux 实机及打包验证不能由 macOS 结果代替。

@@ -275,3 +275,9 @@ Marginalia 的目标用户场景是**文本工作**（文章解读、基于资�
 - P2 Skills、P3 发布打磨的详细设计各自单独立项。
 - 对照阅读/引用溯源（点击 agent 引用定位原文，P2 候选）；回答内编辑/续写（P2 候选）；
   图片消息、语音输入、MCP 客户端扩展（若要接第三方 MCP 生态）。
+
+## Standard Access 合同承接（2026-09-16）
+
+本记录原审批章节中的 shell 前缀直通、session allowlist 与近似 edit 预览已由
+[Workspace Standard Access](./2026-09-16-workspace-standard-access.md) 替代。当前实现依据结构化 effect，
+命令逐次审批、文件提案绑定实际版本；历史 REST alwaysAllowPrefix 字段不再授予权限。其他聊天需求继续按本记录跟踪。

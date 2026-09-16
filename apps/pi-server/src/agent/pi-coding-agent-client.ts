@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import path from "node:path";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type {
   AgentClient,
   AgentPrepareInput,
@@ -11,13 +10,13 @@ import type {
 } from "./agent-client.js";
 import type { AgentSessionRegistry } from "./agent-session-registry.js";
 import type { ApprovalGateway } from "./approval-gateway.js";
-import { createApprovalExtension } from "./approval-extension.js";
+import { createWorkspaceTools } from "./workspace-tools.js";
 
 /** Resolves a pi `Model` for the given provider/model id; returns null when unavailable. */
 export type ResolveModelFn = (piProviderId: string, modelId: string) => unknown | null;
 
 /** Read-only tool allowlist used when permission === "readonly". */
-const READONLY_TOOLS = ["read", "grep", "find", "ls"];
+const READONLY_TOOLS = ["read", "grep", "find", "ls", "read_skill"];
 
 export class PiCodingAgentClient implements AgentClient {
   constructor(
@@ -42,7 +41,7 @@ export class PiCodingAgentClient implements AgentClient {
 
     // Approval policy is per-run: cached sessions read the current value.
     this.gateway.setPolicy(input.sessionId, {
-      permission: input.permission ?? "full",
+      permission: input.permission ?? "ask",
       workspaceRoot: input.workspaceRoot
     });
 
@@ -59,15 +58,31 @@ export class PiCodingAgentClient implements AgentClient {
         skills: [...pinnedSkills.skills],
         diagnostics: [...pinnedSkills.diagnostics]
       }),
-      extensionFactories: [
-        createApprovalExtension(this.gateway, input.sessionId) as unknown as ExtensionFactory
-      ]
+      appendSystemPromptOverride: (base) => [
+        ...base,
+        "File tools accept workspace-relative paths only. Use read_skill for admitted Skill bodies and files referenced beneath their directories (including explicitly selected Skills). Resolve references against the Skill directory; this grants no write or execute permission."
+      ],
+      extensionFactories: []
     });
     await loader.reload();
 
     // Map composer permission/reasoning onto createAgentSession options.
-    const config: Record<string, unknown> = { model, resourceLoader: loader };
-    if (input.permission === "readonly") config.tools = READONLY_TOOLS;
+    const tools = await createWorkspaceTools(
+      input.workspaceRoot,
+      this.gateway,
+      input.sessionId,
+      input.runtimeSkills.contents
+    );
+    const selectedTools =
+      input.permission === "readonly"
+        ? tools.filter((tool) => READONLY_TOOLS.includes(tool.name))
+        : tools;
+    const config: Record<string, unknown> = {
+      model,
+      resourceLoader: loader,
+      tools: selectedTools.map((tool) => tool.name),
+      customTools: selectedTools
+    };
     if (input.reasoning) config.thinkingLevel = input.reasoning;
 
     const reservation = await this.registry.acquirePinned({
@@ -76,6 +91,7 @@ export class PiCodingAgentClient implements AgentClient {
       agentSessionPath: input.agentSessionPath ?? null,
       resourceRevision: input.runtimeSkills.effectiveRevision,
       runtimeRevision: JSON.stringify([
+        "workspace-access-v2",
         input.piProviderId,
         input.modelId,
         input.permission === "readonly" ? "readonly" : "default"

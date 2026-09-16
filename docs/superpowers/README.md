@@ -14,6 +14,9 @@
 
 | `PLAN-DESKTOP-PANELS-021` | plan | active | [Issue #21 桌面面板](./plans/2026-09-16-desktop-panels.md) |
 
+| `SPEC-WORKSPACE-ACCESS-005` | spec | active | [Workspace Standard Access](./specs/2026-09-16-workspace-standard-access.md) |
+| `PLAN-WORKSPACE-ACCESS-005` | plan | active | [Issue #5 实施计划](./plans/2026-09-16-workspace-standard-access.md) |
+
 <!-- active-records:end -->
 
 ## Rules

@@ -31,10 +31,10 @@ Frontmatter 的 `verified_commit` 是本轮未提交修复所基于的 commit；
 | ID                | Priority | Status      | Last verified | Target                     | Evidence                                                                                                                              |
 | ----------------- | -------- | ----------- | ------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | P0-SEC-001        | P0       | resolved    | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/security/loopback-access.ts`、`apps/pi-server/src/app.ts`、`apps/desktop/electron/pi-server-spawner.ts`           |
-| P0-SEC-002        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
-| P0-SEC-003        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
+| P0-SEC-002        | P0       | in-progress | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
+| P0-SEC-003        | P0       | resolved    | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
 | P0-SEC-004        | P0       | resolved    | 2026-07-19    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`、`apps/pi-server/src/agent/pi-coding-agent-client.ts`                            |
-| P0-SEC-005        | P0       | open        | 2026-08-13    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`、`apps/pi-server/test/files-write.test.ts`                    |
+| P0-SEC-005        | P0       | in-progress | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`、`apps/pi-server/test/files-write.test.ts`                    |
 | P0-SEC-006        | P0       | open        | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
 | P0-RUN-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
 | P1-PROVIDER-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts`                                    |
@@ -70,19 +70,16 @@ server route、desktop client、main/proxy、preload 和 packaged smoke 覆盖�
 
 ## P0-SEC-002: Workspace 不是 agent 沙箱
 
-`POST /workspaces` 接受调用者提供的任意 `rootDir`。Full 和 Ask 使用 pi 默认 coding tools，当前只把 workspace 作为 cwd 传入；读取、写入和编辑工具接受绝对路径，bash 直接在宿主机执行。HTTP 文件接口的路径检查不能约束这些 agent tools。
-
-修复目标：定义并实现统一的文件、命令和子进程边界，绝对路径、符号链接和工作目录切换都经过同一策略；不能隔离的能力在 UI 中明确标记并默认关闭。
-
-验收：覆盖 workspace 外绝对路径、`..`、symlink、shell cwd 和子进程访问的负向测试；用户文档与实际边界一致。
+2026-09-16 候选树：HTTP、附件和 pi read/write/edit/grep/find/ls 已共享 WorkspaceFiles，绝对路径、父路径段和
+symlink 拒绝；原生描述符操作替代 pathname 最终写入。生产 runtime 使用 pi customTools，保持 raw events。
+Standard Access 的全部 bash 需要逐次审批，但批准的 bash/Full 仍使用宿主权限，不能称为 OS sandbox。
+P0 保持 in-progress：跨平台实机和同权限恶意目录移动的完整隔离保证仍未关闭。
 
 ## P0-SEC-003: Ask 审批可被 shell 语义绕过
 
-审批策略按命令分隔符和首 token 判断。`echo`、`cat` 等在 allowlist 中，但命令替换、变量展开和其他 shell 语义没有解析，比如只读前缀内仍可执行嵌套副作用。`write` 目标不存在时也会直接放行，包含 workspace 外的新绝对路径。
-
-修复目标：不要用字符串前缀充当 shell 安全模型。M0 可选择所有 bash 必审，或换成不经 shell 的结构化只读操作；新文件写入也必须先验证边界并让产品文案准确说明是否审批。
-
-验收：命令替换、重定向、管道、分号、换行、绝对路径和新文件用例均不能绕过预期策略。
+2026-09-16 候选树已解决前缀绕过：effect 由具体操作声明，read/create 自动允许，其余 Protected Action
+逐次审批。删除 shell 字符串和 session prefix allowlist；旧 alwaysAllowPrefix 不再授予未来权限。
+测试包含 read-prefixed destructive command 的拒绝、每类 effect 矩阵、真实文件覆盖及 SQLite/SSE 重开。
 
 ## P0-SEC-004: 缓存 session 保留旧配置
 
@@ -105,17 +102,11 @@ handle 不被 LRU 淘汰以及异常 release 另有 registry/client 回归测试
 
 ## P0-SEC-005: Symlink parent 允许新文件逃逸
 
-最初的 `resolveWorkspacePath()` 只检查已存在目标的 realpath；目标不存在时遇到 `ENOENT` 直接返回
-lexical candidate，没有检查最近存在父目录。审计用 `workspace/linked -> outside` 复现，写入
-`linked/new.md` 后文件出现在 workspace 外。
-
-2026-08-13 进展：HTTP 文件接口现在从新目标向上查找最近一个词法上存在的祖先，解析其 realpath，并
-拒绝指向 workspace 外或已经断裂的 symlink component；路由回归同时断言返回 403 且 workspace 外没有
-生成文件。P0 继续 open：检查到 `writeFile` 之间仍有 TOCTOU，Agent coding tools 也尚未复用统一边界。
-
-修复目标：创建文件前解析最近存在父目录的 realpath，并在打开文件时防止检查到使用之间被替换；agent 写工具复用同一边界。
-
-验收：现有文件、新文件、嵌套 symlink、断链 symlink 和竞态测试均不能写出 workspace。
+2026-09-16 候选树已共享原生文件操作边界。新建使用原子 no-replace；替换通过 staging/rename 发布，
+审批 snapshot 绑定 bigint 文件版本并在发布前核对。测试覆盖并发新建、部分写入后 ENOSPC、staging 时
+parent symlink swap、拒绝和批准过期提案，均保留目标/外部文件，随后可重试。
+P0 保持 in-progress：macOS/Windows 不是任意同权限进程下的原子 containment，也不提供跨进程
+expected-inode CAS；Windows/Linux 原生部署和实机验收未完成。不是继续声称只有静态路径检查。
 
 ## P0-SEC-006: Secret 与 renderer 缺少发布级保护
 

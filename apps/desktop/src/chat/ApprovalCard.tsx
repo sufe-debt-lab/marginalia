@@ -17,7 +17,6 @@ export function ApprovalCard({
   const { t } = useTranslation();
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState("");
-  const [allowPrefix, setAllowPrefix] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const payload = approval.payload;
@@ -54,18 +53,13 @@ export function ApprovalCard({
           <span className="text-[11.5px] text-text-muted">
             {t("approval.workingDir")}: <span className="mono">{payload.cwd}</span>
           </span>
-          <label className="flex items-center gap-2 text-[12px] text-text-muted">
-            <input
-              type="checkbox"
-              checked={allowPrefix}
-              disabled={submitting}
-              onChange={(e) => setAllowPrefix(e.target.checked)}
-            />
-            {t("approval.alwaysAllowPrefix")}
-          </label>
+          <span className="text-[12px] text-text-muted">{t("approval.hostCommand")}</span>
         </>
       ) : (
         <>
+          <span className="text-[12px] text-text-muted">
+            {payload.mode === "edit" ? t("approval.modeEdit") : t("approval.modeWrite")}
+          </span>
           <span className="mono text-[12.5px]">
             {payload.path}
             <span className="ml-2 text-brand">+{payload.additions}</span>
@@ -122,8 +116,7 @@ export function ApprovalCard({
             disabled={submitting}
             onClick={() =>
               submitDecision({
-                approved: true,
-                ...(payload.kind === "command" ? { alwaysAllowPrefix: allowPrefix } : {})
+                approved: true
               })
             }
           >

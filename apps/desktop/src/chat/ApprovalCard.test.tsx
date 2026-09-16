@@ -35,13 +35,13 @@ describe("ApprovalCard", () => {
     cleanup();
   });
 
-  it("approves a command, forwarding the prefix checkbox", async () => {
+  it("approves only this command without offering a prefix bypass", async () => {
     const onDecide = vi.fn();
     render(<ApprovalCard approval={commandApproval} onDecide={onDecide} />);
     expect(screen.getByText("python gen.py")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("checkbox"));
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /allow|允许/i }));
-    expect(onDecide).toHaveBeenCalledWith({ approved: true, alwaysAllowPrefix: true });
+    expect(onDecide).toHaveBeenCalledWith({ approved: true });
   });
 
   it("submits an approval only once and disables decisions immediately", async () => {

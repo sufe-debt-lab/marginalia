@@ -27,6 +27,8 @@ export type InvalidSkillSelection = SkillSelection & {
 export type AgentRuntimeSkills = {
   effectiveRevision: string;
   loadResult: LoadSkillsResult;
+  /** Frozen Skill bodies; their parent directories bound read-only resource access. */
+  contents?: Readonly<Record<string, string>>;
 };
 
 export type PreparedSkillTurn = {
@@ -114,9 +116,31 @@ function cloneSkill(skill: Skill): Skill {
   };
 }
 
-function runtimeFromSnapshot(snapshot: SkillCatalogSnapshot): AgentRuntimeSkills {
+function runtimeFromSnapshot(
+  snapshot: SkillCatalogSnapshot,
+  selected: readonly SkillCandidate[]
+): AgentRuntimeSkills {
+  const explicitPaths = selected
+    .filter((candidate) => candidate.explicitOnly)
+    .map((candidate) => candidate.canonicalPath)
+    .sort();
+  const selectedPaths = new Set(explicitPaths);
   return {
-    effectiveRevision: snapshot.effectiveRevision,
+    effectiveRevision: explicitPaths.length
+      ? `${snapshot.effectiveRevision}:${JSON.stringify(explicitPaths)}`
+      : snapshot.effectiveRevision,
+    contents: Object.freeze(
+      Object.fromEntries(
+        snapshot.candidates
+          .filter(
+            (candidate) =>
+              candidate.effective &&
+              (!candidate.explicitOnly || selectedPaths.has(candidate.canonicalPath)) &&
+              candidate.rawContent !== null
+          )
+          .map((candidate) => [candidate.canonicalPath, candidate.rawContent!])
+      )
+    ),
     loadResult: {
       skills: snapshot.effectiveSkills.map(cloneSkill),
       diagnostics: snapshot.diagnostics.map(toPiDiagnostic)
@@ -223,6 +247,6 @@ export function prepareSkillTurn(
   return {
     selections: canonicalSelections,
     blocks,
-    runtime: runtimeFromSnapshot(snapshot)
+    runtime: runtimeFromSnapshot(snapshot, candidates)
   };
 }

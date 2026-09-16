@@ -1,52 +1,34 @@
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 
-function assertContained(realRoot: string, target: string): void {
-  const relative = path.relative(realRoot, target);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+/** Resolve a caller-supplied relative path; never grant authority to a symlink. */
+export function resolveWorkspacePath(rootDir: string, requestedPath: string): string {
+  if (
+    path.isAbsolute(requestedPath) ||
+    path.win32.isAbsolute(requestedPath) ||
+    requestedPath.includes("\0") ||
+    requestedPath.split(/[\\/]/).includes("..")
+  ) {
     throw new Error("Path escapes workspace");
   }
-}
-
-export function resolveWorkspacePath(rootDir: string, requestedPath: string) {
-  const root = path.resolve(rootDir);
-  const realRoot = realpathSync.native(rootDir);
-  const candidate = path.resolve(root, requestedPath);
-  const candidateRelative = path.relative(root, candidate);
-
-  if (candidateRelative.startsWith("..") || path.isAbsolute(candidateRelative)) {
-    throw new Error("Path escapes workspace");
-  }
-
-  try {
-    const target = realpathSync.native(candidate);
-    assertContained(realRoot, target);
-    return candidate;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-
-  let existingAncestor = candidate;
-  while (true) {
+  const root = realpathSync.native(rootDir);
+  let candidate = root;
+  for (const part of requestedPath
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((part) => part && part !== ".")) {
+    candidate = path.join(candidate, part);
     try {
-      lstatSync(existingAncestor);
+      if (lstatSync(candidate).isSymbolicLink()) throw new Error("Path escapes workspace");
+      const canonical = realpathSync.native(candidate);
+      const relative = path.relative(root, canonical);
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error("Path escapes workspace");
+      }
+      candidate = canonical;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-
-      const parent = path.dirname(existingAncestor);
-      if (parent === existingAncestor) throw error;
-      existingAncestor = parent;
-      continue;
-    }
-
-    try {
-      assertContained(realRoot, realpathSync.native(existingAncestor));
-      return candidate;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new Error("Path escapes workspace", { cause: error });
-      }
-      throw error;
     }
   }
+  return candidate;
 }

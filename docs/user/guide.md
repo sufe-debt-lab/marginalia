@@ -25,10 +25,9 @@ workspace、session 或 Settings 不会串用或立即清空正文与附件。Ne
 
 Workspace 是一个本地目录及其会话集合。删除 workspace 会删除 Marginalia 数据库中的 workspace、session、消息和 run 记录，不会删除磁盘上的原始文件。
 
-Workspace 目前不能视为 agent 沙箱。Full 和 Ask 下的 pi 工具可以使用绝对路径，bash 也在宿主机运行；
-HTTP 文件写入会拒绝预先存在、指向 workspace 外或已经断裂的 symlink component，但检查与最终写入之间
-仍非 race-free，Agent coding tools 也不复用该边界。不要把包含敏感资料的上级目录作为 workspace，也
-不要在没有备份的目录中测试写入工具。
+HTTP 文件、附件和 Agent 文件工具共用 workspace 边界。只接受相对路径，支持 `/` 与 Windows
+分隔符；拒绝绝对路径、父路径段、符号链接和外部目标。大小写遵循文件系统语义。
+这不是操作系统沙箱：批准的 bash 命令和 Full access 下的命令仍以当前用户权限在宿主机执行。
 
 当前 UI 的 New chat 会在所选 workspace 下创建普通 session。后端已有 `quick_chat` 来源和 `/quick-chat` API，桌面端没有单独的 Quick chat 入口。
 
@@ -53,31 +52,28 @@ Provider API key 当前以明文保存在本机 SQLite。删除 provider 会同�
 | 图片、音频、视频               | raw 媒体预览       | 不抽内容，只发送附件占位提示   |
 | Word、Excel、PowerPoint        | 当前不支持内置预览 | 不抽正文，只发送附件占位提示   |
 
-Marginalia 不会在创建 workspace 时批量上传目录。运行对话后，agent 仍可能调用 read、grep、bash 等工具读取其他文件，并把工具结果发送给模型服务商；当前 Full/Ask 工具也不受可靠的 workspace 隔离。
+Marginalia 不会在创建 workspace 时批量上传目录。运行时文件工具的结果会进入模型上下文；Standard Access 下的 bash 必须逐次批准，批准的命令可能访问 workspace 外文件和网络。
 
 ## 工具权限
 
 Composer 提供三个档位，默认值目前是 Full access：
 
-| Mode          | Current behavior                                               | Important limitation                                            |
-| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------- |
-| Full access   | 使用 pi 默认 coding tools，不经过 Marginalia 审批              | 可读写绝对路径并运行宿主 shell                                  |
-| Ask each time | 通过审批 extension 检查 bash、edit、write 和未知工具           | 名称与实际语义不完全一致：部分 shell 前缀和新文件写入会自动放行 |
-| Read-only     | 只请求 read、grep、find、ls；从其他 profile 切换时重建 session | 不是操作系统沙箱，工具仍以宿主用户权限读取文件                  |
+| Mode                        | Current behavior                                                  | Boundary                                   |
+| --------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
+| Full access                 | 允许工具操作，不弹 Agent 审批卡                                   | 文件工具仍限 workspace；shell 使用宿主权限 |
+| Standard Access（标准访问） | workspace 读取和新建产物自动允许；覆盖、edit 和每次 bash 等待批准 | 不使用命令前缀白名单；批准仅用于本次操作   |
+| Read-only                   | 只提供 read、grep、find、ls 和只读 Skill catalog 工具             | 不提供文件写入或 bash                      |
 
-切换权限会改变产品意图，但当前实现不能提供操作系统级隔离。处理重要资料时，先准备备份，并把 agent 工具视为拥有当前用户权限的本地程序。
+API 未指定权限时使用 Standard Access。已有桌面权限偏好不被自动改写。
 
 ## 审批卡
 
-Ask 档下，需要审批的工具调用会暂停并显示卡片：
-
-- 命令卡展示 shell 命令和工作目录。勾选“本次会话总是允许此前缀”后，系统只保存命令首 token，不理解完整 shell 语义。
-- 文件卡展示 unified diff、增删行数和预览是否精确。预览失败时会显示近似 diff 或错误说明。
-- Allow 继续工具调用；Deny 可以附带理由，模型收到理由后继续当前 run。
-- 提交 Allow 或确认 Deny 后，卡片会立即锁定全部决策控件；请求失败时恢复，成功时等待审批结果更新。
-- SSE 断开或 run 结束时，仍挂起的审批会被标记为 expired。
-
-当前策略按字符串前缀识别一部分只读命令，没有完整解析命令替换、变量展开等 shell 语义；新建文件也默认不弹审批卡。审批链路便于协作和审计，不能当作防止恶意命令的安全边界。
+- 命令卡展示完整命令、工作目录和宿主访问范围；没有“总是允许此前缀”入口。
+- 文件卡展示目标路径、编辑/替换模式和实际拟写入字节的 unified diff。edit 的替换结果由 pi
+  计算，无法生成有效替换时直接报告工具错误，不展示可以批准的近似提案。
+- Allow 只授权该提案；等待期间目标被替换或修改，写入会失败并保留新内容，Agent 必须重新读取并提出修改。
+- Deny 可附带理由，不产生文件写入；中止或断连不会变成批准。审批和工具结果按 toolCallId 持久化，重开会话可查看。
+- 提交决策期间控件锁定，请求失败后恢复。单次工具拒绝/冲突由 Agent 处理，不自动等同整轮失败。
 
 ## 复制、导出和保存
 
@@ -87,8 +83,9 @@ Ask 档下，需要审批的工具调用会暂停并显示卡片：
 - Export：通过系统保存对话框导出 `.md`。
 - Save to workspace：填写相对路径后写入当前 workspace；目标存在时会再次确认覆盖。
 
-Save to workspace 是用户直接触发的写入，不经过 agent 审批卡。HTTP 写入会拒绝预先存在的越界或断裂
-symlink component，但仍存在检查到写入之间的竞态边界；保存到含 symlink 的目录前应自行确认目标位置。
+Save to workspace 是用户明确触发并确认的写入，不再额外显示 Agent 审批卡。它与 Agent 使用同一文件
+操作边界；并发新建同一路径只有一个成功，另一请求返回冲突。文件通过临时写入和原子发布更新，写入
+失败保留原文件。原生文件后端不可用时拒绝操作，不静默退回普通路径写入。
 
 ## 本地数据与网络边界
 
@@ -150,7 +147,7 @@ catalog refresh 或显示普通 Retry。普通 Retry 只属于已经收到 `run_
 
 Run body 最多 4 MiB；最多 16 个 raw selections，每个 name/path 最多 16 KiB UTF-8。可显式调用的原始
 `SKILL.md` 文件最多 512 KiB，含 block 间空行的实际序列化总量最多 2 MiB，内容预览最多 256 KiB；
-非法 UTF-8 文件显示为 Invalid，不会被发送。Skill 正文中的 XML 1.0 非法 control character，以及
+非法 UTF-8 文件显示为 Invalid，不会被发送。隐式读取可使用最多 10 MiB 的有效 Skill 正文，不受显式 wrapper 门槛影响；超过读取上限则为 Invalid。Skill 正文中的 XML 1.0 非法 control character，以及
 name/path 中的 CR/LF 也会阻止显式发送并保留诊断；普通正文换行仍可使用。选择失效和 payload 超限分别返回稳定的
 409/413；其他 run preparation 内部失败只返回通用 500，不包含内部 path、byte count 或异常消息。
 Shadowed selection 的 409 会额外返回当前 winner 的 canonical `winnerPath`；其他失败原因不包含该字段。
@@ -197,3 +194,7 @@ canonical target 可以成为 snapshot member；因此不要在 Skills roots 中
 普通开合使用宽度与透明度过渡，拖动时直接跟手；系统减少动态效果设置取消非必要过渡。布局偏好保存在本机。文档编辑仍未启用，当前不承诺未保存 Markdown 编辑或跨重启恢复文件标签。
 
 文件读取失败时保留当前标签和错误信息；点击文档工具栏“刷新”重新读取本地文件，成功后恢复预览。刷新会同时更新文件列表并加载磁盘上的最新已保存内容。没有打开文件时也可在筛选框旁刷新列表；列表失败会提示并允许重试。关闭再打开面板会重新读取列表，保留当前标签与预览。
+
+Skill 中引用的资料可从该 Skill 目录内按需读取；仅限已启用的隐式 Skill 或本轮明确选择的 Skill。
+引用资源不会自动获得写入、执行或访问其他目录的权限。Agent 文本改稿遇到非法 UTF-8 或含 NUL 的
+目标文件时会明确失败，原文件保留，不展示有损文本审批预览。
