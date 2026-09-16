@@ -254,3 +254,5 @@ MINIMAX_CN_API_KEY=... pnpm verify:screenshots:live
 进程身份探测依赖 Unix 系统的 `/bin/ps` 或 Windows 自带 Windows PowerShell。测试不得把当前 PID 冒充旧进程而省略启动时间；PID 复用回归应给出不同的历史启动时间。
 
 Bash 崩溃回归：`pnpm --filter @marginalia/pi-server test -- run-process.test.ts supervised-bash.test.ts`。使用真实 pi Session 和 Bash，仅替换模型流；验证 Ask 批准前无写入、Read-only 无 Bash，以及 server SIGKILL 后重启的新文件不会被旧 shell 延迟覆盖。不要用停在 fake approval 的测试替代活动工具进程测试。
+
+真实 Bash worker 测试包含 Node/pi 冷启动，在 CI 并发负载下可能超过 Vitest 默认 5 秒；`apps/pi-server/test/supervised-bash.test.ts` 单独使用 20 秒测试与清理预算，不改变生产 Bash 超时。测试清理先 abort 并等待执行 settle，再删除临时 workspace；失败或超时也不能让存活 worker 访问已删除目录。
