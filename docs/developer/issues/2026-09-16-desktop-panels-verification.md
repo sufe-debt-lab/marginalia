@@ -95,3 +95,5 @@ Standards 评审实际查看 core-ui 全部 18 张，Spec 评审查看 seeded-wo
 ## PR 前最终复查
 
 再次读取 GitHub Issue #21 全文、评论（无）和父规格 #2，原生 blocked_by 仍为空。规范与需求两路独立审查均未发现阻止 PR 的实质问题，主审核对结论与代码后再次运行完整门禁。PR 只包含该独立工作树的 Issue #21 改动，未纳入原目录的无关原型改动。
+
+实现提交：`927b9da`。PR 前最终完整 `pnpm verify` 通过，测试计数仍为 desktop 452、pi-server 295（1 skipped）、chat-core 38、文档 30。相对 `origin/main` 的静态与 diff-impact 文档检查通过。
