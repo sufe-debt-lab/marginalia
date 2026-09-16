@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { migrate } from "../src/db/migrations.js";
 import {
   createProvider,
@@ -21,9 +21,10 @@ import type {
 } from "../src/skills/types.js";
 
 const dbs: Database.Database[] = [];
-const capability = { token: "test-token", allowedOrigins: new Set<string>() };
+const loopbackAccess = { bearer: "test-token", allowedOrigins: new Set(["null"]) };
 const runHeaders = {
   authorization: "Bearer test-token",
+  origin: "null",
   "content-type": "application/json"
 };
 function memoryDb() {
@@ -168,7 +169,7 @@ describe("provider chat migrations", () => {
     const response = await app.request(`/sessions/${session.id}`, {
       method: "PATCH",
       body: JSON.stringify({ model: "gpt-4.1" }),
-      headers: { "content-type": "application/json" }
+      headers: runHeaders
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ id: session.id, model: "gpt-4.1" });
@@ -193,7 +194,7 @@ describe("provider API", () => {
     const provider = await (
       await app.request("/providers", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: runHeaders,
         body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
       })
     ).json();
@@ -230,7 +231,7 @@ describe("chat runs", () => {
       }
     };
     const skillCatalog = fixedCatalog();
-    const app = createApp({ db, agentClient, capability, skillCatalog });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog });
 
     const first = await runRequest(app, session.id, providerId);
     const firstBody = first.text();
@@ -270,7 +271,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability, skillCatalog });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog });
 
     const response = await runRequest(app, session.id, providerId, { skills: [] });
     await response.text();
@@ -322,7 +323,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability, skillCatalog });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog });
     fs.unlinkSync(aliasRoot);
     fs.symlinkSync(retargetedRoot, aliasRoot, "dir");
 
@@ -355,7 +356,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability, skillCatalog });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog });
 
     const invalid = await runRequest(app, session.id, providerId, {
       skills: [{ name: "missing", path: "/tmp/missing/SKILL.md" }]
@@ -423,7 +424,7 @@ describe("chat runs", () => {
     const prepare = vi.fn(async () => preparedRun([]));
     const app = createApp({
       db,
-      capability,
+      loopbackAccess,
       skillCatalog: fixedCatalog(catalogSnapshot({ candidates: [shadowed] })),
       agentClient: {
         prepare,
@@ -459,7 +460,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability, skillCatalog });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog });
 
     for (const selection of [
       { name: "n".repeat(16 * 1024 + 1), path: "/tmp/name/SKILL.md" },
@@ -485,7 +486,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability, skillCatalog: fixedCatalog() });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog: fixedCatalog() });
 
     const declared = await app.request(
       new Request(`http://localhost/sessions/${session.id}/runs`, {
@@ -518,7 +519,8 @@ describe("chat runs", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "content-length": String(4 * 1024 * 1024 + 1)
+        "content-length": String(4 * 1024 * 1024 + 1),
+        origin: "null"
       },
       body: "{}"
     });
@@ -551,7 +553,7 @@ describe("chat runs", () => {
       current: () => null,
       setEnabled: async () => catalogSnapshot()
     };
-    const app = createApp({ db, agentClient, capability, skillCatalog });
+    const app = createApp({ db, agentClient, loopbackAccess, skillCatalog });
 
     const refreshFailure = await runRequest(app, session.id, providerId);
     expect(refreshFailure.status).toBe(500);
@@ -615,7 +617,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
     const first = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
       headers: runHeaders,
@@ -671,7 +673,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
 
     const first = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
@@ -726,7 +728,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
 
     const first = await runRequest(app, session.id, providerId);
     const firstBody = first.text();
@@ -777,7 +779,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
 
     const first = await runRequest(app, session.id, providerId);
     const firstBody = first.text();
@@ -805,7 +807,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
 
     const failed = await runRequest(app, session.id, providerId, { contextFiles: 42 });
     expect(failed.status).toBe(500);
@@ -835,7 +837,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
 
     const failed = await runRequest(app, session.id, providerId);
     expect(failed.status).toBe(500);
@@ -868,7 +870,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
     db.exec(
       "create trigger reject_run before insert on runs begin select raise(abort, 'create run failed'); end"
     );
@@ -905,7 +907,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient: agentClient as any, capability });
+    const app = createApp({ db, agentClient: agentClient as any, loopbackAccess });
 
     const response = await runRequest(app, session.id, providerId);
     expect(await response.text()).toContain('"type":"run_failed"');
@@ -938,7 +940,7 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
 
     const response = await runRequest(app, session.id, providerId);
     await response.text();
@@ -960,7 +962,7 @@ describe("chat runs", () => {
         throw new Error("cleanup failed");
       }
     };
-    const app = createApp({ db, agentClient, capability });
+    const app = createApp({ db, agentClient, loopbackAccess });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
@@ -1004,11 +1006,11 @@ describe("chat runs", () => {
       } as unknown as AgentSessionEvent
     ]);
 
-    const app = createApp({ db, agentClient: fake, capability });
+    const app = createApp({ db, agentClient: fake, loopbackAccess });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: runHeaders,
         body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
       })
     ).json();
@@ -1062,11 +1064,11 @@ describe("chat runs", () => {
       } as unknown as AgentSessionEvent
     ]);
 
-    const app = createApp({ db, agentClient: fake, capability });
+    const app = createApp({ db, agentClient: fake, loopbackAccess });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: runHeaders,
         body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
       })
     ).json();
@@ -1119,11 +1121,11 @@ describe("chat runs", () => {
         return 0;
       }
     };
-    const app = createApp({ db, agentClient: stubClient, capability });
+    const app = createApp({ db, agentClient: stubClient, loopbackAccess });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: runHeaders,
         body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
       })
     ).json();
@@ -1173,11 +1175,11 @@ describe("chat runs", () => {
       }
     };
 
-    const app = createApp({ db, agentClient: stubClient as any, capability });
+    const app = createApp({ db, agentClient: stubClient as any, loopbackAccess });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: runHeaders,
         body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
       })
     ).json();
@@ -1232,11 +1234,11 @@ describe("chat runs", () => {
       }
     };
 
-    const app = createApp({ db, agentClient: stubClient as any, capability });
+    const app = createApp({ db, agentClient: stubClient as any, loopbackAccess });
     const provider = await (
       await app.request("/providers", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: runHeaders,
         body: JSON.stringify({ name: "Minimax", apiKey: "sk-test", defaultModel: "MiniMax-M2.7" })
       })
     ).json();

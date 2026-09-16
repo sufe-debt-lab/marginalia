@@ -68,10 +68,10 @@ import { ModelAvailabilityChecker } from "./providers/provider-availability.js";
 import { SessionRunLeases } from "./run/session-run-leases.js";
 import { RequestBodyTooLargeError, readJsonBodyWithinLimit } from "./run/request-body.js";
 import {
-  authorizeCapability,
+  authorizeLoopbackAccess,
   isAllowedOrigin,
-  type CapabilityPolicy
-} from "./security/capability.js";
+  type LoopbackAccessPolicy
+} from "./security/loopback-access.js";
 import {
   SkillCandidateNotFoundError,
   createSkillCatalogService,
@@ -93,7 +93,7 @@ export type AppOptions = {
   modelRegistry?: ModelRegistry;
   availabilityChecker?: ModelAvailabilityChecker;
   documentReader?: (rootDir: string, relativePath: string) => Promise<DocumentContent>;
-  capability?: CapabilityPolicy;
+  loopbackAccess?: LoopbackAccessPolicy;
   skillCatalog?: SkillCatalogService;
 };
 
@@ -130,7 +130,10 @@ export function createApp(options: AppOptions = {}) {
     );
   const availabilityChecker =
     options.availabilityChecker ?? new ModelAvailabilityChecker(modelRegistry);
-  const capability = options.capability ?? { token: null, allowedOrigins: new Set<string>() };
+  const loopbackAccess = options.loopbackAccess ?? {
+    bearer: null,
+    allowedOrigins: new Set<string>()
+  };
   const runLeases = new SessionRunLeases();
   let shuttingDown = false;
   const activeRuns = new Map<string, { stop(reason: string): void; settled: Promise<void> }>();
@@ -146,19 +149,29 @@ export function createApp(options: AppOptions = {}) {
     });
 
   const app = new Hono();
+  app.use("*", async (c, next) => {
+    if (c.req.path === "/health" && c.req.method === "GET") return next();
+
+    const accessFailure = authorizeLoopbackAccess(c.req.raw, loopbackAccess);
+    if (accessFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
+    return next();
+  });
   app.use(
     "*",
     cors({
-      origin: (origin) => (isAllowedOrigin(origin || null, capability) ? origin : null),
+      origin: (origin) => (isAllowedOrigin(origin || null, loopbackAccess) ? origin : null),
       allowHeaders: ["Authorization", "Content-Type"]
     })
   );
+  app.use("*", async (c, next) => {
+    if ((c.req.path === "/health" && c.req.method === "GET") || c.req.method === "OPTIONS") {
+      return next();
+    }
+    const accessFailure = authorizeLoopbackAccess(c.req.raw, loopbackAccess);
+    return accessFailure === 401 ? c.json({ error: "unauthorized" }, 401) : next();
+  });
   app.get("/health", (c) => c.json(createHealthInfo(startedAt)));
   app.get("/skills", async (c) => {
-    const capabilityFailure = authorizeCapability(c.req.raw, capability);
-    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
-    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
-
     const workspaceId = c.req.query("workspaceId");
     const workspace = workspaceId === undefined ? null : getWorkspace(db, workspaceId);
     if (workspaceId !== undefined && !workspace) {
@@ -175,10 +188,6 @@ export function createApp(options: AppOptions = {}) {
     }
   });
   app.patch("/skills/state", async (c) => {
-    const capabilityFailure = authorizeCapability(c.req.raw, capability);
-    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
-    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
-
     let body: unknown;
     try {
       body = await c.req.json();
@@ -217,10 +226,6 @@ export function createApp(options: AppOptions = {}) {
     }
   });
   app.get("/skills/content", async (c) => {
-    const capabilityFailure = authorizeCapability(c.req.raw, capability);
-    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
-    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
-
     const workspaceId = c.req.query("workspaceId");
     const workspace = workspaceId === undefined ? null : getWorkspace(db, workspaceId);
     if (workspaceId !== undefined && !workspace) {
@@ -433,9 +438,6 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post("/sessions/:sessionId/runs", async (c) => {
-    const capabilityFailure = authorizeCapability(c.req.raw, capability);
-    if (capabilityFailure === 401) return c.json({ error: "unauthorized" }, 401);
-    if (capabilityFailure === 403) return c.json({ error: "origin_forbidden" }, 403);
     if (shuttingDown) return c.json({ error: "server_shutting_down" }, 503);
 
     const sessionId = c.req.param("sessionId");

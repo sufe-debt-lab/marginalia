@@ -4,7 +4,7 @@ record_id: PLAN-P2-SKILLS-001
 status: active
 source_spec_id: SPEC-P2-SKILLS-001
 created: 2026-07-18
-updated: 2026-07-19
+updated: 2026-09-16
 target_milestone: post-M0
 owner: repository-maintainers
 docs_impact:
@@ -2873,3 +2873,51 @@ Expected: worktree clean；任务 commits 与归档引用一致；docs check PAS
 - 2026-07-19 fresh full verification：`pnpm verify` 通过（docs 28、chat-core 38、pi-server 294 + 1 opt-in
   skip、desktop 440，lint/typecheck/build 全绿）；`pnpm verify:visual` 的完整报告为 39 unchanged、
   `changed=0 new=0 orphan=0 errors=0`，逐项检查后无需更新 baseline。
+
+## 2026-09-16 Issue #3 后续实施
+
+以 GitHub #3 及父规格 #2 的本地访问章节为验收来源；原生 blocked-by 列表为空。已有 Skills 能力继续复用。
+本次覆盖旧计划中仅 Run/Skills 认证的阶段性合同：所有敏感接口统一要求 Loopback Access bearer 与精确 Origin；
+renderer 不再持有 bearer，启用 sandbox，通过受限 preload 访问。二进制预览保留原生流式读取。
+该修订不关闭整个 Skills 计划，也不实现 Provider keychain、workspace 工具隔离或 Run reconciliation。
+
+- [x] 核对 Issue 全文/评论、父规格、GitHub 原生依赖、当前代码和 PR #16 的可复用部分。
+- [x] HTTP/SSE、Electron main/preload、client 行为先红后绿；增加默认拒绝、主 frame 限制、取消和脱敏。
+- [x] 同步用户配置、API、架构、开发、打包、安全审计和产品状态。
+- [x] 完整 verify、Electron 视觉逐张裁决、packaged smoke 和最终代码评审。
+
+实现与复核在独立 worktree 完成；旧 PR #16 的验证记录不视为本次验证证据。最终复查通过后，按维护者授权提交并向 main 创建独立 PR，保留旧 PR 和 Issue 状态。
+
+### Issue #3 Implementation Outcome
+
+- 完成：所有敏感 HTTP route 统一认证，只有 GET health 公开；缺失/错误 bearer、恶意/缺失 Origin
+  返回稳定错误；允许 Origin 的 OPTIONS 无需 bearer。默认缺失 policy 也拒绝。没有新增聊天事件或数据库状态。
+- Desktop：bearer 仅 main/server 内存持有，renderer sandbox 开启；主 frame IPC 校验、流取消和 renderer
+  crash/reload 清理均有测试；日志跨 chunk 脱敏。raw 预览采用限定路由/主 frame 的 Chromium 流。
+- 红绿证据：workspace 无凭据原为 200（预期 401）；缺失 policy 原为 200（预期 403）；旧 renderer
+  sandbox/transport、预先 abort、reader cancel、日志脱敏和 renderer crash 的行为测试均先失败再通过。
+- 实施复用 PR #16 的成熟改动，未直接复制其结论；修复旧 Blob 预览、默认放行和 lifecycle 缺口。
+  packaged smoke 另复现并修正 scheme 缺少 corsEnabled，现已通过真实打包应用验证。
+- 验证：focused server/client/main/preload tests、两包 typecheck 通过；pnpm verify 通过，docs 30、
+  chat-core 38、pi-server 334、desktop 470，共 872 tests；1 项 opt-in 外部模型测试跳过。
+- Electron 实际交互覆盖 Provider 设置、语言/导航、消息/附件、批准/拒绝、Skills 选择/禁用/修复。
+  pnpm verify:visual 为 35 unchanged、4 changed、0 new/orphan/errors。逐张裁决：settings-general-zh
+  隐藏随机端口是预期变化，标题字体为主机渲染差异，无布局回归；skills-settings、skills-global-only、
+  skill-diagnostics 为隔离 worktree 路径换行及悬停状态差异，内容/操作正常。保留基线，不把环境差异固化。
+- macOS arm64 package 与 smoke 通过：health 200、protected 200、unauthenticated 401、sandbox true、
+  真实文本/图片预览、其他窗口拒绝访问、server 重启后 SQLite workspace 保留。临时 home/workspace/SQLite，
+  环境 allowlist，可控 Agent，无真实模型调用。
+- 双轴评审：Standards 发现 1 项 lifecycle 问题，Spec 发现 2 项（smoke 凭据隔离、旧 API 文档）；
+  全部修复并经各 reviewer 复查，无剩余发现。
+- 同步正式文档：user guide/configuration，developer API/architecture/development/build-and-release，
+  两份安全审计、product status。未关闭整个 Skills 计划；此处仅记录 #3 的完成证据。
+- 限制：Windows/Linux packaged、签名安装、干净客户机、真实模型未验证；Provider keychain (#4)、
+  workspace 工具隔离 (#5)、Run reconciliation (#6) 不在本任务范围，保持原有未完成状态。
+- 实现引用：基于 0105cbf 的 `codex/issue-3-loopback-boundary` 分支；最终复查通过后按维护者授权提交、推送并创建 PR，不合并或关闭 Issue。
+
+### PR #34 合并 main 后验证
+
+- 合并 main 的 950f732，保留 #21 的面板焦点与内容生命周期，同时保留 #3 的无 renderer bearer 接口。
+- 更新新增 AppShell 测试的调用签名。面板截图场景的 page.route 拦截不适用于 main-owned HTTP，改用临时移走 fixture 文件/目录触发真实读取失败，并在 finally 恢复，保持失败恢复验收。
+- AppShell focused 17 tests 通过；完整 pnpm verify 通过（docs 30、chat-core 38、pi-server 334、desktop 478；1 live skipped）。
+- pnpm verify:visual：42 张，39 unchanged、3 changed、0 new/orphan/errors。逐张检查 skills-settings、skills-global-only、skill-diagnostics，差异仅在隔离 worktree 路径换行；#21 面板真实失败恢复、全屏焦点、宽度和内容保留均通过。不更新基线。

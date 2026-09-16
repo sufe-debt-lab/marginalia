@@ -1,7 +1,7 @@
-import { watchProcessOwner } from "./run/process-owner.js";
-import { consumeCapabilityEnvironment } from "./security/capability.js";
+import { consumeLoopbackAccessEnvironment } from "./security/loopback-access.js";
 
-const capability = consumeCapabilityEnvironment(process.env);
+const loopbackAccess = consumeLoopbackAccessEnvironment(process.env);
+import { watchProcessOwner } from "./run/process-owner.js";
 const parentPid = Number(process.env.MARGINALIA_PARENT_PID);
 delete process.env.MARGINALIA_PARENT_PID;
 const [{ serve }, { createApp }, { ScriptedFakeAgentClient }] = await Promise.all([
@@ -17,7 +17,7 @@ const agentClient =
 
 const app = createApp({
   agentClient,
-  capability
+  loopbackAccess
 });
 
 const server = serve(

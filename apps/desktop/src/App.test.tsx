@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/app-store.js";
 import { App } from "./App.js";
 
+vi.mock("@/api/desktop-transport.js", () => ({
+  desktopPiServerFetch: (input: string, init?: RequestInit) => globalThis.fetch(input, init)
+}));
+
 describe("App", () => {
   beforeEach(() => {
     cleanup();
@@ -27,8 +31,7 @@ describe("App", () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "secret-token"
+        url: "marginalia://pi-server"
       })),
       restartPiServer: vi.fn()
     };
@@ -36,7 +39,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument());
-    expect(global.fetch).toHaveBeenCalledWith("http://127.0.0.1:4312/health");
+    expect(global.fetch).toHaveBeenCalledWith("marginalia://pi-server/health", undefined);
   });
 
   it("shows an error when the desktop bridge is unavailable", async () => {
@@ -55,8 +58,7 @@ describe("App", () => {
         .mockResolvedValueOnce({ status: "starting" as const })
         .mockResolvedValueOnce({
           status: "ready" as const,
-          url: "http://127.0.0.1:4312",
-          capabilityToken: "secret-token"
+          url: "marginalia://pi-server"
         }),
       restartPiServer: vi.fn()
     };
@@ -68,7 +70,7 @@ describe("App", () => {
     await waitFor(() => expect(window.marginalia?.getPiServerStatus).toHaveBeenCalledTimes(1));
 
     await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument());
-    expect(window.marginalia.getPiServerStatus).toHaveBeenCalledTimes(2);
+    expect(window.marginalia?.getPiServerStatus).toHaveBeenCalledTimes(2);
   });
 
   it("retries a failed pi-server start", async () => {
@@ -80,8 +82,7 @@ describe("App", () => {
       })),
       restartPiServer: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "secret-token"
+        url: "marginalia://pi-server"
       }))
     };
 
@@ -98,8 +99,7 @@ describe("App", () => {
     window.marginalia = {
       getPiServerStatus: vi.fn(async () => ({
         status: "ready" as const,
-        url: "http://127.0.0.1:4312",
-        capabilityToken: "secret-token"
+        url: "marginalia://pi-server"
       })),
       restartPiServer: vi.fn()
     };
@@ -127,7 +127,7 @@ describe("App", () => {
     expect(new URLSearchParams(window.location.search).has("capabilityToken")).toBe(false);
   });
 
-  it("requires both the browser debug server query and token fragment", async () => {
+  it("does not enable browser access from the server query alone", async () => {
     window.history.replaceState({}, "", "/?serverUrl=http://127.0.0.1:4312");
 
     render(<App />);
@@ -138,7 +138,7 @@ describe("App", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("uses the browser debug token fragment and clears it immediately", async () => {
+  it("rejects a browser debug token fragment and clears it immediately", async () => {
     window.history.replaceState(
       {},
       "",
@@ -147,9 +147,13 @@ describe("App", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument());
-    expect(global.fetch).toHaveBeenCalledWith("http://127.0.0.1:4312/health");
-    expect(window.location.search).toBe("");
+    expect(
+      screen.getByText("The local service is unavailable. Retry to restart it.")
+    ).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).get("serverUrl")).toBe(
+      "http://127.0.0.1:4312"
+    );
     expect(window.location.hash).toBe("");
   });
   it("notices a server exit after ready and restarts through Retry", async () => {
@@ -158,14 +162,13 @@ describe("App", () => {
       getPiServerStatus: vi.fn(async () =>
         failed
           ? { status: "failed" as const, error: "pi-server exited", logs: [] }
-          : { status: "ready" as const, url: "http://127.0.0.1:4312", capabilityToken: "fixture" }
+          : { status: "ready" as const, url: "marginalia://pi-server" }
       ),
       restartPiServer: vi.fn(async () => {
         failed = false;
         return {
           status: "ready" as const,
-          url: "http://127.0.0.1:4313",
-          capabilityToken: "new-fixture"
+          url: "marginalia://pi-server"
         };
       })
     };

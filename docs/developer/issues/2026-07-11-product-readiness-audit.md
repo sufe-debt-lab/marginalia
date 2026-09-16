@@ -30,12 +30,12 @@ Frontmatter 的 `verified_commit` 是本轮未提交修复所基于的 commit；
 
 | ID                | Priority | Status      | Last verified | Target                     | Evidence                                                                                                                              |
 | ----------------- | -------- | ----------- | ------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| P0-SEC-001        | P0       | open        | 2026-07-18    | M0-trustworthy-local-alpha | `apps/pi-server/src/security/capability.ts`、`apps/pi-server/src/app.ts`、`apps/desktop/electron/pi-server-spawner.ts`                |
+| P0-SEC-001        | P0       | resolved    | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/security/loopback-access.ts`、`apps/pi-server/src/app.ts`、`apps/desktop/electron/pi-server-spawner.ts`           |
 | P0-SEC-002        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/pi-coding-agent-client.ts`、`apps/pi-server/src/agent/approval-gateway.ts`                                  |
 | P0-SEC-003        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/approval-policy.ts`                                                                                         |
 | P0-SEC-004        | P0       | resolved    | 2026-07-19    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/agent-session-registry.ts`、`apps/pi-server/src/agent/pi-coding-agent-client.ts`                            |
 | P0-SEC-005        | P0       | open        | 2026-08-13    | M0-trustworthy-local-alpha | `apps/pi-server/src/files/path-sandbox.ts`、`apps/pi-server/src/app.ts`、`apps/pi-server/test/files-write.test.ts`                    |
-| P0-SEC-006        | P0       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
+| P0-SEC-006        | P0       | open        | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/db/repositories.ts`、`apps/desktop/electron/main.ts`                                                              |
 | P0-RUN-001        | P0       | in-progress | 2026-09-16    | M0-trustworthy-local-alpha | `apps/pi-server/src/app.ts`、`apps/pi-server/src/agent/agent-session-registry.ts`、`apps/desktop/src/hooks/useStreamingChat.ts`       |
 | P1-PROVIDER-001   | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/pi-server/src/agent/provider-id.ts`、`apps/pi-server/src/providers/provider-availability.ts`                                    |
 | P1-DOCUMENT-001   | P1       | open        | 2026-07-11    | post-M0                    | `apps/pi-server/src/files/document-reader.ts`、`apps/desktop/src/documents/DocumentViewer.tsx`                                        |
@@ -44,28 +44,29 @@ Frontmatter 的 `verified_commit` 是本轮未提交修复所基于的 commit；
 | P1-UX-001         | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src/chat/MessageStream.tsx`、`apps/desktop/src/chat/Composer/Composer.tsx`、`apps/desktop/src/settings/GeneralPane.tsx` |
 | P1-MESSAGE-001    | P1       | open        | 2026-07-11    | post-M0                    | `docs/internal/plans/2026-07-10-message-stream.md`                                                                                    |
 | P1-QUALITY-001    | P1       | open        | 2026-07-13    | M0-trustworthy-local-alpha | `apps/desktop/scripts/compare-screenshots.mjs`、2026-07-11 视觉审计                                                                   |
-| P1-RELEASE-001    | P1       | open        | 2026-07-11    | public-release             | `apps/desktop/electron-builder.yml`、`.github/workflows/build-desktop.yml`                                                            |
+| P1-RELEASE-001    | P1       | open        | 2026-09-16    | public-release             | `apps/desktop/electron-builder.yml`、`apps/desktop/scripts/smoke-packaged.mjs`、`.github/workflows/build-desktop.yml`                 |
 | P1-EXTENSIONS-001 | P1       | open        | 2026-07-18    | post-M0                    | `apps/desktop/src/chat/SkillPreconditionBanner.tsx`、`apps/desktop/src/settings/SkillsPane.tsx`                                       |
 | P1-A11Y-001       | P1       | open        | 2026-07-11    | M0-trustworthy-local-alpha | `apps/desktop/src`                                                                                                                    |
 | P1-DOCS-001       | P1       | in-progress | 2026-07-12    | M0-trustworthy-local-alpha | `scripts/docs-check.mjs`、`.github/workflows/ci.yml`、`.github/workflows/docs-gate.yml`                                               |
 
 <!-- readiness-issue-inventory:end -->
 
-## P0-SEC-001: Loopback API 只有局部认证
+## P0-SEC-001: Loopback API 统一认证
 
-Task 1 起加入局部缓解：Electron 为每个 pi-server 进程生成高熵 token，所有 run 与 Skills route 在读取业务数据
-前验证 bearer 和 Origin；CORS 只返回 packaged `null`/缺省 Origin 或已校验的开发 exact origin，
-不再反射任意网页来源。启动器在继承父进程环境前移除 capability token 和 allowed-origin，再注入
-本次启动生成/校验的值，缺失或无效 Vite 配置不会沿用旧 origin。
+已解决：Electron 为每个 pi-server 进程生成高熵 bearer，除 `GET /health` 外的全部 workspace、Session、
+Provider、文件、Skills、审批和 Run route 都在读取业务输入前统一验证 bearer 与 exact Origin。缺失/错误
+bearer 返回稳定 401，缺失/恶意 Origin 返回稳定 403，允许 Origin 下的错误保留 CORS header；preflight
+只对 allowlist Origin 返回 204。
 
-P0 继续 open：局部 capability 已覆盖 run 与 Skills route，但 workspace、provider、文件、审批等既有 route
-仍不验证 bearer，raw 文件 URL 也没有凭据边界；缺少 Origin 的本地进程不受浏览器 CORS 限制。随机
-loopback 端口和这项局部
-capability 都不是整套 API 的授权机制。
+renderer 不再接收实际 loopback URL 或 bearer。preload 返回逻辑 URL，并暴露受限的流式 request
+capability；Electron main 验证 IPC sender、scheme、host、method 和转发 header，丢弃 renderer
+Authorization/Cookie，并为 JSON、SSE、raw 文件和 Range 请求注入 main-owned bearer/Origin。逻辑 scheme
+不注册为页面可直接 fetch 的协议。BrowserWindow 已启用 sandbox。启动器
+在继承父环境前移除旧 bearer/origin，再注入本次值；pi-server 在 agent/tool 初始化前消费并从
+`process.env` 删除，普通日志、错误详情、SQLite、ready stdout 和 renderer state 不包含 bearer。
 
-修复目标：Electron 启动时生成进程级 secret，经 preload 提供给 renderer；除健康检查外的路由验证凭据；CORS 只允许明确的 renderer/dev origin；raw 文件不再依赖无认证 URL。
-
-验收：未认证请求稳定返回 401；任意网页 origin 无法读取或修改数据；renderer、重启和 packaged smoke test 通过。
+server route、desktop client、main/proxy、preload 和 packaged smoke 覆盖成功与拒绝路径。剩余威胁是能够
+读取同用户进程内存或控制 Electron main 的本机恶意软件；随机端口本身仍不是授权凭据。
 
 ## P0-SEC-002: Workspace 不是 agent 沙箱
 
@@ -118,11 +119,13 @@ lexical candidate，没有检查最近存在父目录。审计用 `workspace/lin
 
 ## P0-SEC-006: Secret 与 renderer 缺少发布级保护
 
-Provider API key 直接写入 SQLite `env_vars.value`。数据库副本、备份、崩溃采集或其他本地进程可读取 key。Electron 同时配置 `sandbox: false`，扩大了 renderer 被利用后的能力面。
+Provider API key 直接写入 SQLite `env_vars.value`。数据库副本、备份、崩溃采集或其他本地进程可读取
+key。Electron renderer sandbox 已开启，这一子项已完成，但不会保护 SQLite 中的明文 secret。
 
-修复目标：secret 移到 OS keychain 或等价加密存储，SQLite 只保存引用和非敏感元数据；启用 renderer sandbox，保持 context isolation 和窄 preload API。
+修复目标：secret 移到 OS keychain 或等价加密存储，SQLite 只保存引用和非敏感元数据；继续保持
+renderer sandbox、context isolation 和窄 preload API。
 
-验收：SQLite 不含明文 key；迁移和删除流程可恢复；sandbox 下开发与 packaged 流程通过。
+验收：SQLite 不含明文 key；迁移和删除流程可恢复。sandbox 下开发与 packaged 本机访问流程已通过。
 
 ## P0-RUN-001: Run 缺少跨进程稳定所有权与完整恢复
 
@@ -192,7 +195,10 @@ MessageStream 在尾部内容变化时始终调用 `scrollIntoView()`，用户�
 
 ## P1-RELEASE-001: 发布链路尚未完成
 
-macOS 配置 `identity: null`，Windows 也未签名；没有 macOS notarization、自动更新和 LICENSE。现有 workflow 只在 tag 或手动触发时打 macOS/Windows 包，Linux target 不在 CI，安装包 smoke test 仍靠人工。
+macOS 配置 `identity: null`，Windows 也未签名；没有 macOS notarization、自动更新和 LICENSE。现有
+workflow 只在 tag 或手动触发时打 macOS/Windows 包，Linux target 不在 CI。unpacked packaged 自动
+smoke 已覆盖应用启动、健康检查、受保护成功路径和直接未认证拒绝；签名安装、卸载和干净客户机验证仍
+未自动化。
 
 修复目标：公开发布前补签名、公证、更新、许可证、跨平台安装测试和回滚说明。
 
@@ -229,3 +235,14 @@ snapshot override 注入 effective Skills。当前没有创建、导入、安装
 修复目标：先关闭 staged 深审阻断，再提交并评审治理变更；随后在 GitHub 把可信文档 gate 配为 required check，并启用 Code Owner 审批保护门禁脚本、策略和 workflow。
 
 验收：新增或删除 HTTP 路由而不更新 API inventory 时失败；高信号代码变化缺少对应正式文档时失败；完成的 spec/plan 不留在活跃目录。
+
+## Issue #3 的流式预览边界
+
+JSON 和 SSE 复用受限 preload IPC；原始 pi 事件和 ChatEntry 不变。二进制预览使用
+`marginalia-file://pi-server`，只代理 GET/HEAD 的 workspace raw-file 路由；Electron webRequest
+仅允许应用主 frame 的资源请求，拒绝其他窗口、子 frame 和页面导航。main 注入 bearer/Origin，
+Chromium 直接消费响应流，文件切换由原生资源生命周期及 PDF.js destroy 取消请求，不创建整文件 Blob。
+浏览器直接打开 Vite 页面没有这些能力；验收必须启动 Electron。
+
+`createApp` 不提供无认证测试旁路。功能测试使用显式测试 bearer；边界测试调用真实 HTTP 路由，
+覆盖拒绝、重新认证和 SQLite 重开。进程重启生成新 bearer，旧 bearer 失效；应用数据与文件不受影响。

@@ -22,8 +22,8 @@ class FakeChild extends EventEmitter {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("createLaunchEnvironment", () => {
-  it("removes inherited capability settings when no renderer origin is allowed", async () => {
-    vi.stubEnv("MARGINALIA_CAPABILITY_TOKEN", "stale-token");
+  it("removes inherited loopback access settings when no renderer origin is allowed", async () => {
+    vi.stubEnv("MARGINALIA_LOOPBACK_BEARER", "stale-token");
     vi.stubEnv("MARGINALIA_ALLOWED_ORIGIN", "https://evil.example");
     const mod = await import("./pi-server-spawner.js");
     const createLaunchEnvironment = Reflect.get(mod, "createLaunchEnvironment") as
@@ -31,17 +31,17 @@ describe("createLaunchEnvironment", () => {
       | undefined;
 
     const environment = createLaunchEnvironment?.({
-      MARGINALIA_CAPABILITY_TOKEN: "fresh-token"
+      MARGINALIA_LOOPBACK_BEARER: "fresh-token"
     });
 
     expect(environment).toEqual(
-      expect.objectContaining({ MARGINALIA_CAPABILITY_TOKEN: "fresh-token" })
+      expect.objectContaining({ MARGINALIA_LOOPBACK_BEARER: "fresh-token" })
     );
     expect(environment).not.toHaveProperty("MARGINALIA_ALLOWED_ORIGIN");
   });
 
-  it("replaces inherited capability settings with validated launch additions", async () => {
-    vi.stubEnv("MARGINALIA_CAPABILITY_TOKEN", "stale-token");
+  it("replaces inherited loopback access settings with validated launch additions", async () => {
+    vi.stubEnv("MARGINALIA_LOOPBACK_BEARER", "stale-token");
     vi.stubEnv("MARGINALIA_ALLOWED_ORIGIN", "https://evil.example");
     const mod = await import("./pi-server-spawner.js");
     const createLaunchEnvironment = Reflect.get(mod, "createLaunchEnvironment") as
@@ -49,14 +49,14 @@ describe("createLaunchEnvironment", () => {
       | undefined;
 
     const environment = createLaunchEnvironment?.({
-      MARGINALIA_CAPABILITY_TOKEN: "fresh-token",
+      MARGINALIA_LOOPBACK_BEARER: "fresh-token",
       MARGINALIA_ALLOWED_ORIGIN: "http://127.0.0.1:5173"
     });
 
     expect(environment).toEqual(
       expect.objectContaining({
         MARGINALIA_ALLOWED_ORIGIN: "http://127.0.0.1:5173",
-        MARGINALIA_CAPABILITY_TOKEN: "fresh-token"
+        MARGINALIA_LOOPBACK_BEARER: "fresh-token"
       })
     );
   });
@@ -111,7 +111,7 @@ describe("startPiServer", () => {
       launch,
       scriptPath: "/res/pi-server/dist/index.js",
       timeoutMs: 1000,
-      capabilityToken: "fixed-token",
+      bearer: "fixed-token",
       allowedOrigin: "http://127.0.0.1:5173"
     });
 
@@ -119,7 +119,7 @@ describe("startPiServer", () => {
 
     expect(launch).toHaveBeenCalledWith("/res/pi-server/dist/index.js", "/res/pi-server", {
       MARGINALIA_ALLOWED_ORIGIN: "http://127.0.0.1:5173",
-      MARGINALIA_CAPABILITY_TOKEN: "fixed-token",
+      MARGINALIA_LOOPBACK_BEARER: "fixed-token",
       MARGINALIA_PARENT_PID: String(process.pid)
     });
 
@@ -127,7 +127,7 @@ describe("startPiServer", () => {
     expect(result).toMatchObject({
       status: "ready",
       url: "http://127.0.0.1:4321",
-      capabilityToken: "fixed-token"
+      bearer: "fixed-token"
     });
     if (result.status === "ready") expect(result.process).toBe(child);
   });
@@ -140,7 +140,7 @@ describe("startPiServer", () => {
       launch,
       scriptPath: "/tmp/pi-server/dist/server.js",
       timeoutMs: 50,
-      capabilityToken: "fixed-token"
+      bearer: "fixed-token"
     });
 
     child.stdout.emit("data", Buffer.from("booting\n"));
@@ -148,7 +148,7 @@ describe("startPiServer", () => {
     child.emit("exit", 1);
 
     expect(launch).toHaveBeenCalledWith("/tmp/pi-server/dist/server.js", "/tmp/pi-server", {
-      MARGINALIA_CAPABILITY_TOKEN: "fixed-token",
+      MARGINALIA_LOOPBACK_BEARER: "fixed-token",
       MARGINALIA_PARENT_PID: String(process.pid)
     });
     await expect(promise).resolves.toMatchObject({
@@ -172,7 +172,7 @@ it("reports a ready server's later exit without leaking its capability", async (
   const starting = startPiServer({
     launch: () => child as never,
     scriptPath: "/tmp/pi-server/dist/index.js",
-    capabilityToken: "private-token",
+    bearer: "private-token",
     onExit
   });
   child.stdout.emit("data", Buffer.from('{"type":"ready","port":4321}\n'));
@@ -236,4 +236,17 @@ it("keeps a timed-out startup owned until exit and ignores late ready output", a
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("redacts the process bearer from startup diagnostics even across chunks", async () => {
+  const child = new FakeChild();
+  const result = startPiServer({
+    launch: () => child as never,
+    bearer: "secret-process-bearer",
+    timeoutMs: 50
+  });
+  child.stderr.emit("data", Buffer.from("failed: secret-process-"));
+  child.stderr.emit("data", Buffer.from("bearer\n"));
+  child.emit("exit", 1);
+  expect(await result).toMatchObject({ status: "failed", logs: ["stderr: failed: [redacted]"] });
 });

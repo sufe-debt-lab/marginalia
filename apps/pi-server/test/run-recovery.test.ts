@@ -20,7 +20,7 @@ import { AgentSessionRegistry } from "../src/agent/agent-session-registry.js";
 import { PiCodingAgentClient } from "../src/agent/pi-coding-agent-client.js";
 import { ApprovalGateway } from "../src/agent/approval-gateway.js";
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp } from "../src/app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { migrate } from "../src/db/migrations.js";
 import {
   createApproval,
@@ -125,8 +125,7 @@ it("reconciles ownerless runs once while retaining terminal records, history and
   const app = createApp({
     db,
     agentClient: { prepare, cancelPending: () => 0, resolveApproval: () => false },
-    authStorage: AuthStorage.inMemory(),
-    capability: { token: "fixture", allowedOrigins: new Set() }
+    authStorage: AuthStorage.inMemory()
   });
   expect(
     db.prepare("select status, error, completed_at from runs where id = 'running'").get()
@@ -149,7 +148,7 @@ it("reconciles ownerless runs once while retaining terminal records, history and
   fs.writeFileSync(path.join(root, "note.md"), "user edited after crash");
   const next = await app.request(`/sessions/${session.id}/runs`, {
     method: "POST",
-    headers: { authorization: "Bearer fixture", "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({
       providerId: provider.id,
       message: "继续",
@@ -281,14 +280,13 @@ it("a real pi Session keeps unfinished tool history without replaying it on the 
     db,
     agentClient: agent,
     authStorage: auth,
-    modelRegistry,
-    capability: { token: "fixture", allowedOrigins: new Set() }
+    modelRegistry
   });
   try {
     expect(contexts).toHaveLength(0);
     const response = await app.request(`/sessions/${session.id}/runs`, {
       method: "POST",
-      headers: { authorization: "Bearer fixture", "content-type": "application/json" },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ providerId: provider.id, message: "继续", permission: "full" })
     });
     const events = await response.text();

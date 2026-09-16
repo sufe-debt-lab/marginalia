@@ -55,7 +55,8 @@ async function start(
       USERPROFILE: f.root,
       MARGINALIA_DB_PATH: f.dbPath,
       MARGINALIA_FAKE_AGENT: "1",
-      MARGINALIA_CAPABILITY_TOKEN: "process-fixture",
+      MARGINALIA_LOOPBACK_BEARER: "process-fixture",
+      MARGINALIA_ALLOWED_ORIGIN: "null",
       ...extraEnv
     },
     stdio: ["ignore", "pipe", "pipe"]
@@ -93,7 +94,11 @@ async function pendingRun(f: ReturnType<typeof fixture>, url: string) {
   const controller = new AbortController();
   const response = await fetch(`${url}/sessions/${f.session.id}/runs`, {
     method: "POST",
-    headers: { authorization: "Bearer process-fixture", "content-type": "application/json" },
+    headers: {
+      origin: "null",
+      authorization: "Bearer process-fixture",
+      "content-type": "application/json"
+    },
     body: JSON.stringify({ providerId: f.provider.id, message: "approval-edit" }),
     signal: controller.signal
   });
@@ -162,7 +167,11 @@ it("preserves a live owner's run, then reconciles a killed server idempotently a
   again.child.kill("SIGTERM");
   const next = await fetch(`${restarted.url}/sessions/${f.session.id}/runs`, {
     method: "POST",
-    headers: { authorization: "Bearer process-fixture", "content-type": "application/json" },
+    headers: {
+      origin: "null",
+      authorization: "Bearer process-fixture",
+      "content-type": "application/json"
+    },
     body: JSON.stringify({ providerId: f.provider.id, message: "继续", permission: "readonly" })
   });
   const text = await next.text();
@@ -198,7 +207,11 @@ it("kills an executing real Bash after server SIGKILL before it can overwrite fi
   const { child, url } = await start(f, {}, "test/fixtures/run-bash-server.ts");
   const response = await fetch(`${url}/sessions/${f.session.id}/runs`, {
     method: "POST",
-    headers: { authorization: "Bearer process-fixture", "content-type": "application/json" },
+    headers: {
+      origin: "null",
+      authorization: "Bearer process-fixture",
+      "content-type": "application/json"
+    },
     body: JSON.stringify({
       providerId: f.provider.id,
       permission: "full",
@@ -238,7 +251,11 @@ it("keeps real Bash behind Ask approval and unavailable in Read-only mode", asyn
   const run = (permission: string) =>
     fetch(`${url}/sessions/${f.session.id}/runs`, {
       method: "POST",
-      headers: { authorization: "Bearer process-fixture", "content-type": "application/json" },
+      headers: {
+        origin: "null",
+        authorization: "Bearer process-fixture",
+        "content-type": "application/json"
+      },
       body: JSON.stringify({
         providerId: f.provider.id,
         permission,
@@ -254,7 +271,11 @@ it("keeps real Bash behind Ask approval and unavailable in Read-only mode", asyn
   const approval = f.db.prepare("select id from approvals").get() as { id: string };
   const decision = await fetch(`${url}/sessions/${f.session.id}/approvals/${approval.id}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      origin: "null",
+      authorization: "Bearer process-fixture",
+      "content-type": "application/json"
+    },
     body: JSON.stringify({ approved: true })
   });
   expect(decision.status).toBe(200);

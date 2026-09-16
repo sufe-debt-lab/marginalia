@@ -26,14 +26,8 @@ function panelTabStops(root: Element | ShadowRoot): HTMLElement[] {
   });
 }
 
-export function AppShell({
-  serverUrl,
-  capabilityToken
-}: {
-  serverUrl: string;
-  capabilityToken: string;
-}) {
-  const api = useApi(serverUrl, capabilityToken);
+export function AppShell({ serverUrl }: { serverUrl: string }) {
+  const api = useApi(serverUrl);
   const { t } = useTranslation();
   const view = useAppStore((s) => s.view);
   const activeSessionId = useAppStore((s) => s.activeSessionId);

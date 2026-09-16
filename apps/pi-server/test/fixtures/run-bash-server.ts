@@ -65,7 +65,7 @@ const app = createApp({
     () => getModel("openai", "gpt-4o"),
     new ApprovalGateway()
   ),
-  capability: { token: "process-fixture", allowedOrigins: new Set() }
+  loopbackAccess: { bearer: "process-fixture", allowedOrigins: new Set(["null"]) }
 });
 const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 }, (info) =>
   console.log(JSON.stringify({ type: "ready", port: info.port }))
