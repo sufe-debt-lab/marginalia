@@ -1158,14 +1158,14 @@ async function scenarioApprovalFlow(ctx) {
 
 async function scenarioWorkspaceAccess(ctx) {
   const { workspace } = await ensureSeededWorkspace(ctx);
-  await ensureFixtureProvider(ctx.apiBase);
+  await ensureFixtureProvider(ctx.apiBase, ctx.apiJson);
   await resetUiState(ctx.page);
   await reloadApp(ctx.page);
   await goNewChat(ctx.page);
   await ctx.page.getByRole("button", { name: /tool permission|工具权限/i }).click();
   await ctx.page.getByRole("menuitem", { name: /standard access|标准访问/i }).click();
   const beforeIds = new Set(
-    (await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/sessions`)).map(
+    (await ctx.apiJson(ctx.apiBase, `/workspaces/${workspace.id}/sessions`)).map(
       (session) => session.id
     )
   );
@@ -1219,7 +1219,7 @@ async function scenarioWorkspaceAccess(ctx) {
   await ctx.page.getByRole("button", { name: /^(Allow|允许)$/i }).click();
   await waitTextCount("Tool completed.", 2);
   await assertBytes("approved replacement");
-  const session = (await apiJson(ctx.apiBase, `/workspaces/${workspace.id}/sessions`)).find(
+  const session = (await ctx.apiJson(ctx.apiBase, `/workspaces/${workspace.id}/sessions`)).find(
     (session) => !beforeIds.has(session.id)
   );
   if (!session) throw new Error("Created session missing from workspace");
@@ -1227,7 +1227,7 @@ async function scenarioWorkspaceAccess(ctx) {
   await ctx.page.getByText(session.title, { exact: true }).first().click();
   await waitTextCount("Tool completed.", 2);
   await assertBytes("approved replacement");
-  const preview = await apiJson(
+  const preview = await ctx.apiJson(
     ctx.apiBase,
     `/workspaces/${workspace.id}/files/content?path=access-check.md`
   );

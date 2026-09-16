@@ -105,3 +105,19 @@ rebase 后 `pnpm verify` 再次通过：docs 30、chat-core 38、pi-server 302 p
 
 本次用户已授权提交、推送及创建 PR；前文未提交说明仅记录前一轮交付状态。PR 关联 #5 而不自动关闭，
 跨平台实机、打包和跨进程安全限制保持不变。
+
+## PR #38 冲突解决（2026-09-16）
+
+再次 rebase 到 main `a63fd1f`，保留 #3 的统一 Loopback Access、renderer sandbox 和 main-owned
+transport；#5 的生产工具及文件边界不变。合并启动入口，文件写入与 HTTP/SSE 测试沿用 main 的
+认证测试入口；状态表保留 #3 已解决项及 #5 的剩余平台限制。
+
+真实 Electron 回归先复现 workspace-access 场景仍直接 fetch 旧地址而失败；将其 provider 准备、
+session 查询与文件预览改用既有 ctx.apiJson，随后实际新建、拒绝、过期审批、重试及重开历史通过。
+没有增加认证旁路或改变生产权限。完整 `pnpm verify` 再次通过：docs 30、chat-core 38、
+pi-server 341 passed / 1 skipped、desktop 478 passed；格式、lint、typecheck、build 通过。
+
+`pnpm verify:visual` 六个场景、44 张截图通过：39 unchanged、5 changed、0 new/orphan/errors。
+逐张裁决：workspace-access/overwrite-pending 的悬停状态与 diff 字形渲染不同；
+workspace-access/stale-approval 的聊天滚动位置不同，拒绝及过期错误均可见；三张 Skills 为
+worktree 路径换行与悬停背景差异。实际交互及文件字节断言均通过，无布局或内容回归，保留现有基线。

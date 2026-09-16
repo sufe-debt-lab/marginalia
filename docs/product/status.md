@@ -115,7 +115,7 @@ macOS arm64 packaged smoke 通过：公开 health 200、认证访问 200、无 b
 
 ## Issue #5 当前候选树
 
-本节对应最初基于 `0105cbf`、已 rebase 到 `950f732` 的 Issue #5 分支，不覆盖上面的历史验证 commit。
+本节对应最初基于 `0105cbf`、已 rebase 到 `a63fd1f` 的 Issue #5 分支，不覆盖上面的历史验证 commit。
 六项 review 问题已实现修复：统一工具边界、结构化 effect、并发 no-clobber/原子发布、过期审批保护、
 Windows 路径分隔符及大小写别名。HTTP/SSE 使用可控 Agent 执行生产 tools，真实临时文件与 SQLite
 重开验证批准/拒绝/冲突后的 toolCallId 和历史；Electron workspace-access 场景核对实际文件字节。
